@@ -1,0 +1,115 @@
+specir_version: "0.1"
+module:
+  name: acc
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: data_in
+      direction: input
+      type: "bits<32>"
+      protocol: fixed_cycle
+
+  outputs:
+    - name: result
+      direction: output
+      type: "bits<32>"
+      protocol: fixed_cycle
+
+  state:
+    - name: acc
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: tmp
+      kind: register
+      type: "bits<32>"
+      initial: 0
+
+    - name: stage1_val
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: stage1_valid
+      kind: register
+      type: "bool"
+      initial: false
+
+    - name: stage2_val
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: stage2_valid
+      kind: register
+      type: "bool"
+      initial: false
+
+    - name: fwd_val
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: fwd_valid
+      kind: register
+      type: "bool"
+      initial: false
+
+  rules:
+    - name: stage1
+      condition: "true"
+      action:
+        - (write stage1_valid true)
+        - (write stage1_val
+            (ite (read fwd_valid)
+                 (read fwd_val)
+                 (read data_in)))
+        - (write fwd_valid false)
+
+    - name: stage2
+      condition: (read stage1_valid)
+      action:
+        - (write stage2_valid true)
+        - (write stage2_val (add (read acc) (read stage1_val)))
+        - (write fwd_valid true)
+        - (write fwd_val (add (read acc) (read stage1_val)))
+        - (write stage1_valid false)
+
+    - name: stage3
+      condition: (read stage2_valid)
+      action:
+        - (write acc (read stage2_val))
+        - (write tmp (read stage2_val))
+        - (write stage2_valid false)
+
+  properties:
+    - name: result_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read tmp) 0)
+
+    - name: acc_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read acc) 0)
+
+  proof_obligations:
+    - property: result_nonneg
+      engine: model_checking
+    - property: acc_nonneg
+      engine: model_checking
+    - property: acc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: acc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: acl2

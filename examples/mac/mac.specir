@@ -1,0 +1,65 @@
+specir_version: "0.1"
+module:
+  name: mac
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: a
+      direction: input
+      type: "bits<16>"
+      protocol: fixed_cycle
+    - name: b
+      direction: input
+      type: "bits<16>"
+      protocol: fixed_cycle
+    - name: enable
+      direction: input
+      type: "bool"
+      protocol: fixed_cycle
+
+  outputs:
+    - name: acc_out
+      direction: output
+      type: "bits<32>"
+      protocol: fixed_cycle
+
+  state:
+    - name: acc
+      kind: register
+      type: "bits<32>"
+      initial: 0
+
+  rules:
+    - name: accumulate
+      condition: enable
+      action:
+        - (write acc (add (read acc) (mul (read a) (read b))))
+
+  properties:
+    - name: acc_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read acc) 0)
+
+  proof_obligations:
+    - property: acc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+
+    - property: acc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+
+    - property: acc_nonneg
+      engine: model_checking

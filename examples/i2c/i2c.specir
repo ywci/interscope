@@ -1,0 +1,213 @@
+specir_version: "0.1"
+module:
+  name: i2c_master
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+      protocol: fixed_cycle
+    - name: data_in
+      direction: input
+      type: "bits<8>"
+      protocol: fixed_cycle
+    - name: sda_in
+      direction: input
+      type: "bool"
+      protocol: fixed_cycle
+
+  outputs:
+    - name: scl
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+    - name: sda
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+    - name: busy
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+    - name: done
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+    - name: error
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+
+  state:
+    - name: fsm_state
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: bit_idx
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: shift_reg
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: clk_div
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: scl_reg
+      kind: register
+      type: "bool"
+      initial: true
+    - name: sda_reg
+      kind: register
+      type: "bool"
+      initial: true
+    - name: done_reg
+      kind: register
+      type: "bool"
+      initial: false
+    - name: error_reg
+      kind: register
+      type: "bool"
+      initial: false
+    - name: busy_reg
+      kind: register
+      type: "bool"
+      initial: false
+
+  rules:
+    - name: idle
+      condition: (eq (read fsm_state) 0)
+      action:
+        - (write busy_reg false)
+        - (write done_reg false)
+        - (write error_reg false)
+        - (write scl_reg true)
+        - (write sda_reg true)
+        - (write clk_div 0)
+        - (write bit_idx 0)
+        - (write fsm_state (ite (read start) 1 0))
+
+    - name: start_cond
+      condition: (eq (read fsm_state) 1)
+      action:
+        - (write sda_reg false)
+        - (write scl_reg true)
+        - (write busy_reg true)
+        - (write shift_reg (read data_in))
+        - (write bit_idx 0)
+        - (write fsm_state 2)
+
+    - name: send
+      condition: (eq (read fsm_state) 2)
+      action:
+        - (write clk_div (add (read clk_div) 1))
+        - (write scl_reg
+            (ite (eq (read clk_div) 0) false
+            (ite (eq (read clk_div) 2) true
+                 (read scl_reg))))
+        - (write sda_reg
+            (ite (eq (read clk_div) 1)
+                 (eq (slice (read shift_reg) 7 7) 1)
+                 (read sda_reg)))
+        - (write shift_reg
+            (ite (eq (read clk_div) 3)
+                 (add (read shift_reg) (read shift_reg))
+                 (read shift_reg)))
+        - (write bit_idx
+            (ite (eq (read clk_div) 3)
+                 (add (read bit_idx) 1)
+                 (read bit_idx)))
+        - (write fsm_state
+            (ite (eq (read bit_idx) 7)
+                 3
+                 2))
+
+    - name: ack
+      condition: (eq (read fsm_state) 3)
+      action:
+        - (write scl_reg false)
+        - (write sda_reg true)
+        - (write clk_div (add (read clk_div) 1))
+        - (write error_reg
+            (ite (and (eq (read clk_div) 1) (not (read sda_in)))
+                 false
+                 (ite (and (eq (read clk_div) 1) (read sda_in))
+                      true
+                      (read error_reg))))
+        - (write fsm_state
+            (ite (and (eq (read clk_div) 3) (not (read error_reg)))
+                 4
+                 (ite (and (eq (read clk_div) 3) (read error_reg))
+                      4
+                      3)))
+
+    - name: stop
+      condition: (eq (read fsm_state) 4)
+      action:
+        - (write scl_reg true)
+        - (write sda_reg true)
+        - (write done_reg true)
+        - (write busy_reg false)
+        - (write fsm_state 0)
+
+  properties:
+    - name: bus_idle_high
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (eq (read fsm_state) 0) (and (read scl_reg) (read sda_reg)))
+    - name: start_condition
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (eq (read fsm_state) 1) (and (read scl_reg) (not (read sda_reg))))
+    - name: stop_condition
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (eq (read fsm_state) 4) (and (read scl_reg) (read sda_reg)))
+    - name: busy_when_not_idle
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (neq (read fsm_state) 0) (read busy_reg))
+    - name: done_after_stop
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (eq (read fsm_state) 0) (or (not (read done_reg)) (eq (read start) 0)))
+    - name: state_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read fsm_state) 0) (le (read fsm_state) 4))
+    - name: bit_idx_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read bit_idx) 0) (le (read bit_idx) 7))
+
+  proof_obligations:
+    - property: bus_idle_high
+      engine: model_checking
+    - property: start_condition
+      engine: model_checking
+    - property: stop_condition
+      engine: model_checking
+    - property: busy_when_not_idle
+      engine: model_checking
+    - property: state_in_range
+      engine: model_checking
+    - property: bit_idx_in_range
+      engine: model_checking

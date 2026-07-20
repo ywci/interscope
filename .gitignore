@@ -1,0 +1,88 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Virtual environment
+.venv/
+venv/
+env/
+.env
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Build and output directories
+build/
+out/
+obj_dir/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Dynamically generated RTL / simulation
+*.vcd
+*.fst
+*.vvp
+*.sby
+*.sby.log
+*.sby.out
+
+# Generated Verilog and Coq artifacts (example patterns)
+test.v
+test.ml
+test.mli
+test.glob
+_CoqProject
+.test.aux
+*.glob
+*.vo
+*.vos
+*.vok
+*.aux
+*.d
+*.o
+*.cm*
+*.a
+*.lib
+*.exp
+*.exe
+
+# Tools directory (bundled external tools)
+tools/
+
+# Evidence database
+evidence.db
+
+# Configuration with secrets (if any)
+# conf/config.yaml  # uncomment if you want to ignore the whole config
+conf/config.yaml.local
+*.env
+
+# OSX
+.DS_Store
+
+# Windows
+Thumbs.db

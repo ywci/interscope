@@ -1,0 +1,199 @@
+specir_version: "0.1"
+module:
+  name: uart
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: rx
+      direction: input
+      type: "bool"
+  outputs:
+    - name: data_out
+      direction: output
+      type: "bits<8>"
+    - name: data_valid
+      direction: output
+      type: "bool"
+  state:
+    - name: fsm_state
+      kind: register
+      type: "bits<2>"       # 0=IDLE, 1=START, 2=DATA, 3=STOP
+      initial: 0
+    - name: sample_cnt
+      kind: register
+      type: "bits<3>"       # oversample by 4
+      initial: 0
+    - name: bit_cnt
+      kind: register
+      type: "bits<3>"       # 0..7 data bits
+      initial: 0
+    - name: rx_shift
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: rx_prev
+      kind: register
+      type: "bool"
+      initial: true
+    - name: data_out_reg
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: data_valid_reg
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    # Always store previous rx for edge detection
+    - name: edge_detect
+      condition: "true"
+      action:
+        - (write rx_prev (read rx))
+
+    # IDLE → START on falling edge; also clear the previous valid flag
+    - name: detect_start
+      condition: (and (eq (read fsm_state) 0) (and (not (read rx)) (read rx_prev)))
+      action:
+        - (write fsm_state 1)
+        - (write sample_cnt 0)
+        - (write bit_cnt 0)
+        - (write data_valid_reg false)
+
+    # Wait until middle of start bit (sample_cnt == 2), then check rx still low
+    - name: verify_start
+      condition: (and (eq (read fsm_state) 1) (eq (read sample_cnt) 2))
+      action:
+        - (write fsm_state (ite (not (read rx)) 2 0))
+        - (write sample_cnt 0)
+
+    # Sample a data bit at mid‑point (sample_cnt == 2)
+    # Shift left by 1, then set LSB to rx
+    - name: sample_data
+      condition: (and (eq (read fsm_state) 2) (eq (read sample_cnt) 2))
+      action:
+        - (write rx_shift (add (mul (slice (read rx_shift) 6 0) 2) (ite (read rx) 1 0)))
+        - (write bit_cnt (add (read bit_cnt) 1))
+        - (write fsm_state (ite (eq (read bit_cnt) 7) 3 2))
+        - (write sample_cnt 0)
+
+    # Sample stop bit at mid‑point
+    - name: sample_stop
+      condition: (and (eq (read fsm_state) 3) (eq (read sample_cnt) 2))
+      action:
+        - (write data_out_reg (read rx_shift))
+        - (write data_valid_reg (read rx))
+        - (write fsm_state 0)
+        - (write sample_cnt 0)
+
+    # Increment sample counter when not at a sample instant
+    - name: inc_sample
+      condition: (not (or (and (eq (read fsm_state) 1) (eq (read sample_cnt) 2))
+                          (or (and (eq (read fsm_state) 2) (eq (read sample_cnt) 2))
+                              (and (eq (read fsm_state) 3) (eq (read sample_cnt) 2)))))
+      action:
+        - (write sample_cnt (add (read sample_cnt) 1))
+
+  properties:
+    - name: valid_pulse
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read data_valid_reg) (eq (read fsm_state) 0))
+
+    - name: fsm_state_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read fsm_state) (read fsm_state))
+
+    - name: sample_cnt_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read sample_cnt) 0)
+
+    - name: bit_cnt_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read bit_cnt) 0)
+
+    - name: rx_shift_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read rx_shift) (read rx_shift))
+
+    - name: rx_prev_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read rx_prev) true) (eq (read rx_prev) false))
+
+    - name: data_out_reg_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read data_out_reg) (read data_out_reg))
+
+    - name: data_valid_reg_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read data_valid_reg) true) (eq (read data_valid_reg) false))
+
+  proof_obligations:
+    - property: valid_pulse
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: fsm_state_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: sample_cnt_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: bit_cnt_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: rx_shift_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: rx_prev_bool
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: data_out_reg_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: data_valid_reg_bool
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: valid_pulse
+      engine: model_checking
+    - property: fsm_state_self
+      engine: model_checking
+    - property: sample_cnt_nonneg
+      engine: model_checking
+    - property: bit_cnt_nonneg
+      engine: model_checking
+    - property: rx_shift_self
+      engine: model_checking
+    - property: rx_prev_bool
+      engine: model_checking
+    - property: data_out_reg_self
+      engine: model_checking
+    - property: data_valid_reg_bool
+      engine: model_checking

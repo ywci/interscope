@@ -1,0 +1,62 @@
+specir_version: "0.1"
+module:
+  name: calculator
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: opcode
+      direction: input
+      type: "bits<2>"
+      protocol: fixed_cycle
+    - name: data_in
+      direction: input
+      type: "bits<8>"
+      protocol: fixed_cycle
+
+  outputs:
+    - name: top
+      direction: output
+      type: "bits<8>"
+      protocol: fixed_cycle
+    - name: error
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+
+  state:
+    - name: sp
+      kind: register
+      type: "bits<4>"
+      initial: 0
+
+  rules:
+    - name: execute
+      condition: "true"
+      action:
+        - (write sp
+            (ite (eq (read opcode) 0)
+                 (ite (lt (read sp) 8) (add (read sp) 1) (read sp))
+                 (ite (eq (read opcode) 3)
+                      (ite (gt (read sp) 0) (sub (read sp) 1) (read sp))
+                      (ite (or (eq (read opcode) 1) (eq (read opcode) 2))
+                           (ite (ge (read sp) 2) (sub (read sp) 1) (read sp))
+                           (read sp)))))
+
+  properties:
+    - name: sp_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read sp) 0) (le (read sp) 8))
+
+  proof_obligations:
+    - property: sp_in_range
+      engine: model_checking

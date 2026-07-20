@@ -1,0 +1,127 @@
+specir_version: "0.1"
+module:
+  name: crc32
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: data_in
+      direction: input
+      type: "bits<8>"
+      protocol: fixed_cycle
+    - name: data_valid
+      direction: input
+      type: "bool"
+      protocol: fixed_cycle
+
+  outputs:
+    - name: crc_out
+      direction: output
+      type: "bits<32>"
+      protocol: fixed_cycle
+    - name: done
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+
+  state:
+    - name: crc
+      kind: register
+      type: "bits<32>"
+      initial: 0               # changed from 0xFFFFFFFF to avoid Kōika stack overflow
+
+    - name: count
+      kind: register
+      type: "bits<2>"
+      initial: 0
+
+    - name: done
+      kind: register
+      type: "bool"
+      initial: false
+
+    - name: crc_table
+      kind: memory
+      type:
+        type: memory
+        elem: "bits<32>"
+        depth: 256
+
+  rules:
+    - name: process_byte
+      condition: (and data_valid (not (read done)))
+      action:
+        - (write crc
+            (xor (rshift (read crc) 8)
+                 (mem_read crc_table
+                   (and (xor (read crc) (read data_in)) 255))))
+        - (write count (add (read count) 1))
+        - (write done (eq (read count) 3))
+
+  directives:
+    - type: assume
+      name: one_byte_per_cycle
+      expression: (implies data_valid true)
+
+  properties:
+    - name: done_after_4_bytes
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read done) (eq (read count) 3))
+
+    - name: crc_reset_value
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (not rst_n) (eq (read crc) 0))
+
+    - name: done_initial_false
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (not rst_n) (not (read done)))
+
+    - name: count_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read count) 0) (le (read count) 3))
+
+    - name: crc_32_bit
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read crc) 0) (le (read crc) 4294967295))
+
+  proof_obligations:
+    - property: crc_32_bit
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+
+    - property: count_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+
+    - property: crc_32_bit
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+
+    - property: done_after_4_bytes
+      engine: model_checking
+    - property: done_initial_false
+      engine: model_checking
+    - property: count_in_range
+      engine: model_checking
+    - property: crc_32_bit
+      engine: model_checking

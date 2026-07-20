@@ -1,0 +1,277 @@
+type: object
+required:
+- specir_version
+- module
+properties:
+  specir_version:
+    type: string
+    pattern: "^(0\\.1)$"
+    description: "SpecIR version (0.1)"
+  module:
+    type: object
+    required:
+    - name
+    - clocks
+    - resets
+    - state
+    - rules
+    properties:
+      name:
+        type: string
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$"
+      version:
+        type: string
+      parameters:
+        type: array
+        items:
+          type: object
+          required: [ name, type ]
+          properties:
+            name: { type: string }
+            type: { enum: [ int, bit, string ] }
+            default: { type: [ string, integer, boolean ] }
+      clocks:
+        type: array
+        items:
+          type: object
+          required: [ name, edge ]
+          properties:
+            name: { type: string }
+            period: { type: string }
+            edge: { enum: [ posedge, negedge ] }
+      resets:
+        type: array
+        items:
+          type: object
+          required: [ name, polarity, async, affects ]
+          properties:
+            name: { type: string }
+            polarity: { enum: [ active_high, active_low ] }
+            async: { type: boolean }
+            affects:
+              anyOf:
+              - type: string
+                enum: [ "all" ]
+              - type: array
+                items: { type: string }
+      inputs:
+        type: array
+        items:
+          $ref: "#/definitions/interface"
+      outputs:
+        type: array
+        items:
+          $ref: "#/definitions/interface"
+      types:
+        type: array
+        items:
+          type: object
+          required: [ name, kind ]
+          properties:
+            name: { type: string }
+            kind: { enum: [ enum, struct ] }
+            values: { type: array, items: { type: string } }
+            fields: { type: object, additionalProperties: { type: string } }
+            encoding: { type: string }
+      components:
+        type: array
+        items:
+          type: object
+          required: [ name, module ]
+          properties:
+            name: { type: string }
+            module: { type: string }
+            parameters: { type: object }
+            port_map: { type: object }
+            evidence: { $ref: "#/definitions/evidence_ref" }
+      state:
+        type: array
+        items:
+          type: object
+          required: [ name, kind, type ]
+          properties:
+            name: { type: string }
+            kind: { enum: [ register, memory, wire ] }
+            type:
+              anyOf:
+              - { type: string }
+              - { type: object }
+            initial: { type: [ string, integer, boolean ] }
+            attributes:
+              type: array
+              items: { enum: [ stable, volatile, shadow ] }
+            evidence: { $ref: "#/definitions/evidence_ref" }
+      rules:
+        type: array
+        items:
+          type: object
+          required: [ name ]
+          properties:
+            name: { type: string }
+            condition: { type: [ string, array ] }
+            action:
+              type: array
+              items: { type: [ string, array ] }
+            priority: { type: integer }
+            attributes:
+              type: array
+              items: { enum: [ atomic, speculative, commutative ] }
+            evidence: { $ref: "#/definitions/evidence_ref" }
+      directives:
+        type: array
+        items:
+          type: object
+          required: [ type, name, expression ]
+          properties:
+            type: { enum: [ assume, assert, cover ] }
+            name: { type: string }
+            expression: { type: [ string, array ] }
+            clock: { type: string }
+            severity: { enum: [ error, warning ] }
+          # severity only meaningful for assert
+          if:
+            properties:
+              type:
+                const: assert
+            required: [ type ]
+          then:
+            properties:
+              severity: { enum: [ error, warning ] }
+          else:
+            properties:
+              severity: false # disallow severity for assume/cover
+      properties:
+        type: array
+        items:
+          type: object
+          required: [ name, kind, expression ]
+          properties:
+            name: { type: string }
+            kind: { enum: [ safety, liveness, invariant ] }
+            expression:
+              type: object
+              required: [ kind ]
+              properties:
+                kind: { enum: [ always, eventually, until ] }
+                operand: { type: [ string, array ] }
+                left: { type: [ string, array ] }
+                right: { type: [ string, array ] }
+                bound: { type: integer }
+            assumes: { type: array, items: { type: [ string, array ] } }
+            guarantees: { type: array, items: { type: [ string, array ] } }
+            proof_status: { enum: [ unproved, proved, counterexample ] }
+            evidence:
+              type: array
+              items: { $ref: "#/definitions/evidence_ref" }
+      schedule:
+        type: object
+        required: [ kind ]
+        properties:
+          kind: { enum: [ parallel, sequential, conflict_free ] }
+          rule_order: { type: array, items: { type: string } }
+          conflict_sets:
+            type: array
+            items: { type: array, items: { type: string } }
+        allOf:
+        - if:
+            properties:
+              kind:
+                const: sequential
+          then:
+            required: [ rule_order ]
+        - if:
+            properties:
+              kind:
+                const: conflict_free
+          then:
+            required: [ conflict_sets ]
+      fairness:
+        type: array
+        items:
+          type: object
+          required: [ name, type, condition ]
+          properties:
+            name: { type: string }
+            type: { enum: [ weak, strong ] }
+            condition: { type: [ string, array ] }
+      proof_obligations:
+        type: array
+        items:
+          type: object
+          required: [ property, engine ]
+          properties:
+            property: { type: string }
+            status: { enum: [ unproved, proved, disproved, inconclusive ] }
+            engine: { enum: [ theorem_proving, model_checking, simulation ] }
+            backend:
+              enum: [ koika, kōika, acl2 ]
+            artifact:
+              type: object
+              properties:
+                type: { enum: [ coq_theorem, acl2_theorem, invariant, counterexample_trace ] }
+                ref: { type: string }
+            assumes: { type: array, items: { type: [ string, array ] } }
+            guarantees: { type: array, items: { type: [ string, array ] } }
+            metadata:
+              type: object
+              additionalProperties: true
+            confidence: { type: number, minimum: 0, maximum: 1 }
+            feedback:
+              type: array
+              items:
+                type: object
+                required: [ iteration, error, resolution ]
+                properties:
+                  iteration: { type: integer }
+                  error: { type: string }
+                  resolution: { type: string }
+          # if engine is theorem_proving, backend must be present
+          if:
+            properties:
+              engine:
+                const: theorem_proving
+            required: [ engine ]
+          then:
+            required: [ backend ]
+      metadata:
+        type: object
+        additionalProperties: true
+      evidence:
+        type: array
+        items:
+          $ref: "#/definitions/evidence"
+  metadata:
+    type: object
+    additionalProperties: true
+  evidence:
+    type: array
+    items:
+      $ref: "#/definitions/evidence"
+
+definitions:
+  interface:
+    type: object
+    required: [ name, direction, type ]
+    properties:
+      name: { type: string }
+      direction: { enum: [ input, output, inout ] }
+      type:
+        anyOf:
+        - { type: string }
+        - { type: object }
+      protocol: { enum: [ ready_valid, handshake, fixed_cycle, none ] }
+  evidence_ref:
+    type: object
+    required: [ type, value ]
+    properties:
+      type: { enum: [ uri, local_id ] }
+      value: { type: string }
+  evidence:
+    type: object
+    required: [ type, ref, engine ]
+    properties:
+      type:
+        enum: [ counterexample_trace, inductive_invariant, coq_theorem, acl2_theorem, simulation_trace ]
+      ref: { $ref: "#/definitions/evidence_ref" }
+      engine: { type: string }
+      status: { type: string }

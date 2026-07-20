@@ -1,0 +1,63 @@
+specir_version: "0.1"
+module:
+  name: counter
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: inc
+      direction: input
+      type: "bool"
+  outputs:
+    - name: count_out
+      direction: output
+      type: "bits<4>"
+    - name: overflow
+      direction: output
+      type: "bool"
+  state:
+    - name: count
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: overflow_flag
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: increment
+      condition: (and inc (lt (read count) 15))
+      action:
+        - (write count (add (read count) 1))
+        - (write overflow_flag (eq (read count) 15))
+  properties:
+    - name: counter_bound
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read count) 15)
+    - name: no_overflow_when_not_full
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (not (eq (read count) 15)) (not (read overflow_flag)))
+  proof_obligations:
+    # Theorem proving (existing)
+    - property: counter_bound
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: no_overflow_when_not_full
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    # Model checking (new)
+    - property: counter_bound
+      engine: model_checking
+    - property: no_overflow_when_not_full
+      engine: model_checking

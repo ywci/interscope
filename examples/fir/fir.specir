@@ -1,0 +1,101 @@
+specir_version: "0.1"
+module:
+  name: fir
+  version: "1.0"
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+  inputs:
+    - name: data_in
+      direction: input
+      type: "bits<16>"
+    - name: valid_in
+      direction: input
+      type: "bool"
+  outputs:
+    - name: data_out
+      direction: output
+      type: "bits<16>"
+    - name: valid_out
+      direction: output
+      type: "bool"
+  state:
+    - name: shift0
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: shift1
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: shift2
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: shift3
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: coeff0
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: coeff1
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: coeff2
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: coeff3
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: acc
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: valid_pipe
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: shift_and_mac
+      condition: valid_in
+      action:
+        - (write shift3 (read shift2))
+        - (write shift2 (read shift1))
+        - (write shift1 (read shift0))
+        - (write shift0 data_in)
+        - (write acc (add (mul (read shift0) (read coeff0))
+                         (add (mul (read shift1) (read coeff1))
+                         (add (mul (read shift2) (read coeff2))
+                              (mul (read shift3) (read coeff3))))))
+        - (write valid_pipe true)
+    - name: bypass
+      condition: (not valid_in)
+      action:
+        - (write valid_pipe false)
+  properties:
+    - name: acc_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read acc) 0) (le (read acc) 65535))
+  proof_obligations:
+    - property: acc_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: acc_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: acc_bounded
+      engine: model_checking

@@ -1,0 +1,72 @@
+llm:
+  provider: "ollama"
+  model: "qwen3.5:27b"
+  api_key: "not-needed"
+  base_url: "http://localhost:11434/v1"
+  temperature: 0.2
+  max_tokens: 131072
+  timeout: 120
+  retries: 3
+
+provers:
+  koika:
+    enabled: true
+    lemma_mining: true
+    prove:
+      skill: "rocq-mcp"
+      rocq_mcp_path: "rocq-mcp"
+      coq_tactic_hints: [ "induction", "simpl", "auto", "rewrite", "inversion", "lia", "nia" ]
+      proof_timeout: 600
+      max_consecutive_failures: 10
+      max_steps: 80
+      pre_simplify: true
+      invariant_mining: true
+  acl2:
+    enabled: true
+    lemma_mining: true
+    mcp_path: "acl2-mcp"
+    mcp_timeout: 30
+    init_commands: []
+    prove:
+      skill: "acl2_builtin"
+      hint_classes: [ "rewrite", "linear", "induct" ]
+      skolem_depth: 2
+      defun_sk_enabled: true
+
+verification:
+  default_backend: "koika"
+  simulation:
+    output_dir: "build/sim"
+    cycles: 1000
+    keep_build: false
+    verilator_extra_args: [ "-Wno-fatal", "--assert" ]
+  simulation_cycles: 1000
+  bmc_max_depth: 100
+  ic3_max_steps: 1000
+  formal_timeout: 300
+
+proof:
+  max_repair_attempts: 5
+
+lifting:
+  vcd_parser: "builtin"
+  default_mapping_file: "build/rtl/mapping.json"
+  llm_lifter_enabled: true
+  llm_lifter_confidence_threshold: 0.7
+
+evidence:
+  db_path: "build/evidence.db"
+  auto_commit: true
+
+logging:
+  level: "INFO"
+  file: "build/logs/interscope.log"
+
+directories:
+  build: "build"
+  rtl: "build/rtl"
+  traces: "build/traces"
+  logs: "build/logs"
+  temp: "build/temp"
+  verify: "build/verify"
+  tools: "tools"

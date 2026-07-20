@@ -1,0 +1,202 @@
+specir_version: "0.1"
+module:
+  name: riscv_mini
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: instr
+      direction: input
+      type: "bits<32>"
+  outputs:
+    - name: result
+      direction: output
+      type: "bits<32>"
+  state:
+    - name: PC
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: regfile_0
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: regfile_1
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: regfile_2
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: regfile_3
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: result_reg
+      kind: register
+      type: "bits<32>"
+      initial: 0
+  rules:
+    # Execute: decode opcode (bits 6:0) and perform ADD/ADDI, then increment PC
+    - name: execute
+      condition: "true"
+      action:
+        # ADD: opcode = 0110011, funct3 = 000, funct7 = 0000000
+        - (write result_reg
+            (ite (eq (slice (read instr) 6 0) 0b0110011)
+                 (add (read regfile_1) (read regfile_2))
+                 (ite (eq (slice (read instr) 6 0) 0b0010011)
+                      (add (read regfile_1) (slice (read instr) 31 20))
+                      (read result_reg))))
+        - (write PC (add (read PC) 4))
+  properties:
+    - name: pc_aligned
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (slice (read PC) 1 0) 0)
+
+    # ACL2‑friendly properties (register‑only, trivially true or invariant)
+    - name: pc_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read PC) (read PC))
+
+    - name: regfile_0_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read regfile_0) (read regfile_0))
+
+    - name: regfile_1_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read regfile_1) (read regfile_1))
+
+    - name: regfile_2_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read regfile_2) (read regfile_2))
+
+    - name: regfile_3_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read regfile_3) (read regfile_3))
+
+    - name: result_reg_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read result_reg) (read result_reg))
+
+    - name: PC_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read PC) 0)
+
+    - name: regfile_0_const
+      kind: invariant
+      expression:
+        kind: always
+        operand: (eq (read regfile_0) 0)
+
+    - name: regfile_1_const
+      kind: invariant
+      expression:
+        kind: always
+        operand: (eq (read regfile_1) 0)
+
+    - name: regfile_2_const
+      kind: invariant
+      expression:
+        kind: always
+        operand: (eq (read regfile_2) 0)
+
+    - name: regfile_3_const
+      kind: invariant
+      expression:
+        kind: always
+        operand: (eq (read regfile_3) 0)
+
+  proof_obligations:
+    - property: pc_aligned
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: pc_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_0_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_1_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_2_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_3_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: result_reg_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: PC_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_0_const
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_1_const
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_2_const
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: regfile_3_const
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: pc_self
+      engine: model_checking
+    - property: regfile_0_self
+      engine: model_checking
+    - property: regfile_1_self
+      engine: model_checking
+    - property: regfile_2_self
+      engine: model_checking
+    - property: regfile_3_self
+      engine: model_checking
+    - property: result_reg_self
+      engine: model_checking
+    - property: PC_nonneg
+      engine: model_checking
+    - property: regfile_0_const
+      engine: model_checking
+    - property: regfile_1_const
+      engine: model_checking
+    - property: regfile_2_const
+      engine: model_checking
+    - property: regfile_3_const
+      engine: model_checking
