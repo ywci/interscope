@@ -14,19 +14,19 @@ def create_basic_spec_module():
             state_name="count",
             kind="register",
             data_type="bits<8>",
-            initial=0,
+            initial=0
         ),
         spec_ir.SpecStateOp(
             state_name="flag",
             kind="register",
             data_type="bool",
-            initial=False,
+            initial=False
         ),
         spec_ir.SpecStateOp(
             state_name="mem",
             kind="memory",
-            data_type={"type": "memory", "elem": "bits<32>", "depth": 8},
-        ),
+            data_type={"type": "memory", "elem": "bits<32>", "depth": 8}
+        )
     ]
 
     # Rule with condition and two write actions
@@ -38,20 +38,20 @@ def create_basic_spec_module():
                 "(write count (add (read count) 1))",
                 "(write flag true)",
             ],
-            priority=10,
+            priority=10
         ),
         spec_ir.SpecRuleOp(
             rule_name="reset_flag",
             condition="(read flag)",
             actions=["(write flag false)"],
-            priority=5,   # lower priority than inc
+            priority=5   # lower priority than inc
         ),
         spec_ir.SpecRuleOp(
             rule_name="noop",
             condition="true",
             actions=[],
-            priority=0,
-        ),
+            priority=0
+        )
     ]
 
     # Property: count never exceeds 255 (safety)
@@ -60,9 +60,9 @@ def create_basic_spec_module():
             prop_name="count_bound",
             kind="safety",
             expression={"kind": "always", "operand": "(le (read count) 255)"},
-            assumes=["(not (read flag))"],   # assumption
-            guarantees=[],
-        ),
+            assumes=["(not (read flag))"],
+            guarantees=[]
+        )
     ]
 
     # Proof obligation referencing the property
@@ -72,16 +72,16 @@ def create_basic_spec_module():
             "status": "unproved",
             "engine": "theorem_proving",
             "backend": "acl2",
-            "metadata": {"acl2_hints": ['("Goal" :induct t)']},
+            "metadata": {"acl2_hints": ['("Goal" :induct t)']}
         }
     ]
 
     # Inputs / outputs (optional, but test interface conversion)
     inputs = [
-        spec_ir.Interface(name="start", direction="input", data_type="bool"),
+        spec_ir.Interface(name="start", direction="input", data_type="bool")
     ]
     outputs = [
-        spec_ir.Interface(name="done", direction="output", data_type="bool"),
+        spec_ir.Interface(name="done", direction="output", data_type="bool")
     ]
 
     spec_mod = spec_ir.SpecModule(
@@ -93,7 +93,7 @@ def create_basic_spec_module():
         inputs=inputs,
         outputs=outputs,
         clocks=[],
-        resets=[],
+        resets=[]
     )
     return spec_mod
 
@@ -165,7 +165,7 @@ class TestSpecToAcl2Basic:
             inputs=[],
             outputs=[],
             clocks=[],
-            resets=[],
+            resets=[]
         )
         acl2_mod = spec_to_acl2.convert(spec_mod)
         step_def = next(d for d in acl2_mod.defuns if d.func_name == "empty_step")

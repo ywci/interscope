@@ -1,9 +1,10 @@
-# tests/unit/test_proof_koika.py
+# tests/unit/test_koika_prover.py
 #
 # Unit tests for Kōika/Coq proof infrastructure:
 # - KoikaProver orchestration and fallback behavior
 # - Proof prompt construction and script extraction
 # - Proof repair with sanity checking
+# - Skeleton proof, skeleton reflection, and configurable hints
 
 import pytest
 from pathlib import Path
@@ -35,6 +36,8 @@ def mock_config():
                     "max_steps": 40,
                     "pre_simplify": True,
                     "invariant_mining": True,
+                    "skeleton_reflection": True,
+                    "skeleton_step_tactics": [],
                 }
             }
         },
@@ -74,6 +77,7 @@ class TestKoikaProverInit:
             assert prover.max_steps == 40
             assert prover.pre_simplify is True
             assert prover.invariant_mining is True
+            assert prover.skeleton_reflection is True
 
     def test_koika_prover_defaults(self):
         minimal_config = {
@@ -89,6 +93,7 @@ class TestKoikaProverInit:
             assert prover.max_steps == 80
             assert prover.pre_simplify is True
             assert prover.invariant_mining is True
+            assert prover.skeleton_reflection is True
 
 
 class TestProveTheorem:
@@ -118,13 +123,11 @@ class TestProveTheorem:
         mock_rocq_client.start_session.return_value = ("1", [])
         prover = KoikaProver(config=mock_config)
 
-        # Prevent the LLM fallback from actually calling the network
         with patch.object(prover, "_theorem_already_proven", return_value=False), \
              patch.object(prover, "_apply_library_proof", return_value=None), \
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."), \
              patch.object(prover, "_attempt_llm_proof_generation", return_value=None):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
-        # Should report failure; exact error may come from fallback, so just check success false
         assert result["success"] is False
 
     def test_prove_theorem_tactic_fails_then_repair_succeeds(self, mock_config, mock_rocq_client, mock_llm_client):
@@ -181,30 +184,55 @@ class TestProveTheorem:
         mock_config["provers"]["koika"]["prove"]["pre_simplify"] = True
         fallback_responses = [
             {"structuredContent": {"state_id": "f1", "goals": ["subgoal"], "proof_finished": False, "commands_run": 1}, "isError": False},
-            {"structuredContent": {"state_id": "f2", "goals": ["subgoal"], "proof_finished": False, "commands_run": 1}, "isError": False},
-            {"structuredContent": {"state_id": "f3", "goals": [], "proof_finished": True, "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "f2", "goals": [], "proof_finished": True, "commands_run": 1}, "isError": False},
         ]
         mock_rocq_client.check.side_effect = fallback_responses
         mock_llm_client.generate.return_value = "auto."
         prover = KoikaProver(config=mock_config)
 
-        with patch.object(prover, "_theorem_already_proven", return_value=False), \
+        with patch.object(prover, "_try_skeleton_proof", return_value=None), \
+             patch.object(prover, "_request_skeleton_reflection", return_value=None), \
+             patch.object(prover, "_theorem_already_proven", return_value=False), \
              patch.object(prover, "_apply_library_proof", return_value=None), \
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
 
         assert result["success"] is True
-        assert mock_rocq_client.check.call_count == 3
+        assert mock_rocq_client.check.call_count == 2
 
     def test_prove_theorem_pre_simplify_disabled(self, mock_config, mock_rocq_client, mock_llm_client):
         mock_config["provers"]["koika"]["prove"]["pre_simplify"] = False
         fallback_responses = [
-            {"structuredContent": {"state_id": "f1", "goals": ["subgoal"], "proof_finished": False, "commands_run": 1}, "isError": False},
-            {"structuredContent": {"state_id": "f2", "goals": ["subgoal"], "proof_finished": False, "commands_run": 1}, "isError": False},
-            {"structuredContent": {"state_id": "f3", "goals": [], "proof_finished": True, "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "f1", "goals": [], "proof_finished": True, "commands_run": 1}, "isError": False},
         ]
         mock_rocq_client.check.side_effect = fallback_responses
         mock_llm_client.generate.return_value = "auto."
+        prover = KoikaProver(config=mock_config)
+
+        with patch.object(prover, "_try_skeleton_proof", return_value=None), \
+             patch.object(prover, "_request_skeleton_reflection", return_value=None), \
+             patch.object(prover, "_theorem_already_proven", return_value=False), \
+             patch.object(prover, "_apply_library_proof", return_value=None), \
+             patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
+            result = prover.prove_theorem(Path("test.v"), "theorem_name")
+
+        assert result["success"] is True
+        mock_rocq_client.check.assert_called_once()
+
+    def test_skeleton_proof_succeeds(self, mock_config, mock_rocq_client):
+        """The built‑in skeleton closes the proof without LLM interaction."""
+        # Sequence of rocq.check responses for skeleton steps:
+        # intros, idtac, induction, base case, inversion, simpl, extra tactic, finish
+        responses = [
+            {"structuredContent": {"state_id": "s1", "goals": ["goal"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s1", "goals": ["Hreach : reachable s |- goal"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s2", "goals": ["base", "step"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s3", "goals": ["step"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s4", "goals": ["after inversion"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s5", "goals": ["simplified"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s6", "goals": [], "proof_finished": True, "commands_run": 1}, "isError": False},
+        ]
+        mock_rocq_client.check.side_effect = responses
         prover = KoikaProver(config=mock_config)
 
         with patch.object(prover, "_theorem_already_proven", return_value=False), \
@@ -213,7 +241,67 @@ class TestProveTheorem:
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
 
         assert result["success"] is True
-        assert mock_rocq_client.check.call_count == 3
+
+    def test_skeleton_fails_reflection_succeeds(self, mock_config, mock_rocq_client, mock_llm_client):
+        """When the skeleton fails, the LLM‑reflection step provides a valid proof."""
+        # Skeleton will fail at the inversion step
+        mock_rocq_client.check.side_effect = [
+            {"structuredContent": {"state_id": "s1", "goals": ["goal"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s1", "goals": ["Hreach : reachable s |- goal"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s2", "goals": ["base"], "commands_run": 1}, "isError": False},
+            {"structuredContent": {"state_id": "s3", "goals": ["step"], "commands_run": 1}, "isError": False},
+            {"isError": True, "error": "Inversion failed"},
+        ]
+
+        # start_session is called once for skeleton and once for reflection
+        mock_rocq_client.start_session.side_effect = [
+            ("1", ["goal1"]),
+            ("2", ["goal2"]),
+        ]
+
+        file_content = "Theorem theorem_name : forall s, reachable s -> True.\nProof. Admitted."
+        mock_llm_client.generate.return_value = "Proof. auto. Qed."
+
+        prover = KoikaProver(config=mock_config)
+
+        with patch.object(prover, "_theorem_already_proven", return_value=False), \
+             patch.object(prover, "_apply_library_proof", return_value=None), \
+             patch("pathlib.Path.read_text", return_value=file_content), \
+             patch("builtins.open", mock_open(read_data=file_content)), \
+             patch.object(prover, "_compile_with_coqc", return_value=True), \
+             patch.object(prover, "_fallback_verify", return_value={"success": True}):
+            result = prover.prove_theorem(Path("test.v"), "theorem_name")
+
+        assert result["success"] is True
+
+    def test_configurable_hints_in_prompt(self, mock_config, mock_rocq_client, mock_llm_client):
+        """Custom base_case_hint and step_case_hint are forwarded to the prompt builder."""
+        mock_config["provers"]["koika"]["prove"]["base_case_hint"] = "my_base"
+        mock_config["provers"]["koika"]["prove"]["step_case_hint"] = "my_step"
+        prover = KoikaProver(config=mock_config)
+
+        # Create a mock RocqClient that simulates a successful interactive session
+        mock_rocq_instance = MagicMock()
+        mock_rocq_instance.start.return_value = None
+        mock_rocq_instance.compile_file.return_value = {"success": True}
+        mock_rocq_instance.start_session.return_value = ("1", ["goal"])
+        mock_rocq_instance.check.return_value = {
+            "structuredContent": {"state_id": "s1", "goals": ["goal"], "proof_finished": True, "commands_run": 1},
+            "isError": False
+        }
+
+        with patch("specir.verification.proof.koika.prover.RocqClient", return_value=mock_rocq_instance), \
+             patch("specir.verification.proof.koika.prover.build_interactive_step_prompt") as mock_build, \
+             patch.object(prover, "_try_skeleton_proof", return_value=None), \
+             patch.object(prover, "_request_skeleton_reflection", return_value=None), \
+             patch.object(prover, "_theorem_already_proven", return_value=False), \
+             patch.object(prover, "_apply_library_proof", return_value=None), \
+             patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
+            prover.prove_theorem(Path("test.v"), "theorem_name")
+
+        call_kwargs = mock_build.call_args[1]
+        assert call_kwargs["base_case_hint"] == "my_base"
+        assert call_kwargs["step_case_hint"] == "my_step"
 
 
 class TestProofGen:

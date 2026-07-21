@@ -11,7 +11,7 @@ from specir.backends.acl2_client import ACL2Client, get_acl2_client_from_config
 from specir.backends.llm_client import LLMClient, get_llm_client_from_config
 from specir.verification.proof.acl2.proof_gen import (
     build_acl2_hint_prompt,
-    parse_hints_from_response,
+    parse_hints_from_response
 )
 from specir.utils.logger import get_logger
 from specir.utils.config_loader import get_config
@@ -72,7 +72,7 @@ class ACL2Prover:
         self,
         theorem_name: str,
         statement: Optional[str] = None,
-        hints: Optional[List[str]] = None,
+        hints: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Prove an ACL2 theorem using the current session (which must already
@@ -223,14 +223,14 @@ class ACL2Prover:
         self,
         statement: str,
         old_hints: Optional[List[str]],
-        error: str,
+        error: str
     ) -> Optional[List[str]]:
         """Ask the LLM for a new set of hints given the failure."""
         prompt = build_acl2_hint_prompt(
             theorem_statement=statement,
             error_message=error,
             old_hints=old_hints,
-            context=None,
+            context=None
         )
         logger.debug("Hint repair prompt:\n%s", prompt)
         response = self.llm.generate(prompt)
@@ -247,7 +247,7 @@ class ACL2Prover:
         theorem_name: str,
         statement: str,
         current_hints: List[str],
-        last_error: str,
+        last_error: str
     ) -> Optional[List[str]]:
         """
         Ask the LLM for a completely new proof approach after repeated failures.
@@ -276,7 +276,7 @@ class ACL2Prover:
         self,
         theorem_name: str,
         statement: str,
-        hints: List[str],
+        hints: List[str]
     ) -> str:
         """Create a human‑readable defthm form (for registration)."""
         hints_str = " ".join(hints) if hints else ""

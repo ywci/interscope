@@ -1,7 +1,8 @@
 # src/specir/verification/proof/koika/prover.py
 #
 # Generic prover for Kōika/Coq theorems with fallback to rocq_verify
-# and LLM proof generation.
+# and LLM proof generation.  All design‑specific heuristics are
+# controlled by configuration; the core is purely structural.
 
 import os
 import json
@@ -20,14 +21,25 @@ from lib.koika.assist import PROOF_LIBRARY
 from specir.verification.proof.koika.proof_gen import (
     build_interactive_step_prompt,
     extract_tactics_from_response,
+    build_skeleton_reflection_prompt,
+    extract_proof_script
 )
 
 logger = get_logger(__name__)
 
 
 class KoikaProver:
-    """Generic prover for Kōika/Coq theorems with fallback to rocq_verify
-    and LLM proof generation."""
+    """Generic prover for Kōika/Coq theorems.
+
+    The prover follows a strict escalation path:
+    1. Already‑proven check
+    2. Proof library (fast, config‑controlled)
+    3. Built‑in skeleton proofs (generic structural induction)
+    4. LLM skeleton reflection (tailored one‑shot proof)
+    5. LLM‑driven interactive tactic loop
+    6. rocq_verify fallback
+    7. LLM full‑proof generation with repair
+    """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         if config is None:
@@ -43,9 +55,26 @@ class KoikaProver:
         self.max_steps = prove_cfg.get("max_steps", 80)
         self.pre_simplify = prove_cfg.get("pre_simplify", True)
         self.invariant_mining = prove_cfg.get("invariant_mining", True)
+        self.skeleton_reflection = prove_cfg.get("skeleton_reflection", True)
+
+        # Configurable hints for the interactive prompt
+        self.base_case_hint = prove_cfg.get(
+            "base_case_hint",
+            "simpl; auto with *; try lia; try nia."
+        )
+        self.step_case_hint = prove_cfg.get(
+            "step_case_hint",
+            "invert the step hypothesis, substitute, simpl, then try to apply the induction hypothesis or use available lemmas; finish with auto/lia/nia."
+        )
+
+        # Extra step tactics for the skeleton (empty list → use built‑in defaults)
+        self.skeleton_step_tactics: List[str] = prove_cfg.get("skeleton_step_tactics", [])
 
         self.max_repair = config.get("proof", {}).get("max_repair_attempts", 5)
         self.coqc_path = shutil.which("coqc") or "coqc"
+        self.use_proof_library = config.get("provers", {}).get("koika", {}).get(
+            "use_proof_library", True
+        )
 
     @staticmethod
     def _workspace_for(coq_file: Path) -> Path:
@@ -67,7 +96,7 @@ class KoikaProver:
                 capture_output=True,
                 text=True,
                 timeout=self.proof_timeout,
-                cwd=str(workspace),
+                cwd=str(workspace)
             )
             if result.returncode != 0:
                 logger.error("coqc compilation failed:\n%s", result.stderr)
@@ -106,7 +135,7 @@ class KoikaProver:
                 capture_output=True,
                 text=True,
                 timeout=self.proof_timeout,
-                cwd=str(workspace),
+                cwd=str(workspace)
             )
             return result.stderr.strip() if result.returncode != 0 else ""
         except Exception as e:
@@ -123,7 +152,6 @@ class KoikaProver:
         return "Admitted." not in block
 
     def _theorem_already_proven(self, coq_file: Path, theorem_name: str) -> bool:
-        """Return True if the file compiles and the theorem is closed."""
         workspace = self._workspace_for(coq_file)
         if not self._compile_with_coqc(coq_file, workspace):
             return False
@@ -131,7 +159,6 @@ class KoikaProver:
         return self._theorem_is_closed(content, theorem_name)
 
     def _extract_proof_from_file(self, coq_file: Path, theorem_name: str) -> str:
-        """Extract the Proof...Qed block for the given theorem from the Coq file."""
         content = coq_file.read_text()
         pattern = re.compile(
             rf"Theorem\s+{re.escape(theorem_name)}\s+.*?\n(Proof\..*?Qed\.)",
@@ -148,6 +175,16 @@ class KoikaProver:
         if fallback_match:
             return fallback_match.group(1).strip()
         return "Proof. (* already proven *) Qed."
+
+    def _find_invariant_lemmas(self, coq_file: Path) -> List[str]:
+        """Return names of auto‑generated trivial invariant lemmas."""
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return []
+        nil_matches = re.findall(r"Lemma\s+(\w+_nil)\s+:", content)
+        const_matches = re.findall(r"Lemma\s+(\w+_const)\s+:", content)
+        return nil_matches + const_matches
 
     def _apply_library_proof(self, coq_file: Path, theorem_name: str) -> Optional[str]:
         if theorem_name not in PROOF_LIBRARY:
@@ -196,7 +233,7 @@ class KoikaProver:
             rocq_mcp_path=self.rocq_path,
             timeout=self.proof_timeout,
             cwd=workspace,
-            server_args=["--workspace", str(workspace)],
+            server_args=["--workspace", str(workspace)]
         )
         rocq.start()
         try:
@@ -216,82 +253,30 @@ class KoikaProver:
         finally:
             rocq.stop()
 
-    def _try_fallback_proof(self, coq_file: Path, theorem_name: str, workspace: Path) -> Optional[Dict[str, Any]]:
-        logger.info("Attempting dynamic fallback proof for '%s'.", theorem_name)
+    def _try_skeleton_proof(self, coq_file: Path, theorem_name: str) -> Optional[Dict[str, Any]]:
+        """Generic induction + inversion skeleton, config‑extensible step tactics."""
+        logger.info("Attempting generic skeleton proof for '%s'.", theorem_name)
+        workspace = self._workspace_for(coq_file)
         try:
             state_id, goals = self.rocq.start_session(coq_file, theorem_name, workspace=workspace)
         except RocqClientError:
             return None
-
         if not goals:
             return None
 
-        fallback_script = [
-            "intros; induction 1.",
-            "- simpl; auto; try lia; try nia.",
-            "- match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end; "
-            "simpl; "
-            "repeat (match goal with "
-            "| [ |- context[slice (?x + 4) 1 0] ] => rewrite (slice_low2 (?x + 4)) "
-            "| [ H : context[slice ?x 1 0] |- _ ] => rewrite (slice_low2 x) in H "
-            "end); "
-            "try (rewrite Nat.add_mod; rewrite (Nat.mod_same 4) by lia; "
-            "     rewrite Nat.add_0_r; assumption); "
-            "auto; try lia; try nia.",
-        ]
-
-        applied = []
-        last_check = None
-        for tactic in fallback_script:
-            try:
-                check = self.rocq.check(state_id, tactic)
-                last_check = check
-                if check.get("isError") or "error" in check:
-                    logger.info("Dynamic fallback tactic '%s' failed for '%s'.", tactic, theorem_name)
-                    return None
-                state_id = check.get("structuredContent", {}).get("state_id", state_id)
-                applied.append(tactic)
-            except RocqClientError:
-                return None
-
-        if last_check is not None:
-            finished = last_check.get("structuredContent", {}).get("proof_finished", False)
-            if not finished:
-                logger.info("Dynamic fallback did not finish the proof for '%s'.", theorem_name)
-                return None
-
-        proof_script = self._construct_proof_script(theorem_name, coq_file, applied)
-        self._update_coq_file(coq_file, theorem_name, applied)
-        logger.info("Dynamic fallback succeeded for '%s'. Script: %s", theorem_name, proof_script[:200])
-        return {"success": True, "proof_script": proof_script}
-
-    def _try_skeleton_proof(self, coq_file: Path, theorem_name: str) -> Optional[Dict[str, Any]]:
-        logger.info("Attempting skeleton proof for '%s'.", theorem_name)
-        workspace = self._workspace_for(coq_file)
-        try:
-            state_id, goals = self.rocq.start_session(
-                coq_file, theorem_name, workspace=workspace
-            )
-        except RocqClientError:
-            return None
-
-        if not goals:
-            return None
-
-        # Step 1: intro all variables
+        # Intro
         res = self.rocq.check(state_id, "intros.")
         if self._extract_error(res):
             return None
         state_id = res.get("structuredContent", {}).get("state_id", state_id)
 
-        # Step 2: find the reachable hypothesis
+        # Locate reachable hypothesis
         idtac_res = self.rocq.check(state_id, "idtac.")
         if self._extract_error(idtac_res):
             return None
         goals_data = idtac_res.get("structuredContent", {}).get("goals", [])
         if isinstance(goals_data, str):
             goals_data = [goals_data]
-
         reachable_hyp = None
         for g in goals_data:
             for line in g.splitlines():
@@ -303,55 +288,135 @@ class KoikaProver:
                         break
             if reachable_hyp:
                 break
-
         if not reachable_hyp:
-            logger.info("Skeleton proof: could not find reachable hypothesis name.")
+            logger.info("Skeleton proof: no reachable hypothesis found.")
             return None
 
-        # Step 3: induction
+        # Induction
         res = self.rocq.check(state_id, f"induction {reachable_hyp}.")
         if self._extract_error(res):
             return None
         state_id = res.get("structuredContent", {}).get("state_id", state_id)
 
-        # Step 4: base case
+        # Base case
         res = self.rocq.check(state_id, "simpl; auto; try lia; try nia.")
         if self._extract_error(res):
             return None
         state_id = res.get("structuredContent", {}).get("state_id", state_id)
 
-        # Step 5: step case – aggressive rewriting for slice_low2 invariants
-        ih_name = f"IH{reachable_hyp}"
-        step_tactic = (
-            "match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end; "
-            "simpl; "
-            "repeat (match goal with "
-            "| [ |- context[slice (?x + 4) 1 0] ] => rewrite (slice_low2 (?x + 4)) "
-            "| [ H : context[slice ?x 1 0] |- _ ] => rewrite (slice_low2 x) in H "
-            "end); "
-            "try (rewrite Nat.add_mod; rewrite (Nat.mod_same 4) by lia; "
-            "     rewrite Nat.add_0_r; assumption); "
-            "auto; try lia; try nia."
-        )
+        # Step case – inversion
+        inv_tactic = "match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end"
+        check = self.rocq.check(state_id, inv_tactic)
+        if self._extract_error(check):
+            return None
+        state_id = check.get("structuredContent", {}).get("state_id", state_id)
 
-        res = self.rocq.check(state_id, step_tactic)
-        if self._extract_error(res):
-            logger.info("Skeleton step tactic failed for '%s'.", theorem_name)
+        # Simplify
+        simpl_check = self.rocq.check(state_id, "simpl.")
+        if not self._extract_error(simpl_check):
+            state_id = simpl_check.get("structuredContent", {}).get("state_id", state_id)
+
+        # Apply extra step tactics (config‑supplied or sensible defaults)
+        applied_extra: List[str] = []
+        default_tactics = [
+            "repeat (match goal with H: ?L _ _ |- _ => try rewrite (H ?x ?y) end)",
+            "repeat (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:? end)",
+            f"try apply IH{reachable_hyp}.",
+            "repeat (match goal with "
+            "| [ |- context[slice (?x + ?k) ?h ?l] ] => rewrite (slice_low2 (?x + ?k)) "
+            "| [ H : context[slice ?x ?h ?l] |- _ ] => rewrite (slice_low2 x) in H "
+            "end); try (rewrite Nat.add_mod; rewrite (Nat.mod_same 4) by lia; "
+            "rewrite Nat.add_0_r; assumption); auto; try lia; try nia."
+        ]
+        step_tactics = self.skeleton_step_tactics if self.skeleton_step_tactics else default_tactics
+
+        for tactic in step_tactics:
+            tcheck = self.rocq.check(state_id, tactic)
+            if self._extract_error(tcheck):
+                continue
+            new_id = tcheck.get("structuredContent", {}).get("state_id")
+            if new_id is not None and new_id != state_id:
+                state_id = new_id
+                applied_extra.append(tactic)
+            if tcheck.get("structuredContent", {}).get("proof_finished", False):
+                full_tactics = ["intros.", f"induction {reachable_hyp}.", "simpl; auto; try lia; try nia.", inv_tactic, "simpl."] + applied_extra
+                proof_script = self._construct_proof_script(theorem_name, coq_file, full_tactics)
+                self._update_coq_file(coq_file, theorem_name, full_tactics)
+                logger.info("Generic skeleton proof succeeded for '%s'.", theorem_name)
+                return {"success": True, "proof_script": proof_script}
+
+        logger.info("Generic skeleton proof did not close the goal for '%s'.", theorem_name)
+        return None
+
+    def _request_skeleton_reflection(self, coq_file: Path, theorem_name: str) -> Optional[Dict[str, Any]]:
+        if not self.skeleton_reflection:
             return None
 
-        if res.get("structuredContent", {}).get("proof_finished", False):
-            applied = [
-                "intros.",
-                f"induction {reachable_hyp}.",
-                "simpl; auto; try lia; try nia.",
-                step_tactic,
-            ]
-            proof_script = self._construct_proof_script(theorem_name, coq_file, applied)
-            self._update_coq_file(coq_file, theorem_name, applied)
-            logger.info("Skeleton proof succeeded for '%s'.", theorem_name)
-            return {"success": True, "proof_script": proof_script}
+        logger.info("Attempting skeleton reflection for '%s'.", theorem_name)
+        try:
+            original_content = coq_file.read_text()
+        except Exception as e:
+            logger.error("Could not read Coq file for reflection: %s", e)
+            return None
 
-        logger.info("Skeleton proof did not close the goal for '%s'.", theorem_name)
+        thm_pattern = re.compile(
+            rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
+        )
+        match = thm_pattern.search(original_content)
+        if not match:
+            logger.error("Could not locate theorem '%s' (with Admitted) in file for reflection.")
+            return None
+
+        theorem_block = match.group(0)
+        statement = match.group(1).strip()
+        idx = original_content.find(theorem_block)
+        context = original_content[:idx].strip()
+
+        try:
+            state_id, goals = self.rocq.start_session(coq_file, theorem_name, workspace=self._workspace_for(coq_file))
+        except RocqClientError as e:
+            logger.warning("Could not start session for reflection: %s", e)
+            return None
+        if not goals:
+            return None
+
+        available_lemmas = self._find_invariant_lemmas(coq_file)
+
+        prompt = build_skeleton_reflection_prompt(
+            theorem_name=theorem_name,
+            theorem_statement=statement,
+            context=context,
+            goals=goals,
+            available_lemmas=available_lemmas,
+        )
+        logger.debug("Skeleton reflection prompt: %s", prompt)
+        try:
+            response = self.llm.generate(prompt)
+        except Exception as e:
+            logger.warning("LLM call for skeleton reflection failed: %s", e)
+            return None
+
+        proof_script = extract_proof_script(response)
+        if not proof_script.startswith("Proof."):
+            logger.warning("LLM did not return a valid proof script; response: %s", response[:200])
+            return None
+
+        new_block = theorem_block.replace("Admitted.", proof_script)
+        new_content = original_content.replace(theorem_block, new_block, 1)
+        coq_file.write_text(new_content)
+
+        workspace = self._workspace_for(coq_file)
+        if self._compile_with_coqc(coq_file, workspace):
+            verify_result = self._fallback_verify(coq_file, theorem_name)
+            if verify_result.get("success"):
+                logger.info("Skeleton reflection succeeded for '%s'.", theorem_name)
+                return {"success": True, "proof_script": proof_script}
+            else:
+                logger.warning("Skeleton reflection proof compiled but failed verification: %s", verify_result.get("error"))
+        else:
+            logger.warning("Skeleton reflection proof failed to compile.")
+
+        coq_file.write_text(original_content)
         return None
 
     def _try_interactive_proof(self, coq_file: Path, theorem_name: str,
@@ -373,21 +438,21 @@ class KoikaProver:
             self.rocq.stop()
             return None, None, None
 
-        # 1. Dynamic fallback
-        fallback_result = self._try_fallback_proof(coq_file, theorem_name, workspace)
-        if fallback_result:
-            self.rocq.stop()
-            logger.info("Dynamic fallback proved '%s'.", theorem_name)
-            return fallback_result, None, None
-
-        # 2. Skeleton proof
+        # 1. Generic skeleton
         skeleton_result = self._try_skeleton_proof(coq_file, theorem_name)
         if skeleton_result:
             self.rocq.stop()
             logger.info("Skeleton proof proved '%s'.", theorem_name)
             return skeleton_result, None, None
 
-        # 3. LLM‑driven interactive proving
+        # 2. Skeleton reflection
+        reflected = self._request_skeleton_reflection(coq_file, theorem_name)
+        if reflected:
+            self.rocq.stop()
+            logger.info("Skeleton reflection proved '%s'.", theorem_name)
+            return reflected, None, None
+
+        # 3. LLM interactive
         logger.info("Starting LLM‑driven interactive proof for '%s'.", theorem_name)
         try:
             state_id, goals = self.rocq.start_session(coq_file, theorem_name, workspace=workspace)
@@ -405,7 +470,6 @@ class KoikaProver:
 
         logger.info("Initial goals for '%s':\n%s", theorem_name, "\n".join(goals))
 
-        # Optional pre‑simplification
         if self.pre_simplify:
             try:
                 result = self.rocq.check(state_id, "simpl.")
@@ -422,12 +486,11 @@ class KoikaProver:
             except Exception:
                 pass
 
-        # Invariant mining: try to apply auto‑generated lemmas
+        # Invariant mining + collect lemma names for prompt
+        available_lemmas: List[str] = []
         if self.invariant_mining:
-            coq_content = coq_file.read_text()
-            nil_lemmas = re.findall(r"Lemma\s+(\w+_nil)\s+:", coq_content)
-            const_lemmas = re.findall(r"Lemma\s+(\w+_const)\s+:", coq_content)
-            for lemma in nil_lemmas + const_lemmas:
+            available_lemmas = self._find_invariant_lemmas(coq_file)
+            for lemma in available_lemmas:
                 try:
                     result = self.rocq.check(state_id, f"try rewrite ({lemma} _ ?Hreach).")
                     if not self._extract_error(result):
@@ -439,7 +502,7 @@ class KoikaProver:
                 except Exception:
                     continue
 
-        # LLM interaction loop
+        # LLM tactic loop
         failed_tactics: Set[str] = set()
         applied_tactics: List[str] = []
         recent_errors: List[str] = []
@@ -447,7 +510,6 @@ class KoikaProver:
         last_goals = goals
         last_errors: List[str] = []
 
-        # Dead‑end detection: map from goal hash to number of times seen
         goal_hashes_seen: Dict[int, int] = {}
         prev_state_id: Optional[str] = None
         prev_goals: Optional[List[str]] = None
@@ -456,47 +518,29 @@ class KoikaProver:
             "intros; induction 1; simpl; auto with *; try lia; try nia.",
             "intros; induction 1; simpl; auto; try lia.",
         ]
-
         reflection_tactics: List[str] = []
         non_advancing_streak = 0
         MAX_NON_ADVANCING = 10
 
         for step in range(self.max_steps):
-            # --- Quick check: if the goal is a simple slice alignment, try direct rewriting ---
-            if self._goal_is_slice_alignment(goals):
-                logger.debug("Goal looks like a slice alignment, trying direct rewrite.")
-                direct_tactic = (
-                    "rewrite slice_low2; "
-                    "try (rewrite Nat.add_mod; rewrite (Nat.mod_same 4) by lia; "
-                    "     rewrite Nat.add_0_r; assumption); auto; try lia."
-                )
-                try:
-                    check_result = self.rocq.check(state_id, direct_tactic)
-                    error = self._extract_error(check_result)
-                    if not error:
-                        data = check_result.get("structuredContent", {})
-                        if data.get("proof_finished"):
-                            applied_tactics.append(direct_tactic)
-                            proof_script = self._construct_proof_script(theorem_name, coq_file, applied_tactics)
-                            self._update_coq_file(coq_file, theorem_name, applied_tactics)
-                            self.rocq.stop()
-                            logger.info("Direct slice rewriting closed the goal.")
-                            return {"success": True, "proof_script": proof_script}, None, None
-                except Exception:
-                    pass
-
-            # Use reflection tactics if available
             if reflection_tactics:
                 candidate_tactics = reflection_tactics[:]
                 reflection_tactics.clear()
                 logger.info("Using tactics from reflection prompt.")
             else:
+                # Build prompt with configurable hints and available lemmas
                 prompt = build_interactive_step_prompt(
-                    theorem_name, goals, tactic_hints, applied_tactics, recent_errors
+                    theorem_name,
+                    goals,
+                    tactic_hints,
+                    applied_tactics,
+                    recent_errors,
+                    base_case_hint=self.base_case_hint,
+                    step_case_hint=self.step_case_hint,
+                    available_lemmas=available_lemmas if available_lemmas else None,
                 )
                 logger.debug("Step %d LLM prompt:\n%s", step + 1, prompt)
                 candidate_tactics = extract_tactics_from_response(self.llm.generate(prompt))
-                logger.debug("Step %d LLM response tactics: %s", step + 1, candidate_tactics)
 
             if not candidate_tactics:
                 logger.warning("LLM returned no tactics; using default tactics.")
@@ -510,7 +554,6 @@ class KoikaProver:
                 if tactic_normalized in failed_tactics:
                     continue
 
-                # Save current state for possible undo
                 if state_id is not None:
                     prev_state_id = state_id
                     prev_goals = goals[:] if goals else []
@@ -576,7 +619,6 @@ class KoikaProver:
                     logger.info("Interactive proof succeeded for '%s'. Script:\n%s", theorem_name, proof_script[:500])
                     return {"success": True, "proof_script": proof_script}, None, None
 
-                # --- State advancement check ---
                 if new_state_id_int is not None and new_state_id_int != current_state_id:
                     non_advancing_streak = 0
                     new_goal_hash = hash(tuple(new_goals))
@@ -614,7 +656,6 @@ class KoikaProver:
                     logger.info("Step %d/%d: tactic '%s' succeeded.", step + 1, self.max_steps, tactic[:80])
                     break
                 else:
-                    # Tactic did not change state – treat as failure and track for dead‑end
                     logger.info("Tactic '%s' did not change the proof state.", tactic[:80])
                     non_advancing_streak += 1
                     applied_tactics.append(f"FAILED: {tactic} - no state change")
@@ -639,7 +680,6 @@ class KoikaProver:
                 last_errors = recent_errors[-3:]
                 logger.info("Step %d/%d: no tactic succeeded.", step + 1, self.max_steps)
 
-                # --- Pre‑failure reflection ---
                 if consecutive_failures == max(1, self.max_consecutive_failures // 2):
                     logger.info("Triggering strategy reflection after %d consecutive failures.", consecutive_failures)
                     new_tactics = self._request_strategy_reflection(
@@ -672,24 +712,12 @@ class KoikaProver:
         logger.error("Interactive proof failed for '%s': max steps reached.", theorem_name)
         return {"success": False, "error": f"Proof failed after {self.max_steps} steps"}, last_goals, last_errors
 
-    def _goal_is_slice_alignment(self, goals: List[str]) -> bool:
-        for g in goals:
-            if "slice" in g and "1 0" in g and "0 =" in g:
-                return True
-        return False
-
-    def _request_strategy_reflection(
-        self,
-        theorem_name: str,
-        goals: List[str],
-        applied_tactics: List[str],
-    ) -> List[str]:
+    def _request_strategy_reflection(self, theorem_name: str, goals: List[str], applied_tactics: List[str]) -> List[str]:
         goals_str = "\n".join(goals)
         tactics_summary = "\n".join(
             f"{'✓' if not t.startswith('FAILED') else '✗'} {t}"
             for t in applied_tactics[-20:]
         )
-
         prompt = (
             f"You are an expert in Coq and hardware verification.\n\n"
             f"We have been trying to prove theorem `{theorem_name}` but are stuck.\n\n"
@@ -700,26 +728,18 @@ class KoikaProver:
             "You can suggest a full proof script (one tactic per line) or several alternative tactics. "
             "Return only the Coq tactics, one per line, without any extra commentary."
         )
-
         logger.debug("Reflection prompt: %s", prompt)
         try:
             response = self.llm.generate(prompt)
         except Exception as e:
             logger.warning("Reflection LLM call failed: %s", e)
             return []
-
-        tactics = extract_tactics_from_response(response)
-        return tactics
+        return extract_tactics_from_response(response)
 
     def _attempt_llm_proof_generation(self, coq_file: Path, theorem_name: str,
                                       last_goals: Optional[List[str]] = None,
                                       last_errors: Optional[List[str]] = None) -> Optional[str]:
         logger.info("LLM full‑proof generation activated for '%s'.", theorem_name)
-        return self._attempt_llm_proof_generation_fallback(coq_file, theorem_name, last_goals, last_errors)
-
-    def _attempt_llm_proof_generation_fallback(self, coq_file: Path, theorem_name: str,
-                                               last_goals: Optional[List[str]] = None,
-                                               last_errors: Optional[List[str]] = None) -> Optional[str]:
         try:
             original_content = coq_file.read_text()
         except Exception as e:
@@ -738,53 +758,16 @@ class KoikaProver:
         statement = match.group(1).strip()
         idx = original_content.find(full_block)
         context = original_content[:idx].strip()
+        available_lemmas = self._find_invariant_lemmas(coq_file)
 
-        use_flag_invariant = ("full" in statement.lower() or "empty" in statement.lower())
-
-        if use_flag_invariant:
-            prompt = (
-                "You are an expert in Coq and hardware verification.\n"
-                "Please provide a complete proof script for the theorem below.\n"
-                "The design uses Boolean flags `full` and `empty` that are updated by a `step_update_flags` rule.\n"
-                "To prove a numeric invariant about the count, you MUST first prove a helper invariant:\n\n"
-                "  Lemma flags_inv : forall s, reachable s ->\n"
-                "    full s = Nat.eqb (count s) 8 /\\ empty s = Nat.eqb (count s) 0.\n\n"
-                "Then, in the main theorem, use `induction` on the reachability hypothesis,\n"
-                "invert each step constructor, and use the helper invariant together with `lia` to close the goals.\n"
-                "The proof of the helper invariant is a straightforward induction that follows the shape of `step`.\n\n"
-                "Please output ONLY the Coq code from \"Proof.\" to \"Qed.\" (inclusive).\n"
-                "Do NOT use Admitted.\n\n"
-                f"Environment (the Coq definitions and lemmas above the theorem):\n{context}\n\n"
-                f"Theorem:\n{statement}\n\n"
-                "Proof."
-            )
-        else:
-            skeleton = (
-                "Proof.\n"
-                "  intros s inputs Hreach.\n"
-                "  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].\n"
-                "  - unfold slice; simpl; reflexivity.\n"
-                "  - inversion Hstep; subst; simpl.\n"
-                "    rewrite slice_low2.\n"
-                "    rewrite slice_low2 in IH.\n"
-                "    rewrite Nat.add_mod.\n"
-                "    rewrite (Nat.mod_same 4) by lia.\n"
-                "    rewrite Nat.add_0_r.\n"
-                "    rewrite IH.\n"
-                "    reflexivity.\n"
-                "Qed."
-            )
-
-            prompt = (
-                "You are an expert in Coq and hardware verification.\n"
-                "The following skeleton proof has been verified to compile and prove the theorem.\n"
-                "Please reproduce it exactly, adapting only the variable names if the goal uses different names.\n"
-                "The `slice_low2` lemma is available: `Lemma slice_low2 (x : nat) : slice x 1 0 = x mod 4.`\n\n"
-                f"Skeleton:\n```coq\n{skeleton}\n```\n\n"
-                f"Environment (the Coq definitions and lemmas above the theorem):\n```coq\n{context}\n```\n\n"
-                f"Theorem:\n```coq\n{statement}\n```\n\n"
-                "Return ONLY the Coq code from \"Proof.\" to \"Qed.\" (inclusive). Do NOT use Admitted."
-            )
+        prompt = (
+            "You are an expert in Coq and hardware verification.\n"
+            f"Please provide a complete proof script for the theorem `{theorem_name}`:\n"
+            f"```coq\n{statement}\n```\n\n"
+            f"Available lemmas: {', '.join(available_lemmas) if available_lemmas else 'none'}\n\n"
+            f"Environment (definitions and earlier lemmas):\n```coq\n{context}\n```\n\n"
+            "Return ONLY the Coq code from \"Proof.\" to \"Qed.\" (inclusive). Do NOT use Admitted."
+        )
 
         last_error = ""
         workspace = self._workspace_for(coq_file)
@@ -795,13 +778,8 @@ class KoikaProver:
             else:
                 final_prompt = prompt + f"\n\nThe previous attempt produced the following compilation error:\n{last_error}\nPlease fix the proof."
 
-            logger.info("LLM full‑proof attempt %d/%d for '%s'. Prompt summary: %s...",
-                        attempt + 1, self.max_repair, theorem_name, final_prompt[:200])
-            logger.debug("Full LLM prompt: %s", final_prompt)
-
+            logger.info("LLM full‑proof attempt %d/%d for '%s'.", attempt + 1, self.max_repair, theorem_name)
             response = self.llm.generate(final_prompt)
-            logger.debug("LLM response: %s", response[:500])
-
             proof_match = re.search(r"(Proof\..*?(Qed\.|Admitted\.))", response, re.DOTALL)
             if proof_match:
                 current_proof = proof_match.group(1)
@@ -819,7 +797,7 @@ class KoikaProver:
             if self._compile_with_coqc(coq_file, workspace):
                 result = self._fallback_verify(coq_file, theorem_name)
                 if result.get("success"):
-                    logger.info("LLM‑generated proof accepted for '%s'. Script: %s", theorem_name, current_proof[:200])
+                    logger.info("LLM‑generated proof accepted for '%s'.", theorem_name)
                     return current_proof
                 else:
                     last_error = result.get("error", "Verification failed")
@@ -840,7 +818,6 @@ class KoikaProver:
         new_proof = self._construct_proof_script(theorem_name, coq_file, applied_tactics)
         with open(coq_file, "r") as f:
             content = f.read()
-
         pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)(Admitted\.|Qed\.)",
             re.DOTALL,
@@ -855,42 +832,33 @@ class KoikaProver:
     def prove_theorem(self, coq_file: Path, theorem_name: str, tactic_hints: Optional[List[str]] = None) -> Dict[str, Any]:
         logger.info("Attempting proof for '%s' (file: %s)", theorem_name, coq_file)
 
-        # 0. Quick check: is the theorem already proven in the file?
         if self._theorem_already_proven(coq_file, theorem_name):
             logger.info("Theorem '%s' is already proven; returning its proof.", theorem_name)
             return {"success": True, "proof_script": self._extract_proof_from_file(coq_file, theorem_name)}
 
-        # 1. Library proof (fast path)
-        proof_script = self._apply_library_proof(coq_file, theorem_name)
-        if proof_script is not None:
-            logger.info("Proof for '%s' completed via library.", theorem_name)
-            return {"success": True, "proof_script": proof_script}
+        if self.use_proof_library:
+            proof_script = self._apply_library_proof(coq_file, theorem_name)
+            if proof_script is not None:
+                logger.info("Proof for '%s' completed via library.", theorem_name)
+                return {"success": True, "proof_script": proof_script}
+        else:
+            logger.info("Proof library disabled by configuration; skipping library check for '%s'.", theorem_name)
 
-        # 2. Interactive proof (includes fallback, skeleton, LLM loop, reflection)
-        logger.info("Starting interactive proof for '%s'.", theorem_name)
-        result, last_goals, last_errors = self._try_interactive_proof(coq_file, theorem_name, tactic_hints)
+        result, _, _ = self._try_interactive_proof(coq_file, theorem_name, tactic_hints)
         if result is not None and result.get("success"):
-            logger.info("Interactive proof finished for '%s': PASS.", theorem_name)
             return result
 
-        # 3. Fallback to rocq_verify
         result = self._fallback_verify(coq_file, theorem_name)
         if result.get("success"):
             logger.info("rocq_verify succeeded for '%s'.", theorem_name)
             return result
 
-        # 4. LLM full‑proof generation (only if theorem is still Admitted)
-        proof_script = self._attempt_llm_proof_generation(
-            coq_file, theorem_name,
-            last_goals=last_goals,
-            last_errors=last_errors,
-        )
+        proof_script = self._attempt_llm_proof_generation(coq_file, theorem_name)
         if proof_script is not None:
-            logger.info("LLM full proof succeeded for '%s'.", theorem_name)
             return {"success": True, "proof_script": proof_script}
 
         logger.error("All proof attempts exhausted for '%s'.", theorem_name)
-        return result if result is not None else {"success": False, "error": "All proof attempts exhausted"}
+        return {"success": False, "error": "All proof attempts exhausted"}
 
     def _extract_error(self, response: Dict[str, Any]) -> Optional[str]:
         def _find_error(obj):

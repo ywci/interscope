@@ -39,7 +39,7 @@ def build_acl2_proof_prompt(
     context: Optional[str] = None,
     hint_classes: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
-    previous_attempts: Optional[List[Dict[str, str]]] = None,
+    previous_attempts: Optional[List[Dict[str, str]]] = None
 ) -> str:
     """
     Build a prompt for an LLM to generate a complete ACL2 proof (defthm with hints).
@@ -68,7 +68,7 @@ def build_acl2_proof_prompt(
         f"(defthm {theorem_name}",
         f"  {theorem_statement})",
         f"```",
-        "",
+        ""
     ]
     if context_str:
         parts.append(f"Available definitions / lemmas:\n{context_str}\n")
@@ -99,7 +99,7 @@ def build_acl2_hint_prompt(
     theorem_statement: str,
     error_message: str,
     old_hints: Optional[List[str]] = None,
-    context: Optional[str] = None,
+    context: Optional[str] = None
 ) -> str:
     """
     Build a prompt specifically for generating improved :hints.
@@ -134,7 +134,7 @@ def build_acl2_reflection_prompt(
     theorem_statement: str,
     current_hints: List[str],
     last_error: str,
-    previous_attempts: Optional[List[Dict[str, str]]] = None,
+    previous_attempts: Optional[List[Dict[str, str]]] = None
 ) -> str:
     """
     Build a prompt asking the LLM for a fundamentally new proof strategy
@@ -185,7 +185,7 @@ def generate_acl2_proof(
     hint_classes: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
     previous_attempts: Optional[List[Dict[str, str]]] = None,
-    max_tokens: int = 2048,
+    max_tokens: int = 2048
 ) -> str:
     """
     Generate a complete ACL2 defthm form using an LLM.
@@ -206,7 +206,7 @@ def generate_acl2_proof(
         context=context,
         hint_classes=hint_classes,
         assumptions=assumptions,
-        previous_attempts=previous_attempts,
+        previous_attempts=previous_attempts
     )
     original_max = llm_client.max_tokens
     llm_client.max_tokens = max_tokens
@@ -223,7 +223,7 @@ def generate_acl2_hints(
     error_message: str,
     old_hints: Optional[List[str]] = None,
     context: Optional[str] = None,
-    max_tokens: int = 1024,
+    max_tokens: int = 1024
 ) -> Optional[List[str]]:
     """
     Generate improved ACL2 hints for a failed proof.
@@ -244,7 +244,7 @@ def generate_acl2_hints(
         theorem_statement=theorem_statement,
         error_message=error_message,
         old_hints=old_hints,
-        context=context,
+        context=context
     )
     original_max = llm_client.max_tokens
     llm_client.max_tokens = max_tokens

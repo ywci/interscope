@@ -4,6 +4,8 @@
 # using the selected backend (Kōika/Coq, ACL2, or model checking).
 # For model checking, RTL and assertions are generated and verified
 # with an external model checker (SymbiYosys / sby).
+# If enabled in config, automatically splits monolithic ite‑rules
+# before verification (see `split_monolithic_rules` in config.yaml).
 
 import argparse
 import sys
@@ -14,6 +16,7 @@ from typing import Dict, Any, List, Optional
 from specir.parser.parser import parse_specir
 from specir.parser.validator import validate_specir_file
 from specir.lowering.ast_to_spec import convert_ast_to_spec_module
+from specir.lowering.split_rules import split_rules
 from specir.lowering.spec_to_koika import convert as spec_to_koika_convert
 from specir.lowering.spec_to_acl2 import convert as spec_to_acl2_convert
 from specir.lowering.spec_to_assert import convert as spec_to_assert_convert
@@ -113,6 +116,14 @@ def verify_spec(args: argparse.Namespace) -> int:
     except Exception as e:
         logger.error(f"AST → SpecModule conversion failed: {e}")
         return 1
+
+    if config.get("verification", {}).get("split_monolithic_rules", False):
+        logger.info("Applying rule‑splitting pass (split_monolithic_rules = true).")
+        try:
+            spec_module = split_rules(spec_module)
+        except Exception as e:
+            logger.error(f"Rule splitting failed: {e}")
+            return 1
 
     design_name = spec_module.name
     if args.out_dir:

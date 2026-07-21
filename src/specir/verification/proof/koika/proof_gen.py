@@ -1,12 +1,14 @@
 # src/specir/verification/proof/koika/proof_gen.py
 #
 # Coq proof generation using LLM.
-# Builds prompts for one-shot proof scripts and for interactive
-# step-by-step tactic generation, and parses LLM responses to
+# Builds prompts for one‑shot proof scripts and for interactive
+# step‑by‑step tactic generation, and parses LLM responses to
 # extract proof scripts or tactic lists.
-# Also provides a skeleton-proof builder that constructs a
-# direct induction script from the goal's hypotheses – used
-# as a fast automation step before falling back to the LLM.
+#
+# All prompts are design‑agnostic.  The interactive prompt now
+# receives the actual list of available auto‑generated lemmas
+# so the LLM can use them by name.  Base‑ and step‑case hints
+# are configurable via the prover's configuration.
 
 import re
 from typing import List, Optional, Dict, Any
@@ -23,36 +25,21 @@ def build_coq_proof_prompt(
     context: Optional[str] = None,
     tactic_hints: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
-    previous_attempts: Optional[List[Dict[str, str]]] = None,
+    previous_attempts: Optional[List[Dict[str, str]]] = None
 ) -> str:
-    """
-    Build a prompt for an LLM to generate a complete Coq proof script.
-
-    Args:
-        theorem_name: Name of the theorem (e.g., "no_overflow").
-        theorem_statement: Coq statement (e.g., "forall st, reachable st -> ...").
-        context: Optional extra Coq definitions or lemmas that are available.
-        tactic_hints: Suggested tactics (e.g., ["induction", "simpl", "auto"]).
-        assumptions: List of assumptions (environment constraints) that may
-                     be used as hypotheses.
-        previous_attempts: List of dictionaries, each with keys "script" and
-                           "error", describing earlier failed proof attempts.
-
-    Returns:
-        A string prompt suitable for an LLM.
-    """
+    """Build a prompt for an LLM to generate a complete Coq proof script."""
     hints_str = ", ".join(tactic_hints) if tactic_hints else "induction, simpl, auto, rewrite, inversion"
     assumes_str = "\n".join(f"Assumption: {a}" for a in assumptions) if assumptions else ""
     context_str = context if context else ""
 
     parts = [
-        "You are an expert in Coq and the Kōika hardware verification framework.",
+        "You are an expert in Coq and hardware verification.",
         "",
         "Theorem to prove:",
         f"```coq",
         f"Theorem {theorem_name} : {theorem_statement}.",
         f"```",
-        "",
+        ""
     ]
     if context_str:
         parts.append(f"Available definitions and lemmas:\n{context_str}\n")
@@ -88,35 +75,17 @@ def generate_coq_proof(
     tactic_hints: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
     previous_attempts: Optional[List[Dict[str, str]]] = None,
-    max_tokens: int = 2048,
+    max_tokens: int = 2048
 ) -> str:
-    """
-    Generate a Coq proof script using an LLM.
-
-    Args:
-        llm_client: Configured LLM client.
-        theorem_name: Name of the theorem.
-        theorem_statement: Coq statement to prove.
-        context: Additional Coq definitions / context string.
-        tactic_hints: List of tactic names to suggest.
-        assumptions: List of assumptions to include in the prompt.
-        previous_attempts: List of previous failed attempts for repair.
-        max_tokens: Maximum tokens for the LLM response.
-
-    Returns:
-        The generated proof script as a string (may contain explanatory text
-        if the LLM doesn't follow instructions; use `extract_proof_script` to
-        obtain only the Coq code).
-    """
+    """Generate a Coq proof script using an LLM."""
     prompt = build_coq_proof_prompt(
         theorem_name=theorem_name,
         theorem_statement=theorem_statement,
         context=context,
         tactic_hints=tactic_hints,
         assumptions=assumptions,
-        previous_attempts=previous_attempts,
+        previous_attempts=previous_attempts
     )
-
     logger.debug("One‑shot proof prompt (%d chars):\n%s", len(prompt), prompt)
 
     original_max = llm_client.max_tokens
@@ -131,21 +100,7 @@ def generate_coq_proof(
 
 
 def extract_proof_script(response: str) -> str:
-    """
-    Extract the Coq proof script from an LLM response.
-
-    The function attempts to locate a block of Coq code starting with
-    `Proof.` and ending with `Qed.` or `Admitted.`.  If no such block
-    is found, the whole response is returned unchanged (the caller should
-    then inspect it manually).
-
-    Args:
-        response: The raw text returned by the LLM.
-
-    Returns:
-        The extracted proof script (including `Proof.` and `Qed.`/`Admitted.`),
-        or the original response if extraction fails.
-    """
+    """Extract a Coq proof script from an LLM response."""
     lines = response.splitlines()
     proof_lines = []
     in_proof = False
@@ -178,10 +133,12 @@ def build_interactive_step_prompt(
     tactic_hints: Optional[List[str]],
     applied_tactics: List[str],
     recent_errors: List[str],
+    base_case_hint: str = "simpl; auto with *; try lia; try nia.",
+    step_case_hint: str = "invert the step hypothesis, substitute, simpl, then try to apply the induction hypothesis or use available lemmas; finish with auto/lia/nia.",
+    available_lemmas: Optional[List[str]] = None
 ) -> str:
     """
-    Build a prompt for an LLM to suggest the next tactic in an interactive
-    Coq proof session.
+    Build a prompt for the next tactic in an interactive Coq proof.
 
     Args:
         theorem_name: Name of the theorem being proved.
@@ -189,13 +146,13 @@ def build_interactive_step_prompt(
         tactic_hints: Suggested tactic names for this theorem.
         applied_tactics: List of recently applied tactics (for context).
         recent_errors: Recent error messages from failed tactics.
-
-    Returns:
-        A prompt string to send to the LLM.
+        base_case_hint: A short description / tactic for the base case of an induction.
+        step_case_hint: A short description / tactic for the step case.
+        available_lemmas: Optional list of lemma names that are already proved and may be used.
     """
     goals_str = "\n".join(goals) if goals else "No goals"
     hints_str = ", ".join(tactic_hints) if tactic_hints else (
-        "induction, simpl, auto, lia, nia, inversion, subst, split"
+        "induction, simpl, auto, eauto, rewrite, inversion, subst, destruct, split, lia, nia"
     )
     recent_history = applied_tactics[-8:] if applied_tactics else []
     history_str = "\n".join(f"  {t}" for t in recent_history) if recent_history else "(none)"
@@ -214,13 +171,20 @@ def build_interactive_step_prompt(
             for e in recent_errors[-4:-1]:
                 error_str += f"  {e}\n"
 
-    # Extract hypotheses from the goal text (crude but helpful)
+    # Extract hypotheses from the goal text
     hyp_lines = []
     for line in goals_str.splitlines():
         line = line.strip()
         if ":" in line and not line.startswith("|-"):
             hyp_lines.append(line)
     hypotheses_str = "\n".join(hyp_lines) if hyp_lines else "No hypotheses visible"
+
+    lemmas_str = ""
+    if available_lemmas:
+        lemmas_str = (
+            f"\n**Available lemmas** (you can rewrite with them): "
+            f"{', '.join(available_lemmas)}\n"
+        )
 
     return (
         f"You are an expert in Coq and hardware verification.\n\n"
@@ -230,42 +194,29 @@ def build_interactive_step_prompt(
         f"**VISIBLE HYPOTHESES:**\n"
         f"```\n{hypotheses_str}\n```\n\n"
         f"Recently applied tactics:\n```\n{history_str}\n```\n"
-        f"{error_str}\n"
+        f"{error_str}"
+        f"{lemmas_str}"
         f"Suggested approach: {hints_str}\n\n"
         "**CRITICAL RULES:**\n"
         "- Look at the goal above. It shows ALL hypotheses and the conclusion.\n"
-        "- If a variable like 's' or 'inputs0' already appears in the hypotheses, "
+        "- If a variable already appears in the hypotheses, "
         "do NOT try to 'intros' it again.\n"
-        "- After `induction Hreach`, you will have multiple subgoals. "
-        "Each subgoal corresponds to one constructor of `reachable` and `step`.\n"
-        "- For the base case (reachable_initial): `simpl; split; lia.`\n"
-        "- For the step case: `inversion Hstep; subst; simpl` then handle each subgoal.\n"
-        "- Use the induction hypothesis `IH` (or whatever name it has).\n"
-        "- Use `apply Nat.le_0_l` to prove `0 <= x` for any x.\n"
+        "- After `induction` on the reachability hypothesis, you will have one "
+        "subgoal per constructor of `reachable` and `step`.\n"
+        f"- For the base case: `{base_case_hint}`\n"
+        f"- For the step case: `{step_case_hint}`\n"
+        "- Use the induction hypothesis (often named `IH`) when it helps.\n"
+        "- If the goal contains `if ... then ... else`, use `destruct` on the "
+        "condition to split into two subgoals.\n"
         "- Return ONLY one complete tactic ending with a dot.\n"
         "- If your previous tactic failed, you MUST try something different."
     )
 
 
 def extract_tactics_from_response(response: str) -> List[str]:
-    """
-    Parse an LLM response that should contain one or more Coq tactics.
-
-    Splits multi‑line responses and joins lines that end with a dot into
-    complete tactic strings.  Removes markdown code fences and leading
-    bullet points.
-
-    Args:
-        response: The raw text from the LLM.
-
-    Returns:
-        A list of tactic strings (each is a complete command ending with a dot).
-        The list may be empty if no valid tactics were found.
-    """
-    # Log the raw response at debug level for troubleshooting
+    """Parse an LLM response that should contain one or more Coq tactics."""
     logger.debug("Raw LLM response for tactic extraction (%d chars): %s", len(response), response)
 
-    # Remove markdown fences and backticks
     cleaned = re.sub(r'```(?:coq)?\s*', '', response)
     cleaned = re.sub(r'`', '', cleaned)
 
@@ -276,7 +227,6 @@ def extract_tactics_from_response(response: str) -> List[str]:
         stripped = line.strip()
         if not stripped:
             continue
-        # Remove leading bullet markers or numbering
         if stripped[0].isdigit() and len(stripped) > 1 and stripped[1] in ('.', ')', ':'):
             stripped = stripped[2:].strip()
         elif stripped.startswith('- '):
@@ -290,42 +240,21 @@ def extract_tactics_from_response(response: str) -> List[str]:
     if current.strip():
         logger.warning("Discarded incomplete tactic: %s", current.strip())
 
-    # Deduplicate while preserving order
     seen = set()
     unique = []
     for t in tactics:
         if t not in seen:
             seen.add(t)
             unique.append(t)
-    return unique[:10]   # limit to 10 candidates
+    return unique[:10]
 
 
 def build_skeleton_script(goals: List[str]) -> Optional[str]:
-    """
-    Try to construct a direct induction proof script from the current goal(s).
-
-    The script is designed for theorems of the form:
-
-        forall s inputs, reachable s -> <property>
-
-    It expects the goal to contain a hypothesis of type ``reachable …``.
-    If such a hypothesis is found, it builds an induction script that
-    handles both slice‑based alignment (slice ? 1 0 = 0) and modulo‑based
-    goals ( ? mod 4 = 0), using the lemmas ``slice_low2`` and arithmetic.
-
-    Args:
-        goals: List of current goal strings (usually a single goal after
-               the theorem statement is intro‑ed).
-
-    Returns:
-        A complete Coq proof script string, or **None** if the goal does not
-        match the expected pattern.
-    """
+    """Construct a static induction proof script for simple safety properties."""
     if not goals:
         return None
 
     reachable_hyp = None
-    # Search through all goal strings for a line containing "reachable"
     for g in goals:
         for line in g.splitlines():
             line = line.strip()
@@ -338,21 +267,16 @@ def build_skeleton_script(goals: List[str]) -> Optional[str]:
             break
 
     if not reachable_hyp:
-        logger.debug("Skeleton builder: no reachable hypothesis found in goals.")
         return None
 
-    # Determine whether the conclusion is a slice equality or a modulo equality
     goal_str = goals[0] if goals else ""
     is_slice_goal = "slice" in goal_str and "1 0" in goal_str and "= 0" in goal_str
     is_mod_goal = "mod 4" in goal_str and "= 0" in goal_str
 
     if not is_slice_goal and not is_mod_goal:
-        logger.debug("Skeleton builder: goal is neither a slice alignment nor a modulo alignment.")
         return None
 
-    # Build the step tactic depending on the kind of goal
     if is_slice_goal:
-        # Goal is slice (PC s) 1 0 = 0  -> rewrite slice_low2, then apply modulo helper
         step_tactic = (
             "match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end; "
             "simpl; "
@@ -365,7 +289,6 @@ def build_skeleton_script(goals: List[str]) -> Optional[str]:
             "auto; try lia; try nia."
         )
     else:
-        # Goal is modulo: (PC s) mod 4 = 0  -> use arithmetic directly
         step_tactic = (
             "match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end; "
             "simpl; "
@@ -373,8 +296,6 @@ def build_skeleton_script(goals: List[str]) -> Optional[str]:
             "rewrite Nat.add_0_r; assumption; "
             "auto; try lia; try nia."
         )
-
-    ih_name = f"IH{reachable_hyp}"
 
     script = (
         "Proof.\n"
@@ -384,22 +305,15 @@ def build_skeleton_script(goals: List[str]) -> Optional[str]:
         f"  - {step_tactic}\n"
         "Qed."
     )
-    logger.debug("Built skeleton script for reachable hypothesis '%s'.", reachable_hyp)
     return script
 
 
 def build_slice_alignment_prompt(
     theorem_name: str,
     theorem_statement: str,
-    context: str,
+    context: str
 ) -> str:
-    """
-    Build a prompt that gives the LLM a precise template for proving
-    a slice‑low‑2 alignment invariant (slice ? 1 0 = 0).
-
-    This prompt is used when the theorem is about an alignment‑safe register
-    and the proof library does not contain a matching entry.
-    """
+    """Specialised prompt for slice‑low‑2 alignment invariants (not used by generic pipeline)."""
     return (
         "You are an expert in Coq and hardware verification.\n"
         f"The theorem `{theorem_name}` states an alignment invariant:\n"
@@ -422,4 +336,35 @@ def build_slice_alignment_prompt(
         "```\n\n"
         f"Environment (the Coq definitions and lemmas above the theorem):\n```coq\n{context}\n```\n\n"
         "Return ONLY the Coq code from \"Proof.\" to \"Qed.\" (inclusive). Do NOT use Admitted."
+    )
+
+
+def build_skeleton_reflection_prompt(
+    theorem_name: str,
+    theorem_statement: str,
+    context: str,
+    goals: List[str],
+    available_lemmas: List[str]
+) -> str:
+    """Prompt for LLM‑driven generation of a tailored proof skeleton."""
+    goals_str = "\n".join(goals) if goals else "No goals"
+    lemmas_str = ", ".join(available_lemmas) if available_lemmas else "none"
+
+    return (
+        "You are an expert in Coq and hardware verification.\n\n"
+        f"We need to prove the theorem `{theorem_name}`:\n"
+        f"```coq\n{theorem_statement}\n```\n\n"
+        "The built‑in proof skeletons (induction on reachability + inversion + "
+        "rewriting) have already been tried and failed.  We need a custom proof "
+        "script that handles the specific structure of this design.\n\n"
+        f"**Current goal** (after `intros`):\n```\n{goals_str}\n```\n\n"
+        f"**Available lemmas**: {lemmas_str}\n\n"
+        f"**Environment** (the Coq code above the theorem):\n```coq\n{context}\n```\n\n"
+        "Please provide a complete Coq proof script starting with `Proof.` and ending "
+        "with `Qed.` (use `Admitted.` only if absolutely impossible).  The script should:\n"
+        "- Use induction on the reachability hypothesis if it exists.\n"
+        "- Case‑split on the step constructors with `inversion`.\n"
+        "- Make use of the available lemmas and the induction hypothesis.\n"
+        "- Handle `if` conditions by `destruct`-ing them.\n"
+        "Return **only** the Coq proof script, without any extra commentary."
     )

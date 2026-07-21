@@ -23,7 +23,7 @@ def repair_coq_proof(
     theorem_name: Optional[str] = None,
     theorem_statement: Optional[str] = None,
     rocq_client: Optional[RocqClient] = None,
-    max_attempts: int = 3,
+    max_attempts: int = 3
 ) -> Tuple[bool, str]:
     """
     Attempt to repair a Coq proof script that failed with the given error.
@@ -58,7 +58,7 @@ def repair_coq_proof(
         if not _basic_sanity(repaired):
             logger.warning(
                 "Repair attempt %d produced a script that fails basic sanity.",
-                attempt + 1,
+                attempt + 1
             )
             prompt = _update_repair_prompt(
                 prompt, repaired, "The script is missing Proof. or Qed."

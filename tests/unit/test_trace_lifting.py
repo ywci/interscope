@@ -34,11 +34,11 @@ def mock_spec_module():
     """Return a SpecModule with matching state and rules."""
     state_ops = [
         spec_ir.SpecStateOp(state_name="head", kind="register", data_type="bits<3>", initial=0),
-        spec_ir.SpecStateOp(state_name="full", kind="register", data_type="bool", initial=False),
+        spec_ir.SpecStateOp(state_name="full", kind="register", data_type="bool", initial=False)
     ]
     rule_ops = [
         spec_ir.SpecRuleOp(rule_name="enqueue", condition="(not (read full))", actions=[]),
-        spec_ir.SpecRuleOp(rule_name="dequeue", condition="(not empty)", actions=[]),
+        spec_ir.SpecRuleOp(rule_name="dequeue", condition="(not empty)", actions=[])
     ]
     inputs = [spec_ir.Interface(name="enqueue", direction="input", data_type="bool")]
     outputs = [spec_ir.Interface(name="data_out", direction="output", data_type="bits<32>")]
@@ -47,7 +47,7 @@ def mock_spec_module():
         state_ops=state_ops,
         rule_ops=rule_ops,
         inputs=inputs,
-        outputs=outputs,
+        outputs=outputs
     )
     return spec_mod
 

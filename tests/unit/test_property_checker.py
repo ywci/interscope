@@ -9,7 +9,7 @@ from specir.verification.property_checker import (
     check_property,
     check_all_properties,
     PropertyCheckResult,
-    PropertyCheckError,
+    PropertyCheckError
 )
 
 
@@ -24,7 +24,7 @@ def make_trace(*cycles):
             "state": c.get("state", {}),
             "inputs": c.get("inputs", {}),
             "outputs": c.get("outputs", {}),
-            "memories": c.get("memories", {}),
+            "memories": c.get("memories", {})
         }
         trace.append(entry)
     return trace
@@ -39,14 +39,14 @@ def make_property(name="p", kind="safety", temporal_kind="always",
         operand=operand,
         left=left,
         right=right,
-        bound=bound,
+        bound=bound
     )
     return Property(
         name=name,
         kind=kind,
         expression=expr,
         assumes=assumes or [],
-        guarantees=guarantees or [],
+        guarantees=guarantees or []
     )
 
 
@@ -55,7 +55,7 @@ class TestAlways:
         trace = make_trace(
             {"state": {"a": 1}},
             {"state": {"a": 1}},
-            {"state": {"a": 1}},
+            {"state": {"a": 1}}
         )
         prop = make_property(operand="(eq (read a) 1)")
         result = check_property(prop, trace)
@@ -65,7 +65,7 @@ class TestAlways:
     def test_fails(self):
         trace = make_trace(
             {"state": {"a": 1}},
-            {"state": {"a": 2}},   # fails here
+            {"state": {"a": 2}}
         )
         prop = make_property(operand="(eq (read a) 1)")
         result = check_property(prop, trace)
@@ -80,7 +80,7 @@ class TestEventually:
         trace = make_trace(
             {"state": {"a": 0}},
             {"state": {"a": 0}},
-            {"state": {"a": 1}},
+            {"state": {"a": 1}}
         )
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)")
@@ -90,7 +90,7 @@ class TestEventually:
     def test_fails(self):
         trace = make_trace(
             {"state": {"a": 0}},
-            {"state": {"a": 0}},
+            {"state": {"a": 0}}
         )
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)")
@@ -102,7 +102,7 @@ class TestEventually:
         trace = make_trace(
             {"state": {"a": 0}},
             {"state": {"a": 1}},   # within bound of 2
-            {"state": {"a": 0}},
+            {"state": {"a": 0}}
         )
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)", bound=2)
@@ -113,7 +113,7 @@ class TestEventually:
         trace = make_trace(
             {"state": {"a": 0}},
             {"state": {"a": 0}},
-            {"state": {"a": 1}},   # beyond bound (bound=1, checks cycles 0 and 1, fails before cycle 2)
+            {"state": {"a": 1}}   # beyond bound (bound=1, checks cycles 0 and 1, fails before cycle 2)
         )
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)", bound=1)
@@ -129,7 +129,7 @@ class TestUntil:
         trace = make_trace(
             {"state": {"a": 1}},   # left true
             {"state": {"a": 1}},   # left true
-            {"state": {"a": 0}},   # right becomes true
+            {"state": {"a": 0}}    # right becomes true
         )
         # Until: (eq a 1) until (eq a 0) -> holds because right eventually true and left holds until then
         prop = make_property(temporal_kind="until",
@@ -142,7 +142,7 @@ class TestUntil:
       trace = make_trace(
           {"state": {"a": 1}},
           {"state": {"a": 2}},   # left broken (a≠1), right still false (a≠0)
-          {"state": {"a": 3}},   # right still false
+          {"state": {"a": 3}}    # right still false
       )
       prop = make_property(temporal_kind="until",
                           left="(eq (read a) 1)",
@@ -154,7 +154,7 @@ class TestUntil:
     def test_fails_right_never(self):
         trace = make_trace(
             {"state": {"a": 1}},
-            {"state": {"a": 1}},
+            {"state": {"a": 1}}
         )
         prop = make_property(temporal_kind="until",
                              left="(eq (read a) 1)",
@@ -182,7 +182,7 @@ class TestAssumptions:
             assumes=["(eq (read rst) 0)"]
         )
         result = check_property(prop, trace)
-        assert result.holds is True      # vacuously true
+        assert result.holds is True
         assert result.vacuous is True
         assert "Assumption violated" in result.detail
 
@@ -192,7 +192,7 @@ class TestAssumptions:
             name="p",
             kind="safety",
             expression=TemporalExpr(kind="always", operand="(eq (read a) 1)"),
-            assumes=["(eq (read a) 0)"],   # false because a=2
+            assumes=["(eq (read a) 0)"]   # false because a=2
         )
         result = check_property(prop, trace)
         assert result.holds is True
@@ -204,7 +204,7 @@ class TestTemporalSubOperators:
         trace = make_trace(
             {"state": {"sig": 0}},
             {"state": {"sig": 1}},   # rose here
-            {"state": {"sig": 1}},
+            {"state": {"sig": 1}}
         )
         # Property: eventually rose(sig) should hold (at cycle 1, previous state exists)
         prop = make_property(
@@ -220,7 +220,7 @@ class TestTemporalSubOperators:
     def test_fell_in_always(self):
         trace = make_trace(
             {"state": {"sig": 1}},
-            {"state": {"sig": 0}},   # fell here
+            {"state": {"sig": 0}}    # fell here
         )
         prop = make_property(
             temporal_kind="always",
@@ -234,7 +234,7 @@ class TestTemporalSubOperators:
     def test_next_operator(self):
         trace = make_trace(
             {"state": {"a": 1}},
-            {"state": {"a": 2}},   # next value of a is 2
+            {"state": {"a": 2}}    # next value of a is 2
         )
         # Test next with eventually and bound=0 to avoid failing on missing next_state at last cycle.
         prop = make_property(
@@ -250,7 +250,7 @@ class TestTemporalSubOperators:
         trace = make_trace(
             {"state": {"a": 1}},
             {"state": {"a": 1}},
-            {"state": {"a": 2}},
+            {"state": {"a": 2}}
         )
         prop = make_property(
             temporal_kind="always",

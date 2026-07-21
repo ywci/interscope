@@ -1,13 +1,6 @@
 # tests/unit/test_acl2_prover.py
 #
 # Unit tests for the ACL2Prover class.
-# Updated to reflect:
-#   - Skeleton proof attempt (adds one defthm call before the main loop).
-#   - statement=None now falls through to _prove_existing_by_name (no NotImplementedError).
-#   - Checkpoint is now saved only once before the main loop (not inside it).
-#   - Early stop due to identical hints results in a message like "ACL2 proof failed after N attempts".
-#     The exact number of attempts may vary, so we use a flexible assertion.
-#   - A warning filter is added to ignore harmless RuntimeWarnings from mocked async components.
 
 import warnings
 warnings.simplefilter("ignore", RuntimeWarning)

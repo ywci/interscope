@@ -78,7 +78,7 @@ def test_spec_dialect_operations():
         property_ops=[prop_op],
         directive_ops=[directive_op],
         schedule_op=schedule_op,
-        proof_obligations=[{"property": "no_overflow"}],
+        proof_obligations=[{"property": "no_overflow"}]
     )
     assert spec_module.name == "fifo"
     assert spec_module.version == "0.1"

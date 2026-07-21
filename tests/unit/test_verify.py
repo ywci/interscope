@@ -18,7 +18,7 @@ from specir.cli.verify import (
     _extract_acl2_statement,
     _safe_register_evidence,
     _safe_register_mc_evidence,
-    _generate_acl2_from_module,
+    _generate_acl2_from_module
 )
 from specir.verification.proof.proof import ProofResult
 from specir.verification.proof.proof_skill import LLMProofSkill
@@ -123,7 +123,7 @@ class TestVerifyTheoremProving:
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "prop_a", "engine": "theorem_proving", "backend": "koika"},
-            {"property": "prop_b", "engine": "theorem_proving", "backend": "acl2"},
+            {"property": "prop_b", "engine": "theorem_proving", "backend": "acl2"}
         ]
         mock_conv.return_value = mod
         mock_parse.return_value = MagicMock(module=MagicMock())
@@ -243,7 +243,7 @@ class TestVerifyModelChecking:
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "simple_prop", "engine": "theorem_proving", "backend": "koika"},
-            {"property": "simple_prop", "engine": "model_checking", "backend": None},
+            {"property": "simple_prop", "engine": "model_checking", "backend": None}
         ]
         mock_conv.return_value = mod
         mock_parse.return_value = MagicMock(module=MagicMock())
@@ -286,11 +286,11 @@ class TestReport:
     def test_summary_output(self, capsys):
         results = [
             {"property": "a", "status": "passed", "detail": "", "backend": "koika"},
-            {"property": "b", "status": "failed", "detail": "error msg", "backend": "acl2"},
+            {"property": "b", "status": "failed", "detail": "error msg", "backend": "acl2"}
         ]
         args = argparse.Namespace(report=None, debug=False)
         ret = _finish_summary(results, args)
         captured = capsys.readouterr()
         assert "PASS: a (koika)" in captured.out
         assert "FAIL: b (acl2)" in captured.out
-        assert ret == 1  # all_passed=False
+        assert ret == 1

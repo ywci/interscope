@@ -58,7 +58,7 @@ def create_basic_spec_module():
         "property": "count_bound",
         "status": "unproved",
         "engine": "theorem_proving",
-        "backend": "koika",
+        "backend": "koika"
     })
 
     return spec_mod
@@ -95,7 +95,7 @@ def create_spec_with_false_operand():
         "property": "no_overflow",
         "status": "unproved",
         "engine": "theorem_proving",
-        "backend": "koika",
+        "backend": "koika"
     })
 
     return spec_mod
@@ -133,14 +133,14 @@ def create_spec_with_mixed_backends():
         "property": "prop_a",
         "status": "unproved",
         "engine": "theorem_proving",
-        "backend": "koika",
+        "backend": "koika"
     })
     # Obligation for ACL2
     spec_mod.proof_obligations.append({
         "property": "prop_b",
         "status": "unproved",
         "engine": "theorem_proving",
-        "backend": "acl2",
+        "backend": "acl2"
     })
 
     return spec_mod
@@ -262,7 +262,7 @@ def test_macron_koika_backend_accepted():
         "property": "test_prop",
         "status": "unproved",
         "engine": "theorem_proving",
-        "backend": "kōika",   # macron form
+        "backend": "kōika"
     })
 
     koika_mod = spec_to_koika.convert(spec_mod)

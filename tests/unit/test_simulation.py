@@ -48,7 +48,7 @@ class TestSimulateDesign:
             result = simulate_design(
                 spec_module=spec_mod,
                 output_dir=tmp_path,
-                cycles=10,
+                cycles=10
             )
 
             # Verify the synthesis pass was called with the SpecModule
@@ -164,7 +164,7 @@ class TestSimulateDesign:
                 spec_module=spec_mod,
                 output_dir=tmp_path,
                 cycles=10,
-                assert_lang="sva",
+                assert_lang="sva"
             )
 
             # Assertions should be generated with correct parameters
@@ -193,8 +193,7 @@ class TestSimulateDesign:
             simulate_design(
                 spec_module=spec_mod,
                 output_dir=tmp_path,
-                cycles=10,
+                cycles=10
             )
 
-            # The function should not be called
             mock_gen.assert_not_called()

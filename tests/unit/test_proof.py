@@ -23,7 +23,7 @@ class TestProofResult:
             proof_script="Proof. auto. Qed.",
             error_message="auto failed",
             auxiliary_lemmas=["lemma1"],
-            metadata={"attempts": 3},
+            metadata={"attempts": 3}
         )
         assert result.success is False
         assert result.proof_script == "Proof. auto. Qed."
@@ -35,7 +35,7 @@ class TestProofResult:
         results = [
             ProofResult(success=True),
             ProofResult(success=True),
-            ProofResult(success=True),
+            ProofResult(success=True)
         ]
         combined = ProofResult.combine(results)
         assert combined.success is True

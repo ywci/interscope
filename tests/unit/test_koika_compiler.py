@@ -13,7 +13,7 @@ from unittest.mock import patch
 from specir.backends.koika_compiler import (
     _find_compiler,
     compile_ocaml_to_verilog,
-    KoikaCompilationError,
+    KoikaCompilationError
 )
 from specir.dialects.rtl_ir import RTLModuleContainer
 
@@ -124,7 +124,7 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
             str(self.compiler_path),
             str(self.ml_path),
             "-T", "verilog",
-            "-o", str(self.output_dir),
+            "-o", str(self.output_dir)
         ]
         mock_run.assert_called_once()
         actual_cmd = mock_run.call_args[0][0]

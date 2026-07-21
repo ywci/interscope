@@ -12,15 +12,18 @@ provers:
   koika:
     enabled: true
     lemma_mining: true
+    use_proof_library: true
     prove:
       skill: "rocq-mcp"
       rocq_mcp_path: "rocq-mcp"
-      coq_tactic_hints: [ "induction", "simpl", "auto", "rewrite", "inversion", "lia", "nia" ]
+      coq_tactic_hints: [ "induction", "simpl", "auto", "eauto", "rewrite", "inversion", "subst", "destruct", "split", "lia", "nia" ]
       proof_timeout: 600
       max_consecutive_failures: 10
       max_steps: 80
       pre_simplify: true
       invariant_mining: true
+      skeleton_reflection: true
+      skeleton_step_tactics: []
   acl2:
     enabled: true
     lemma_mining: true
@@ -40,10 +43,11 @@ verification:
     cycles: 1000
     keep_build: false
     verilator_extra_args: [ "-Wno-fatal", "--assert" ]
-  simulation_cycles: 1000
   bmc_max_depth: 100
   ic3_max_steps: 1000
   formal_timeout: 300
+  split_monolithic_rules: false
+  rule_split_attribute: "split"
 
 proof:
   max_repair_attempts: 5

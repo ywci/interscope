@@ -9,7 +9,7 @@ from pathlib import Path
 
 from specir.verification.proof.proof_skill import (
     LLMProofSkill,
-    ModelCheckProver,
+    ModelCheckProver
 )
 from specir.verification.proof.proof import ProofResult
 from specir.verification.model_checker import ModelCheckError

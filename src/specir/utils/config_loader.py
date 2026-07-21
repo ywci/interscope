@@ -25,7 +25,7 @@ def _find_project_root() -> Path:
     for parent in [current] + list(current.parents):
         if (parent / "conf" / "config.yaml").exists():
             return parent
-    # Fallback to current working directory
+
     return current
 
 
@@ -78,10 +78,8 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = yaml.safe_load(f)
 
-    # Substitute environment variables
     config = _substitute_env_vars(raw_config)
 
-    # Apply defaults for optional fields (if missing)
     config.setdefault("llm", {})
     config["llm"].setdefault("temperature", 0.2)
     config["llm"].setdefault("max_tokens", 2048)
@@ -95,14 +93,21 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         config["provers"][prover].setdefault("lemma_mining", True)
         config["provers"][prover].setdefault("prove", {})
         if prover == "koika":
+            config["provers"]["koika"].setdefault("use_proof_library", True)
             prove_cfg = config["provers"]["koika"]["prove"]
             prove_cfg.setdefault("skill", "rocq-mcp")
-            prove_cfg.setdefault("coq_tactic_hints", ["induction", "simpl", "auto"])
+            prove_cfg.setdefault("coq_tactic_hints", [
+                "induction", "simpl", "auto", "eauto",
+                "rewrite", "inversion", "subst",
+                "destruct", "split", "lia", "nia"
+            ])
             prove_cfg.setdefault("proof_timeout", 600)
             prove_cfg.setdefault("max_consecutive_failures", 10)
             prove_cfg.setdefault("max_steps", 80)
             prove_cfg.setdefault("pre_simplify", True)
             prove_cfg.setdefault("invariant_mining", True)
+            prove_cfg.setdefault("skeleton_reflection", True)
+            prove_cfg.setdefault("skeleton_step_tactics", [])
         elif prover == "acl2":
             prove_cfg = config["provers"]["acl2"]["prove"]
             prove_cfg.setdefault("skill", "acl2_builtin")
@@ -117,6 +122,8 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         "ic3_max_steps": 1000,
         "simulation_cycles": 1000,
         "formal_timeout": 300,
+        "split_monolithic_rules": False,
+        "rule_split_attribute": "split"
     }
     for key, default in verification_defaults.items():
         config["verification"].setdefault(key, default)
@@ -129,7 +136,7 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         "vcd_parser": "builtin",
         "default_mapping_file": "build/rtl/mapping.json",
         "llm_lifter_enabled": True,
-        "llm_lifter_confidence_threshold": 0.7,
+        "llm_lifter_confidence_threshold": 0.7
     }
     for key, default in lifting_defaults.items():
         config["lifting"].setdefault(key, default)
@@ -148,7 +155,7 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         "traces": "build/traces",
         "logs": "build/logs",
         "temp": "build/temp",
-        "verify": "build/verify",
+        "verify": "build/verify"
     }
     for key, default in dir_defaults.items():
         config["directories"].setdefault(key, default)

@@ -1,21 +1,16 @@
 # src/specir/lowering/spec_to_koika.py
 #
 # Lowers a SpecModule to a KoikaModule with reachability-based theorems.
-# - Translates top-level `assume` directives into global Coq `Axiom` declarations.
-# - Normalizes hex, binary, and octal integer literals to decimal.
-# - Statically detects and emits trivial invariants (memory always nil, constant registers)
-#   **after** the `reachable` predicate so the lemmas compile.
-# - Detects alignment-safe registers (initialized to 0 and only ever incremented by 4)
-#   and automatically proves `slice(reg, 1, 0) = 0` using the `slice_low2` lemma.
-# - Supports sequential schedules using `let` bindings to share intermediate states.
-# - Composes multiple mem_write actions to the same memory correctly.
-# - Merges flag-update rules when present.
-# - Uses classic Coq imports (compatible with Coq 8.14) – avoids `Stdlib` prefix.
-# - Stores the original rule actions in `KoikaRuleOp` for RTL generation.
-# - Propagates interface information (inputs/outputs) to the resulting KoikaModule.
+#
+# This pass is **design‑agnostic**.  It translates every rule directly
+# into a `step` constructor, emits auto‑generated trivial invariants
+# (constant registers, empty memories), and generates placeholder
+# theorems for all Koika‑backed proof obligations.  No design‑specific
+# heuristics (flag‑update merging, alignment proofs) are applied.
+# Those optimisations are available as separate, optional pre‑passes.
 
 import re
-from typing import Dict, List, Any, Optional, Set, Tuple, Union
+from typing import Dict, List, Any, Optional, Set, Tuple
 from specir.dialects import spec_ir, koika_ir
 from specir.utils.expr import parse_sexpr, ExprError
 from specir.utils.logger import get_logger
@@ -376,7 +371,6 @@ def _build_sequential_step(
                                         state_var=current_var)
         state_expr = _mk_state_expr(registers, memories, updates, current_var)
 
-        # Preserve the original rule actions
         rule_ops.append(koika_ir.KoikaRuleOp(
             rule_name=rule.rule_name,
             condition=cond_str,
@@ -404,46 +398,6 @@ def _build_sequential_step(
     return constructor, rule_ops
 
 
-def _detect_alignment_safe_registers(
-    spec_module: spec_ir.SpecModule,
-    registers: List[spec_ir.SpecStateOp],
-    written_regs: Set[str]
-) -> Set[str]:
-    """Return the set of register names that are safe for alignment proofs."""
-    safe: Set[str] = set()
-    write_exprs_map: Dict[str, List[Any]] = {reg.state_name: [] for reg in registers}
-    for rule in spec_module.rule_ops:
-        for action in rule.actions:
-            try:
-                parsed = parse_sexpr(action)
-            except ExprError:
-                continue
-            if isinstance(parsed, list) and len(parsed) >= 3 and parsed[0] == 'write':
-                field = parsed[1]
-                if isinstance(field, str) and field in write_exprs_map:
-                    write_exprs_map[field].append(parsed[2])
-
-    for reg in registers:
-        name = reg.state_name
-        if name not in written_regs:
-            safe.add(name)
-            continue
-        exprs = write_exprs_map[name]
-        if not exprs:
-            continue
-        all_add4 = True
-        for e in exprs:
-            if not (isinstance(e, list) and len(e) == 3 and e[0] == 'add'
-                    and isinstance(e[1], list) and len(e[1]) == 2
-                    and e[1][0] == 'read' and e[1][1] == name
-                    and e[2] == 4):
-                all_add4 = False
-                break
-        if all_add4:
-            safe.add(name)
-    return safe
-
-
 def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
     """Convert a SpecModule to a KoikaModule with reachability‑based theorems."""
 
@@ -452,7 +406,6 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
     memories = [s for s in state_ops if s.kind == "memory"]
     state_names = [s.state_name for s in registers]
     memory_names = [s.state_name for s in memories]
-    input_names = [i.name for i in spec_module.inputs]
 
     state_types: Dict[str, str] = {}
     for s in state_ops:
@@ -462,17 +415,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
     for inp in spec_module.inputs:
         input_types[inp.name] = _get_coq_type(inp.data_type)
 
-    # Flag‑update rule detection
-    flag_rule_actions: Optional[List[str]] = None
-    other_rules: List[spec_ir.SpecRuleOp] = []
-    for rule in spec_module.rule_ops:
-        if rule.rule_name == "update_flags":
-            flag_rule_actions = rule.actions
-            logger.info("Detected 'update_flags' rule; its actions will be merged into other rules.")
-        else:
-            other_rules.append(rule)
-
-    # Global assumptions
+    # Global assumptions from assume directives
     global_assumptions: List[str] = []
     for directive in spec_module.directive_ops:
         if directive.kind == "assume":
@@ -485,7 +428,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
             except ExprError as e:
                 logger.warning(f"Could not translate assume directive '{directive.directive_name}': {e}")
 
-    # Trivial invariant generation
+    # Trivial invariant generation (constant registers, empty memories)
     written_regs: Set[str] = set()
     for rule in spec_module.rule_ops:
         for action in rule.actions:
@@ -524,13 +467,11 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
             f"Qed."
         )
 
-    alignment_safe = _detect_alignment_safe_registers(spec_module, registers, written_regs)
-    logger.info("Alignment‑safe registers: %s", sorted(alignment_safe))
-
     # Schedule handling
     schedule = spec_module.schedule_op
     sequential_mode = schedule is not None and schedule.kind == "sequential" and schedule.rule_order
 
+    # Build Coq definitions
     state_defs: List[str] = []
     state_defs.append("Require Import Init.Datatypes.")
     state_defs.append("Require Import Arith.PeanoNat.")
@@ -541,6 +482,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
     state_defs.append("Import ListNotations.")
     state_defs.append("")
 
+    # Generic helper definitions (slice, slice_low2, add4_mod4 kept as useful)
     state_defs.append("(* Helper: extract bits from a natural number *)")
     state_defs.append("Definition slice (x : nat) (high : nat) (low : nat) : nat :=")
     state_defs.append("  let width := (high - low + 1) in")
@@ -617,7 +559,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
         ordered_rule_names = schedule.rule_order
         ordered_rules = []
         for name in ordered_rule_names:
-            rule = next((r for r in other_rules if r.rule_name == name), None)
+            rule = next((r for r in spec_module.rule_ops if r.rule_name == name), None)
             if rule is None:
                 logger.warning(f"Rule '{name}' in schedule not found; skipping.")
                 continue
@@ -631,7 +573,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
             step_ctors.append(ctor_str)
             rule_ops.extend(ops)
     else:
-        for rule in other_rules:
+        for rule in spec_module.rule_ops:
             cond_str = "True"
             if rule.condition:
                 try:
@@ -641,13 +583,6 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
                     logger.warning(f"Rule '{rule.rule_name}' condition parse error: {e}. Using 'True'.")
 
             updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s")
-
-            if flag_rule_actions is not None and "count" in state_names:
-                new_count_expr = updates.get("count", "(count s)")
-                updates["full"] = f"(Nat.eqb {new_count_expr} 8)"
-                updates["empty"] = f"(Nat.eqb {new_count_expr} 0)"
-                logger.debug(f"Rule '{rule.rule_name}': merged flag updates.")
-
             new_state = _mk_state_expr(registers, memories, updates, "s")
 
             ctor_name = f"step_{rule.rule_name}"
@@ -678,7 +613,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
     state_defs.append("    reachable s -> step s inputs s' -> reachable s'.")
     state_defs.append("")
 
-    # Trivial invariants after reachable
+    # Emit trivial invariants after reachable (they depend on it)
     if trivial_invariants:
         state_defs.append("(* Auto‑generated trivial invariants *)")
         for inv in trivial_invariants:
@@ -686,13 +621,13 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
         state_defs.append("")
 
     theorem_ops: List[koika_ir.KoikaTheoremOp] = []
-    emitted_helper_lemmas: Set[str] = set()
 
     for po in spec_module.proof_obligations:
         prop_name = po.get("property") if isinstance(po, dict) else getattr(po, "property", None)
         if not prop_name:
             continue
 
+        # Only process Koika‑backed obligations
         backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "")
         backend = backend_raw.lower() if backend_raw else ""
         backend_normalised = backend.replace("ō", "o")
@@ -736,46 +671,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
         theorem_stmt = f"forall (s : state) (inputs : inputs), reachable s -> {full_operand}"
         theorem_name = f"{prop_name}_proved"
 
-        reg_name = None
-        if isinstance(operand_parsed, list) and len(operand_parsed) == 3 \
-                and operand_parsed[0] == 'eq' \
-                and isinstance(operand_parsed[1], list) and len(operand_parsed[1]) == 4 \
-                and operand_parsed[1][0] == 'slice' \
-                and isinstance(operand_parsed[1][1], list) and len(operand_parsed[1][1]) == 2 \
-                and operand_parsed[1][1][0] == 'read' \
-                and isinstance(operand_parsed[1][1][1], str) \
-                and operand_parsed[1][2] == 1 and operand_parsed[1][3] == 0 \
-                and operand_parsed[2] == 0:
-            reg_name = operand_parsed[1][1][1]
-
-        if reg_name and reg_name in alignment_safe:
-            lemma_name = f"{reg_name}_mod4_0"
-            if lemma_name not in emitted_helper_lemmas:
-                emitted_helper_lemmas.add(lemma_name)
-                state_defs.append(
-                    f"Lemma {lemma_name} : forall s, reachable s -> {reg_name} s mod 4 = 0.\n"
-                    f"Proof.\n"
-                    f"  induction 1 as [| s' s'' inputs' Hreach IH Hstep].\n"
-                    f"  - reflexivity.\n"
-                    f"  - inversion Hstep; subst.\n"
-                    f"    match goal with\n"
-                    f"    | [ |- context[{reg_name} (mkState ?a ?b ?c ?d ?e ?f)] ] =>\n"
-                    f"      change ({reg_name} (mkState a b c d e f)) with a\n"
-                    f"    end.\n"
-                    f"    rewrite add4_mod4.\n"
-                    f"    exact IH.\n"
-                    f"Qed.\n"
-                )
-            state_defs.append(f"Theorem {theorem_name} : {theorem_stmt}.")
-            state_defs.append("Proof.")
-            state_defs.append(f"  intros s inputs Hreach; rewrite slice_low2.")
-            state_defs.append(f"  apply {lemma_name}; exact Hreach.")
-            state_defs.append("Qed.")
-            state_defs.append("")
-            logger.info(f"Auto‑proved theorem {theorem_name} using {lemma_name}.")
-            continue
-
-        # Default placeholder theorem
+        # Placeholder theorem – will be proven by the interactive prover or library
         state_defs.append(f"Theorem {theorem_name} : {theorem_stmt}.")
         state_defs.append("Proof. (* placeholder – not yet proven; use specir verify to attempt proof *) Admitted.")
         state_defs.append("")
@@ -784,7 +680,7 @@ def convert(spec_module: spec_ir.SpecModule) -> koika_ir.KoikaModule:
     full_coq = _normalize_int_literals("\n".join(state_defs))
     state_defs = full_coq.splitlines()
 
-    logger.info("Generated Coq content:\n" + "\n".join(state_defs))
+    logger.debug("Generated Coq content:\n" + "\n".join(state_defs))
 
     koika_module = koika_ir.KoikaModule(
         name=spec_module.name,

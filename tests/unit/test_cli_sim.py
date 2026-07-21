@@ -37,7 +37,7 @@ class TestArgumentParser:
             "--cycles", "500",
             "--verilator-path", "/usr/local/bin/verilator",
             "--koika-path", "/usr/local/bin/koika",
-            "--debug",
+            "--debug"
         ])
         assert args.out_dir == "/tmp/build"
         assert args.cycles == 500
@@ -50,7 +50,7 @@ class TestArgumentParser:
         args = parser.parse_args([
             "input.specir",
             "-o", "/tmp/build",
-            "-c", "200",
+            "-c", "200"
         ])
         assert args.out_dir == "/tmp/build"
         assert args.cycles == 200

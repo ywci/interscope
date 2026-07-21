@@ -11,7 +11,7 @@ from specir.backends.llm_client import LLMClient
 from specir.backends.acl2_client import ACL2Client, ACL2ClientError
 from specir.verification.proof.acl2.proof_gen import (
     build_acl2_hint_prompt,
-    parse_hints_from_response,
+    parse_hints_from_response
 )
 from specir.utils.logger import get_logger
 
@@ -26,7 +26,7 @@ def repair_acl2_hints(
     acl2_client: ACL2Client,
     previous_hints: Optional[List[str]] = None,
     context: Optional[str] = None,
-    max_attempts: int = 3,
+    max_attempts: int = 3
 ) -> Tuple[bool, str, Optional[List[str]]]:
     """
     Repair the hints for a failed ACL2 theorem.
@@ -81,7 +81,7 @@ def repair_acl2_defun(
     llm_client: LLMClient,
     acl2_client: ACL2Client,
     guard: Optional[str] = None,
-    max_attempts: int = 2,
+    max_attempts: int = 2
 ) -> Tuple[bool, str]:
     """
     Repair a failed ACL2 function definition (defun).
@@ -123,14 +123,14 @@ def _build_hint_repair_prompt(
     statement: str,
     error_message: str,
     previous_hints: Optional[List[str]],
-    context: Optional[str],
+    context: Optional[str]
 ) -> str:
     """Build an LLM prompt to repair ACL2 hints (delegates to shared builder)."""
     return build_acl2_hint_prompt(
         theorem_statement=statement,
         error_message=error_message,
         old_hints=previous_hints,
-        context=context,
+        context=context
     )
 
 
@@ -139,7 +139,7 @@ def _build_defun_repair_prompt(
     args: List[str],
     body: str,
     guard: Optional[str],
-    error_message: str,
+    error_message: str
 ) -> str:
     """Build a prompt to repair an ACL2 function body."""
     args_str = " ".join(args)
@@ -158,7 +158,7 @@ def _build_defun_repair_prompt(
 def _append_failure_to_prompt(
     prompt: str,
     tried_hints: Optional[List[str]],
-    new_error: str,
+    new_error: str
 ) -> str:
     """Extend the prompt with information about a failed attempt."""
     hints_str = _format_hints(tried_hints) if tried_hints else "none"

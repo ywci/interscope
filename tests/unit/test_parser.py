@@ -12,7 +12,7 @@ from specir.parser.parser import parse_specir, SpecIRParseError
 from specir.parser.ast import (
     SpecIR, Module, Clock, Reset, State, Rule, Property, TemporalExpr,
     Interface, Parameter, ComponentInstance, Directive, Fairness,
-    ProofObligation, Metadata, Evidence, EvidenceRef,
+    ProofObligation, Metadata, Evidence, EvidenceRef
 )
 
 

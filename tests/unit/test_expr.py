@@ -10,7 +10,7 @@ from specir.utils.expr import (
     eval_expr,
     type_check_expr,
     expr_to_string,
-    ExprError,
+    ExprError
 )
 
 
@@ -41,7 +41,6 @@ class TestParseSexpr:
         assert parse_sexpr("(and (not a) b)") == ["and", ["not", "a"], "b"]
 
     def test_already_list(self):
-        # Should return a copy, not the same object
         original = ["add", 1, 2]
         result = parse_sexpr(original)
         assert result == original
@@ -83,7 +82,7 @@ class TestEvalExpr:
         assert eval_expr("(mul 3 7)", {}) == 21
 
     def test_div(self):
-        assert eval_expr("(div 10 3)", {}) == 3   # integer truncation toward zero
+        assert eval_expr("(div 10 3)", {}) == 3
         assert eval_expr("(div -10 3)", {}) == -3
 
     def test_mod(self):
@@ -170,7 +169,6 @@ class TestEvalExpr:
         memories = {"mem": {0: 10, 1: 20}}
         assert eval_expr("(mem_read mem 0)", {}, memories=memories) == 10
         assert eval_expr("(mem_read mem 1)", {}, memories=memories) == 20
-        # Missing address defaults to 0
         assert eval_expr("(mem_read mem 99)", {}, memories=memories) == 0
 
     def test_mem_read_unknown_memory(self):
@@ -307,7 +305,6 @@ class TestTypeCheckExpr:
             type_check_expr("(and x y)", self.context)
 
     def test_comparison(self):
-        # eq/neq produce bool regardless of operand types
         assert type_check_expr("(eq x y)", self.context) == "bool"
         assert type_check_expr("(neq a b)", self.context) == "bool"
         assert type_check_expr("(le x y)", self.context) == "bool"
@@ -325,7 +322,6 @@ class TestTypeCheckExpr:
             type_check_expr("(ite a x b)", self.context)
 
     def test_read(self):
-        # read of a variable in context returns its type
         assert type_check_expr("(read x)", self.context) == "int"
 
     def test_read_unknown(self):
@@ -339,6 +335,5 @@ class TestTypeCheckExpr:
         assert type_check_expr("(mem_read mem addr)", {}) == "bits"
 
     def test_temporal_operators(self):
-        # temporal operators propagate the type of their operand
         assert type_check_expr("(next (read x))", self.context) == "int"
         assert type_check_expr("(rose (read a))", self.context) == "bool"

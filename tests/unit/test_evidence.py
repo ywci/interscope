@@ -18,11 +18,11 @@ from specir.evidence.annotator import (
     annotate_rule,
     annotate_property,
     annotate_component,
-    annotate_proof_obligation,
+    annotate_proof_obligation
 )
 from specir.parser.ast import (
     Module, State, Rule, Property, ProofObligation,
-    Evidence, EvidenceRef, ComponentInstance,
+    Evidence, EvidenceRef, ComponentInstance
 )
 from specir.cli.verify import _safe_register_mc_evidence, _safe_register_evidence
 from specir.verification.proof.proof import ProofResult
@@ -48,7 +48,7 @@ class TestRegistry:
             ref_value="file://proofs/test.v",
             engine="theorem_proving",
             status="proved",
-            property_name="test_prop",
+            property_name="test_prop"
         )
         assert ev_id is not None
         entry = registry.get_evidence(ev_id)
@@ -117,7 +117,7 @@ class TestAnnotator:
             ref_value="file://x",
             engine="koika",
             status="proved",
-            property_name="p",
+            property_name="p"
         )
         assert ev.type == "coq_theorem"
         assert ev.ref.type == "uri"
@@ -141,7 +141,7 @@ class TestAnnotator:
         ev = Evidence(
             type="inductive_invariant",
             ref=EvidenceRef(type="local_id", value="inv_x"),
-            engine="IC3",
+            engine="IC3"
         )
         annotate_state(st, ev)
         assert st.evidence is not None
@@ -152,7 +152,7 @@ class TestAnnotator:
         ev = Evidence(
             type="coq_theorem",
             ref=EvidenceRef(type="uri", value="file://proof.v"),
-            engine="koika",
+            engine="koika"
         )
         annotate_rule(r, ev)
         assert r.evidence.value == "file://proof.v"
@@ -162,7 +162,7 @@ class TestAnnotator:
         ev = Evidence(
             type="counterexample_trace",
             ref=EvidenceRef(type="uri", value="file://ce.vcd"),
-            engine="BMC",
+            engine="BMC"
         )
         annotate_property(p, ev, property_name="prop1")
         assert len(p.evidence) == 1
@@ -173,7 +173,7 @@ class TestAnnotator:
         ev = Evidence(
             type="simulation_trace",
             ref=EvidenceRef(type="uri", value="file://trace.vcd"),
-            engine="sim",
+            engine="sim"
         )
         annotate_component(comp, ev)
         assert comp.evidence.value == "file://trace.vcd"
@@ -183,7 +183,7 @@ class TestAnnotator:
         ev = Evidence(
             type="coq_theorem",
             ref=EvidenceRef(type="uri", value="file://proof.v"),
-            engine="koika",
+            engine="koika"
         )
         annotate_proof_obligation(po, ev)
         assert po.artifact["type"] == "coq_theorem"
@@ -238,7 +238,6 @@ class TestModelCheckingEvidence:
         assert entries[0]["type"] == "counterexample_trace"
         assert entries[0]["status"] == "counterexample"
         assert entries[0]["ref_type"] == "local_id"
-        # Now ref_value contains the property name
         assert "mc_fail_no_trace" in entries[0]["ref_value"]
 
 
@@ -256,7 +255,6 @@ class TestTheoremProvingEvidence:
         assert len(entries) == 1
         assert entries[0]["type"] == "coq_theorem"
         assert entries[0]["status"] == "proved"
-        # When a proof script exists, the ref is a file URI
         assert "file://Proof. trivial. Qed." in entries[0]["ref_value"]
 
     @patch("specir.evidence.registry.get_config")

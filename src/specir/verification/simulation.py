@@ -3,12 +3,15 @@
 # Simulation runner that uses the patched Verilog from koika_to_rtl.
 # Optionally generates assertions (SVA, VHDL PSL, Verilog OVL) alongside the RTL.
 # Resolves parameterized types before generating the testbench.
+# If enabled in config, automatically splits monolithic ite‑rules
+# before synthesis (see `split_monolithic_rules` in config.yaml).
 
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from specir.dialects import spec_ir
 from specir.lowering import koika_to_rtl
+from specir.lowering.split_rules import split_rules
 from specir.lowering.spec_to_assert import convert as spec_to_assert_convert
 from specir.lowering.assert_to_sva import convert as assert_to_sva_convert
 from specir.lowering.assert_to_vhdl import convert as assert_to_vhdl_convert
@@ -58,7 +61,7 @@ def _generate_input_testbench(
     cycles: int,
     params: Dict[str, int],
     rst_active: int = 0,
-    rst_inactive: int = 1,
+    rst_inactive: int = 1
 ) -> Path:
     """Generate a Verilator testbench that drives the given input signals."""
     tb_path = output_dir / "sim_main.cpp"
@@ -124,7 +127,7 @@ int main(int argc, char** argv) {{
 def _generate_assertions(
     spec_module: spec_ir.SpecModule,
     assert_lang: str,
-    output_dir: Path,
+    output_dir: Path
 ) -> Optional[Path]:
     """
     Generate assertions for the design in the requested language.
@@ -139,7 +142,7 @@ def _generate_assertions(
     lang_map = {
         "sva": (assert_to_sva_convert, ".sv"),
         "vhdl": (assert_to_vhdl_convert, ".vhd"),
-        "verilog_ovl": (assert_to_verilog_ovl_convert, ".v"),
+        "verilog_ovl": (assert_to_verilog_ovl_convert, ".v")
     }
     if assert_lang not in lang_map:
         logger.warning("Unsupported assertion language: %s", assert_lang)
@@ -167,7 +170,7 @@ def simulate_design(
     config: Optional[Dict[str, Any]] = None,
     verilator_path: Optional[str] = None,
     koika_path: Optional[str] = None,
-    assert_lang: Optional[str] = None,   # <-- new optional parameter
+    assert_lang: Optional[str] = None
 ) -> Path:
     """
     Simulate a design from a SpecModule, producing a VCD trace.
@@ -188,6 +191,10 @@ def simulate_design(
         config = get_config()
     if koika_path is None:
         koika_path = config.get("verification", {}).get("koika_path")
+
+    if config.get("verification", {}).get("split_monolithic_rules", False):
+        logger.info("Applying rule‑splitting pass (split_monolithic_rules = true).")
+        spec_module = split_rules(spec_module)
 
     design_name = spec_module.name
 
@@ -232,7 +239,7 @@ def simulate_design(
             top_module=design_name,
             output_path=tb_path,
             vcd_filename="sim.vcd",
-            cycles=cycles,
+            cycles=cycles
         )
 
     # 4. Run Verilator
@@ -247,7 +254,7 @@ def simulate_design(
             vcd_path=vcd_file,
             cycles=cycles,
             verilator_path=verilator_path or config.get("verification", {}).get("verilator_path"),
-            testbench_path=tb_path,
+            testbench_path=tb_path
         )
     except Exception as e:
         raise SimulationError(f"Verilator simulation failed: {e}") from e

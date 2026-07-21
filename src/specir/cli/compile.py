@@ -5,6 +5,8 @@
 # Uses the canonical AST-to-SpecIR conversion and the consolidated
 # synthesis pass (koika_to_rtl) for RTL generation.
 # Optionally runs Verilator simulation after RTL generation.
+# If enabled in config, automatically splits monolithic ite‑rules
+# before lowering (see `split_monolithic_rules` in config.yaml).
 
 import argparse
 import sys
@@ -14,6 +16,7 @@ from typing import Optional, Dict
 from specir.parser.parser import parse_specir
 from specir.parser.validator import validate_specir_file
 from specir.lowering.ast_to_spec import convert_ast_to_spec_module
+from specir.lowering.split_rules import split_rules
 from specir.utils.logger import setup_logging, get_logger
 from specir.utils.config_loader import load_config, get_project_root
 
@@ -91,6 +94,14 @@ def compile_spec(args: argparse.Namespace) -> int:
     except Exception as e:
         logger.error(f"AST → SpecModule conversion failed: {e}")
         return 1
+
+    if config.get("verification", {}).get("split_monolithic_rules", False):
+        logger.info("Applying rule‑splitting pass (split_monolithic_rules = true).")
+        try:
+            spec_module = split_rules(spec_module)
+        except Exception as e:
+            logger.error(f"Rule splitting failed: {e}")
+            return 1
 
     design_name = spec_module.name
     if args.out_dir:
