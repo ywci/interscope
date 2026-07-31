@@ -6,7 +6,6 @@
 
 import re
 from typing import Dict, List, Optional, Set, Union
-
 from specir.dialects import assert_ir
 from specir.utils.expr import parse_sexpr, ExprError
 from specir.utils.logger import get_logger

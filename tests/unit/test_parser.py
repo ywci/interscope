@@ -7,7 +7,6 @@ import pytest
 import yaml
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-
 from specir.parser.parser import parse_specir, SpecIRParseError
 from specir.parser.ast import (
     SpecIR, Module, Clock, Reset, State, Rule, Property, TemporalExpr,
@@ -186,7 +185,6 @@ def test_module_not_dict():
 
 
 def test_invalid_yaml_syntax():
-    # Write a file with invalid YAML
     path = Path("/tmp/invalid.specir")
     path.write_text("specir_version: 0.1\nmodule: [unclosed list\n")
     with pytest.raises(SpecIRParseError, match="YAML parsing error"):
@@ -195,7 +193,6 @@ def test_invalid_yaml_syntax():
 
 
 def test_missing_required_field_in_module():
-    # Missing 'clocks' (parser does not enforce, only validator does)
     data = {
         "specir_version": "0.1",
         "module": {
@@ -206,9 +203,8 @@ def test_missing_required_field_in_module():
         }
     }
     path = write_temp_specir(data)
-    # Parser does not validate schema, so it should not crash
     spec = parse_specir(path)
-    assert spec.module.clocks == []   # default empty list
+    assert spec.module.clocks == []
     path.unlink()
 
 

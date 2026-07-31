@@ -10,9 +10,10 @@ import time
 import re
 import subprocess
 import shutil
+import tempfile
+import concurrent.futures
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Set
-
+from typing import List, Dict, Any, Optional, Tuple, Set, Union, Callable
 from specir.backends.rocq_client import RocqClient, RocqClientError
 from specir.backends.llm_client import LLMClient, get_llm_client_from_config
 from specir.utils.logger import get_logger
@@ -22,7 +23,8 @@ from specir.verification.proof.koika.proof_gen import (
     build_interactive_step_prompt,
     extract_tactics_from_response,
     build_skeleton_reflection_prompt,
-    extract_proof_script
+    extract_proof_script,
+    generate_coq_proof_variants,
 )
 
 logger = get_logger(__name__)
@@ -39,6 +41,14 @@ class KoikaProver:
     5. LLM‑driven interactive tactic loop
     6. rocq_verify fallback
     7. LLM full‑proof generation with repair
+
+    PERF integration:
+    - evaluate_proof_script(): Evaluates a candidate proof script in isolation.
+    - evaluate_proof_scripts_parallel(): Batch evaluation for PERF beam.
+    - PERF statistics are collected and can be retrieved.
+    - prove_with_skeleton_only(): Attempts only the skeleton and skeleton‑reflection
+      proofs, returning early if successful.  Before attempting the skeleton,
+      the Coq file is compiled to ensure the environment is ready.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -75,6 +85,19 @@ class KoikaProver:
         self.use_proof_library = config.get("provers", {}).get("koika", {}).get(
             "use_proof_library", True
         )
+
+        # PERF statistics
+        self._perf_stats = {
+            "total_nodes": 0,
+            "total_verifier_calls": 0,
+            "max_depth": 0,
+            "beam_size": 0,
+            "pruned_by_pareto": 0,
+            "total_tokens": {"prompt": 0, "completion": 0},
+        }
+
+        # Rocq client instance (lazily initialized)
+        self._rocq: Optional[RocqClient] = None
 
     @staticmethod
     def _workspace_for(coq_file: Path) -> Path:
@@ -257,21 +280,22 @@ class KoikaProver:
         """Generic induction + inversion skeleton, config‑extensible step tactics."""
         logger.info("Attempting generic skeleton proof for '%s'.", theorem_name)
         workspace = self._workspace_for(coq_file)
+        rocq = self._get_rocq_client(workspace)
         try:
-            state_id, goals = self.rocq.start_session(coq_file, theorem_name, workspace=workspace)
+            state_id, goals = rocq.start_session(coq_file, theorem_name, workspace=workspace)
         except RocqClientError:
             return None
         if not goals:
             return None
 
         # Intro
-        res = self.rocq.check(state_id, "intros.")
+        res = rocq.check(state_id, "intros.")
         if self._extract_error(res):
             return None
         state_id = res.get("structuredContent", {}).get("state_id", state_id)
 
         # Locate reachable hypothesis
-        idtac_res = self.rocq.check(state_id, "idtac.")
+        idtac_res = rocq.check(state_id, "idtac.")
         if self._extract_error(idtac_res):
             return None
         goals_data = idtac_res.get("structuredContent", {}).get("goals", [])
@@ -293,26 +317,26 @@ class KoikaProver:
             return None
 
         # Induction
-        res = self.rocq.check(state_id, f"induction {reachable_hyp}.")
+        res = rocq.check(state_id, f"induction {reachable_hyp}.")
         if self._extract_error(res):
             return None
         state_id = res.get("structuredContent", {}).get("state_id", state_id)
 
         # Base case
-        res = self.rocq.check(state_id, "simpl; auto; try lia; try nia.")
+        res = rocq.check(state_id, "simpl; auto; try lia; try nia.")
         if self._extract_error(res):
             return None
         state_id = res.get("structuredContent", {}).get("state_id", state_id)
 
         # Step case – inversion
         inv_tactic = "match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end"
-        check = self.rocq.check(state_id, inv_tactic)
+        check = rocq.check(state_id, inv_tactic)
         if self._extract_error(check):
             return None
         state_id = check.get("structuredContent", {}).get("state_id", state_id)
 
         # Simplify
-        simpl_check = self.rocq.check(state_id, "simpl.")
+        simpl_check = rocq.check(state_id, "simpl.")
         if not self._extract_error(simpl_check):
             state_id = simpl_check.get("structuredContent", {}).get("state_id", state_id)
 
@@ -331,7 +355,7 @@ class KoikaProver:
         step_tactics = self.skeleton_step_tactics if self.skeleton_step_tactics else default_tactics
 
         for tactic in step_tactics:
-            tcheck = self.rocq.check(state_id, tactic)
+            tcheck = rocq.check(state_id, tactic)
             if self._extract_error(tcheck):
                 continue
             new_id = tcheck.get("structuredContent", {}).get("state_id")
@@ -372,8 +396,10 @@ class KoikaProver:
         idx = original_content.find(theorem_block)
         context = original_content[:idx].strip()
 
+        workspace = self._workspace_for(coq_file)
+        rocq = self._get_rocq_client(workspace)
         try:
-            state_id, goals = self.rocq.start_session(coq_file, theorem_name, workspace=self._workspace_for(coq_file))
+            state_id, goals = rocq.start_session(coq_file, theorem_name, workspace=workspace)
         except RocqClientError as e:
             logger.warning("Could not start session for reflection: %s", e)
             return None
@@ -425,54 +451,41 @@ class KoikaProver:
         workspace = self._workspace_for(coq_file)
         self._ensure_project_file(workspace)
 
-        rocq = RocqClient(
-            rocq_mcp_path=self.rocq_path,
-            timeout=self.proof_timeout,
-            cwd=workspace,
-            server_args=["--workspace", str(workspace)],
-        )
-        rocq.start()
-        self.rocq = rocq
+        rocq = self._get_rocq_client(workspace)
 
         if not self._compile_with_rocq_fallback(rocq, coq_file, workspace):
-            self.rocq.stop()
             return None, None, None
 
         # 1. Generic skeleton
         skeleton_result = self._try_skeleton_proof(coq_file, theorem_name)
         if skeleton_result:
-            self.rocq.stop()
             logger.info("Skeleton proof proved '%s'.", theorem_name)
             return skeleton_result, None, None
 
         # 2. Skeleton reflection
         reflected = self._request_skeleton_reflection(coq_file, theorem_name)
         if reflected:
-            self.rocq.stop()
             logger.info("Skeleton reflection proved '%s'.", theorem_name)
             return reflected, None, None
 
         # 3. LLM interactive
         logger.info("Starting LLM‑driven interactive proof for '%s'.", theorem_name)
         try:
-            state_id, goals = self.rocq.start_session(coq_file, theorem_name, workspace=workspace)
+            state_id, goals = rocq.start_session(coq_file, theorem_name, workspace=workspace)
         except RocqClientError as e:
             if "invalid path" in str(e).lower() or "scanning" in str(e).lower():
                 logger.warning("Workspace error; falling back to rocq_verify.")
-                self.rocq.stop()
                 return None, None, None
-            self.rocq.stop()
             return {"success": False, "error": f"Failed to start session: {e}"}, None, None
 
         if not goals:
-            self.rocq.stop()
             return {"success": False, "error": "No goals found."}, None, None
 
         logger.info("Initial goals for '%s':\n%s", theorem_name, "\n".join(goals))
 
         if self.pre_simplify:
             try:
-                result = self.rocq.check(state_id, "simpl.")
+                result = rocq.check(state_id, "simpl.")
                 if not result.get("isError") and not self._extract_error(result):
                     data = result.get("structuredContent", {})
                     new_sid = data.get("state_id")
@@ -492,7 +505,7 @@ class KoikaProver:
             available_lemmas = self._find_invariant_lemmas(coq_file)
             for lemma in available_lemmas:
                 try:
-                    result = self.rocq.check(state_id, f"try rewrite ({lemma} _ ?Hreach).")
+                    result = rocq.check(state_id, f"try rewrite ({lemma} _ ?Hreach).")
                     if not self._extract_error(result):
                         data = result.get("structuredContent", {})
                         new_sid = data.get("state_id")
@@ -560,7 +573,7 @@ class KoikaProver:
 
                 logger.debug("Attempting tactic: '%s'", tactic)
                 try:
-                    check_result = self.rocq.check(state_id, tactic)
+                    check_result = rocq.check(state_id, tactic)
                 except RocqClientError as e:
                     error_msg = str(e)
                     applied_tactics.append(f"FAILED: {tactic} - {error_msg[:100]}")
@@ -615,7 +628,6 @@ class KoikaProver:
                     applied_tactics.append(tactic)
                     proof_script = self._construct_proof_script(theorem_name, coq_file, applied_tactics)
                     self._update_coq_file(coq_file, theorem_name, applied_tactics)
-                    self.rocq.stop()
                     logger.info("Interactive proof succeeded for '%s'. Script:\n%s", theorem_name, proof_script[:500])
                     return {"success": True, "proof_script": proof_script}, None, None
 
@@ -630,7 +642,7 @@ class KoikaProver:
                         )
                         if prev_state_id is not None:
                             try:
-                                undo_res = self.rocq.check(state_id, "Undo.")
+                                undo_res = rocq.check(state_id, "Undo.")
                                 if not self._extract_error(undo_res):
                                     state_id = prev_state_id
                                     goals = prev_goals[:] if prev_goals else goals
@@ -696,7 +708,6 @@ class KoikaProver:
 
                 if consecutive_failures >= self.max_consecutive_failures:
                     last_error = recent_errors[-1] if recent_errors else "No specific error"
-                    self.rocq.stop()
                     logger.error("Interactive proof failed for '%s': too many consecutive tactic failures.", theorem_name)
                     return {
                         "success": False,
@@ -704,11 +715,9 @@ class KoikaProver:
                     }, last_goals, last_errors
 
                 if non_advancing_streak >= MAX_NON_ADVANCING:
-                    self.rocq.stop()
                     logger.error("Interactive proof failed for '%s': too many non‑advancing steps.", theorem_name)
                     return {"success": False, "error": "Too many non‑advancing steps"}, last_goals, last_errors
 
-        self.rocq.stop()
         logger.error("Interactive proof failed for '%s': max steps reached.", theorem_name)
         return {"success": False, "error": f"Proof failed after {self.max_steps} steps"}, last_goals, last_errors
 
@@ -913,9 +922,257 @@ class KoikaProver:
             return response.get("message", "Command failed without detailed error")
         return None
 
+    def evaluate_proof_script(
+        self,
+        coq_file: Path,
+        theorem_name: str,
+        proof_script: str,
+        workspace: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        """
+        Evaluate a candidate proof script for PERF without modifying the main state.
+
+        The proof script is injected into a temporary copy of the Coq file,
+        compiled, and verified. Returns detailed results including subgoal counts.
+
+        Args:
+            coq_file: Path to the original Coq file.
+            theorem_name: Name of the theorem to prove.
+            proof_script: The candidate proof script (from Proof. to Qed.).
+            workspace: Optional workspace directory (defaults to coq_file parent).
+
+        Returns:
+            Dict with:
+                success: bool
+                error: Optional[str]
+                goals_remaining: Optional[int]
+                proof_finished: bool
+                compiled: bool
+                verified: bool
+        """
+        self._perf_stats["total_verifier_calls"] += 1
+
+        if workspace is None:
+            workspace = self._workspace_for(coq_file)
+
+        # Read original content
+        try:
+            original_content = coq_file.read_text()
+        except Exception as e:
+            return {"success": False, "error": f"Could not read Coq file: {e}", "proof_finished": False}
+
+        # Locate the theorem placeholder
+        thm_pattern = re.compile(
+            rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
+        )
+        match = thm_pattern.search(original_content)
+        if not match:
+            return {"success": False, "error": f"Theorem '{theorem_name}' not found in file", "proof_finished": False}
+
+        full_block = match.group(0)
+
+        # Replace Admitted. with the candidate proof
+        new_block = full_block.replace("Admitted.", proof_script)
+        new_content = original_content.replace(full_block, new_block, 1)
+
+        # Write to a temporary file
+        fd, tmp_path = tempfile.mkstemp(suffix=".v", prefix="perf_eval_")
+        os.close(fd)
+        tmp_file = Path(tmp_path)
+        try:
+            tmp_file.write_text(new_content)
+
+            # Compile with coqc
+            compiled = self._compile_with_coqc(tmp_file, workspace)
+            if not compiled:
+                error = self._capture_coqc_error(tmp_file, workspace)
+                return {
+                    "success": False,
+                    "error": f"Compilation failed: {error}",
+                    "proof_finished": False,
+                    "compiled": False,
+                    "verified": False,
+                }
+
+            # Verify with rocq_verify
+            verify_result = self._fallback_verify(tmp_file, theorem_name)
+            if verify_result.get("success"):
+                # Check if theorem is closed
+                content = tmp_file.read_text()
+                if self._theorem_is_closed(content, theorem_name):
+                    return {
+                        "success": True,
+                        "proof_finished": True,
+                        "goals_remaining": 0,
+                        "compiled": True,
+                        "verified": True,
+                        "proof_script": proof_script,
+                    }
+                else:
+                    # Try to extract remaining goals
+                    goals_remaining = self._extract_goals_from_file(tmp_file, theorem_name)
+                    return {
+                        "success": False,
+                        "error": "Theorem not closed after verification",
+                        "proof_finished": False,
+                        "goals_remaining": goals_remaining,
+                        "compiled": True,
+                        "verified": True,
+                    }
+            else:
+                # Extract remaining goals from error
+                error_msg = verify_result.get("error", "Verification failed")
+                goals_remaining = self._extract_goals_from_error(error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "proof_finished": False,
+                    "goals_remaining": goals_remaining,
+                    "compiled": True,
+                    "verified": False,
+                }
+
+        except Exception as e:
+            return {"success": False, "error": f"Evaluation error: {e}", "proof_finished": False}
+        finally:
+            # Clean up temporary file
+            if tmp_file.exists():
+                try:
+                    tmp_file.unlink()
+                except OSError:
+                    pass
+
+    def _extract_goals_from_file(self, coq_file: Path, theorem_name: str) -> Optional[int]:
+        """Try to extract remaining subgoals from a Coq file (if possible)."""
+        return None
+
+    def _extract_goals_from_error(self, error_msg: str) -> Optional[int]:
+        """Extract remaining subgoals from an error message."""
+        goal_match = re.search(r'remaining\s+(\d+)\s+subgoals?', error_msg, re.IGNORECASE)
+        if goal_match:
+            return int(goal_match.group(1))
+        subgoal_match = re.search(r'subgoal\s+(\d+)', error_msg, re.IGNORECASE)
+        if subgoal_match:
+            return int(subgoal_match.group(1))
+        return None
+
+    def evaluate_proof_scripts_parallel(
+        self,
+        coq_file: Path,
+        theorem_name: str,
+        scripts: List[str],
+        max_workers: int = 4,
+    ) -> List[Dict[str, Any]]:
+        """
+        Evaluate multiple proof scripts in parallel for PERF.
+
+        Args:
+            coq_file: Path to the original Coq file.
+            theorem_name: Name of the theorem to prove.
+            scripts: List of candidate proof scripts.
+            max_workers: Maximum number of parallel workers.
+
+        Returns:
+            List of results (same order as scripts), each result is a dict
+            from evaluate_proof_script.
+        """
+        if not scripts:
+            return []
+
+        if len(scripts) == 1:
+            return [self.evaluate_proof_script(coq_file, theorem_name, scripts[0])]
+
+        results = [None] * len(scripts)
+
+        def eval_script(idx: int, script: str) -> Tuple[int, Dict[str, Any]]:
+            return idx, self.evaluate_proof_script(coq_file, theorem_name, script)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(eval_script, i, script): i
+                for i, script in enumerate(scripts)
+            }
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    _, result = future.result()
+                    results[idx] = result
+                except Exception as e:
+                    results[idx] = {"success": False, "error": f"Worker exception: {e}", "proof_finished": False}
+
+        return results
+
+    def _get_rocq_client(self, workspace: Path) -> RocqClient:
+        """Get or create a RocqClient instance, ensuring an absolute workspace."""
+        # Resolve to absolute path to avoid "invalid path" errors
+        abs_workspace = workspace.resolve()
+        if self._rocq is None:
+            self._rocq = RocqClient(
+                rocq_mcp_path=self.rocq_path,
+                timeout=self.proof_timeout,
+                cwd=abs_workspace,
+                server_args=["--workspace", str(abs_workspace)]
+            )
+            self._rocq.start()
+        return self._rocq
+
+    def prove_with_skeleton_only(self, coq_file: Path, theorem_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Attempt only the built‑in skeleton and skeleton‑reflection proofs.
+        Returns a success dict if proven, else None.
+
+        This is used as a fast pre‑check before launching the full PERF
+        beam search.  The Coq file is compiled first to ensure the
+        environment is ready for interactive sessions.
+        """
+        workspace = self._workspace_for(coq_file)
+        self._ensure_project_file(workspace)
+
+        # ---- COMPILE THE FILE FIRST ----
+        # The skeleton proof requires a compiled environment so that
+        # rocq_start can find the required definitions.
+        if not self._compile_with_coqc(coq_file, workspace):
+            # Fallback to rocq compilation (less likely to succeed)
+            rocq = self._get_rocq_client(workspace)
+            if not self._compile_with_rocq_fallback(rocq, coq_file, workspace):
+                logger.error("Skeleton proof skipped: could not compile Coq file.")
+                return None
+
+        # Now try the generic skeleton
+        result = self._try_skeleton_proof(coq_file, theorem_name)
+        if result and result.get("success"):
+            return result
+
+        # Try skeleton reflection (LLM‑tailored), if enabled
+        if self.skeleton_reflection:
+            result = self._request_skeleton_reflection(coq_file, theorem_name)
+            if result and result.get("success"):
+                return result
+
+        return None
+
+    def get_perf_stats(self) -> Dict[str, Any]:
+        """Return the PERF statistics collected so far."""
+        return self._perf_stats.copy()
+
+    def reset_perf_stats(self) -> None:
+        """Reset PERF statistics."""
+        self._perf_stats = {
+            "total_nodes": 0,
+            "total_verifier_calls": 0,
+            "max_depth": 0,
+            "beam_size": 0,
+            "pruned_by_pareto": 0,
+            "total_tokens": {"prompt": 0, "completion": 0},
+        }
+
     def close(self):
-        if hasattr(self, 'rocq') and self.rocq is not None:
-            try:
-                self.rocq.stop()
-            except Exception:
-                pass
+        if self._rocq:
+            self._rocq.stop()
+            self._rocq = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

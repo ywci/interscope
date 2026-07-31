@@ -7,7 +7,6 @@
 
 from typing import Optional, Union, Any
 from pathlib import Path
-
 from specir.parser.ast import (
     SpecIR, Module, State, Rule, Property, ProofObligation,
     Evidence, EvidenceRef, ComponentInstance, Directive

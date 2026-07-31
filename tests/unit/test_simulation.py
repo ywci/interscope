@@ -8,7 +8,6 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
 from specir.dialects import spec_ir
 from specir.verification.simulation import simulate_design, SimulationError
 
@@ -32,12 +31,10 @@ class TestSimulateDesign:
         vcd_path = tmp_path / "traces" / "test.vcd"
         vcd_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Create a dummy RTL file so the existence check passes
         rtl_file = tmp_path / "rtl" / "test.v"
         rtl_file.parent.mkdir(parents=True, exist_ok=True)
         rtl_file.write_text("// dummy")
 
-        # Mock the synthesis pass and the Verilator simulation
         with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
              patch("specir.verification.simulation.verilator_sim.simulate") as mock_sim:
 
@@ -51,7 +48,6 @@ class TestSimulateDesign:
                 cycles=10
             )
 
-            # Verify the synthesis pass was called with the SpecModule
             mock_rtl.assert_called_once()
             mock_sim.assert_called_once()
             assert result == vcd_path
@@ -167,9 +163,7 @@ class TestSimulateDesign:
                 assert_lang="sva"
             )
 
-            # Assertions should be generated with correct parameters
             mock_gen.assert_called_once_with(spec_mod, "sva", tmp_path)
-            # Simulation should still succeed
             assert result == vcd_path
 
     def test_assertion_generation_not_called_by_default(self, tmp_path):

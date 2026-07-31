@@ -7,7 +7,6 @@
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
-
 from specir.parser.ast import Property, TemporalExpr
 from specir.utils.expr import eval_expr, ExprError
 from specir.utils.logger import get_logger

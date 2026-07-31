@@ -9,12 +9,13 @@
 SpecIR is a **structured intermediate representation** bridging natural‑language hardware design specifications and multiple verification engines (simulation, model checking, interactive theorem proving). It provides:
 
 - A **human‑readable and machine‑processable** syntax (YAML 1.2).
-- **Multi‑dialect MLIR‑inspired layering** for gradual lowering.
+- **Multi‑dialect layering** inspired by MLIR, implemented through internal dialects.
 - Formal semantics for core constructs (states, rules, properties, directives).
 - A **unified `assert` dialect** that lowers to SVA, VHDL PSL, or Verilog OVL.
 - **Dual proof backends**: Kōika (Coq‑based, rule‑level reasoning) and ACL2 (first‑order, rewrite‑based reasoning).
 - A **`trace` dialect** to capture simulation results (e.g., from Verilator) and **lift** them back to abstract SpecIR events.
 - Built‑in support for **proof obligations, evidence binding, hierarchical design, and LLM‑driven iterative refinement**.
+- **PERF (Proof tree Exploration with Reflective Feedback)** – a test‑time proof search engine that uses beam‑search, Pareto‑optimal pruning, and LLM reflection to tackle hard proof obligations, with explicit integration of model‑checking counterexamples.
 
 ---
 
@@ -116,7 +117,7 @@ Expr ::= <literal>
        | (mem_write <memory_name> <address> <data>)
 ```
 
-**Operators**: `and`, `or`, `not`, `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `add`, `sub`, `mul`, `div`, `mod`, `concat`, `slice(high,low)`.
+**Operators**: `and`, `or`, `not`, `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `add`, `sub`, `mul`, `div`, `mod`, `concat`, `(slice high low)`.
 
 > **Note**: Temporal operators (`next`, `prev`, `rose`, `fell`, `stable`) are **only allowed within property expressions** (see Section 3.7) and not inside rule conditions/actions.
 
@@ -136,11 +137,13 @@ Implementations may choose to normalise large hexadecimal literals (e.g., `0xFFF
     - (write <state> <Expr>)
     - (mem_write <memory> <addr> <data>)
   priority: <int>                           # optional, higher = earlier
-  attributes: [atomic, speculative, commutative]
+  attributes: [atomic, speculative, commutative, split]
   evidence: <EvidenceRef>
 ```
 
 **Semantics**: A rule fires in a cycle iff its `condition` evaluates to true under the current state. Its `action` updates state variables atomically; concurrent rule firing follows the `schedule` (default: all enabled rules fire in parallel if no conflicts).
+
+The **`split` attribute** indicates that the rule should be automatically decomposed into one rule per branch of its top‑level `ite` chain (via the `split_rules` pre‑lowering pass). This simplifies induction proofs for opcode‑style designs where a single rule uses a deeply nested `ite` to select among many operations.
 
 ### 3.7 Property Definition (Temporal)
 
@@ -259,6 +262,30 @@ A **first‑class** link between a property and its verification artifacts, supp
 
 When `backend: kōika`, the lowering pass (`spec → kōika`) generates a Coq theorem and a proof skeleton. When `backend: acl2`, it generates an ACL2 `defthm` and supporting `defun-sk` or `defchoose` forms.
 
+**PERF (Proof tree Exploration with Reflective Feedback)** can be enabled globally or per‑obligation.  
+When PERF is active, the proof search is guided by a tree‑based beam search with multi‑dimensional scoring.  
+Per‑obligation overrides are placed in `metadata.perf`:
+
+```yaml
+- property: <property_name>
+  …
+  metadata:
+    # … (existing fields) …
+    perf:
+      beam_size: 5               # number of proof strategies to keep per depth (B)
+      branches_per_node: 4       # divergent repair attempts per failed proof (N)
+      depth_limit: 3             # maximum refinement iterations (L)
+      dimensions:                # Pareto dimensions for scoring
+        - subgoal_reduction
+        - trace_alignment
+        - syntactic_purity
+      primary_dimension: "subgoal_reduction"
+      generation_temperature: 0.4
+      trace_alignment_weight: 0.6
+```
+
+All PERF settings are optional; missing values fall back to the global configuration.
+
 ### 3.13 Evidence Reference Format
 
 ```yaml
@@ -279,9 +306,9 @@ metadata:
 
 ---
 
-## 4. MLIR Dialect Layering
+## 4. Dialect‑Based Layering
 
-SpecIR lowering uses **six MLIR dialects**. The `proof` dialect has been **removed** – all proof obligations are lowered directly to the Kōika or ACL2 backends.
+SpecIR lowering uses **six internal dialects**, each modelled on the MLIR concept of operations and lowering passes. The `proof` dialect has been **removed** – all proof obligations are lowered directly to the Kōika or ACL2 backends.
 
 | Dialect | Purpose | Example Ops |
 |---------|---------|--------------|
@@ -313,7 +340,7 @@ Each lowering pass must preserve the semantics defined in Section 5. Lifting is 
 
 ---
 
-## 5. Formal Semantics (Summary)
+## 5. Formal Semantics
 
 A full denotational semantics is out of scope here, but we define the core interpretation:
 
@@ -400,6 +427,24 @@ property:
   resolution: "user" | "verification"
 ```
 
+### 7.4 PERF: Proof tree Exploration with Reflective Feedback
+
+PERF is a **test‑time proof search** engine that extends the linear repair loop with a **tree‑based beam search**.  
+When a proof attempt fails, PERF:
+
+1. Generates **multiple divergent repair attempts** from the failing script (using the LLM).  
+2. **Verifies each attempt** in parallel (with optional tool‑grounding).  
+3. **Scores candidates** using a **Pareto‑optimal front** across multiple dimensions (e.g., subgoal reduction, trace alignment, syntactic purity).  
+4. **Selects a beam** of the best candidates and repeats the process.
+
+PERF is particularly effective when:
+
+- The proof is hard and requires exploring several alternative strategies.
+- A **counterexample trace** from model checking is available – PERF uses it to guide the search (`trace_alignment` dimension).
+- You want to reduce the number of manual repair iterations.
+
+PERF is controlled through the configuration file, environment variables, and per‑obligation metadata (Section 3.12).  It is fully integrated with the Kōika/Coq backend and can be invoked via the CLI.
+
 ---
 
 ## 8. Mapping from SpecIR to Kōika Dialect
@@ -425,8 +470,6 @@ The following table defines the **canonical lowering** from SpecIR constructs to
 | `struct` type | Coq `Record` or tuple | Flattened into register file entries as needed. |
 | `component` instantiation | Not natively supported; inline or use Coq module system | May require flattening or separate compilation. |
 | `fairness` constraint | Encoded as a separate Coq assumption in liveness proofs | `WeakFairness (eventually granted)`. |
-
-> **Optimisation**: If a rule named `update_flags` is detected, its actions are merged into other rule constructors to ensure that flag registers are always up‑to‑date, simplifying invariant proofs.
 
 ---
 
@@ -634,108 +677,11 @@ When mapping information is incomplete (e.g., combinational logic not annotated)
 
 The LLM’s output is marked as `_candidate` with a confidence score, and the user can accept or reject it.
 
----
-
-## 12. Complete Example: FIFO with Proof Obligations and Simulation Lifting
-
-### 12.1 SpecIR Source (fifo.specir)
-
-```yaml
-specir_version: "0.1"
-module:
-  name: fifo
-  clocks: [{ name: clk, edge: posedge }]
-  resets: [{ name: rst, polarity: active_high, async: false, affects: all }]
-  inputs:
-    - { name: data_in, direction: input, type: "bits<32>" }
-    - { name: enqueue, direction: input, type: "bool" }
-    - { name: dequeue, direction: input, type: "bool" }
-  outputs:
-    - { name: data_out, direction: output, type: "bits<32>" }
-    - { name: full, direction: output, type: "bool" }
-    - { name: empty, direction: output, type: "bool" }
-  state:
-    - { name: mem, kind: memory, type: { type: "memory", elem: "bits<32>", depth: 8 } }
-    - { name: head, kind: register, type: "bits<3>", initial: 0 }
-    - { name: tail, kind: register, type: "bits<3>", initial: 0 }
-    - { name: full, kind: register, type: "bool", initial: false }
-  rules:
-    - name: do_enqueue
-      condition: (and enqueue (not (read full)))
-      action:
-        - (mem_write mem head data_in)
-        - (write head (add (read head) 1))
-        - (write full (eq (add (read head) 1) (read tail)))
-    - name: do_dequeue
-      condition: (and dequeue (not (eq (read head) (read tail))))
-      action:
-        - (write data_out (mem_read mem tail))
-        - (write tail (add (read tail) 1))
-        - (write full false)
-  directives:
-    - { type: assume, name: no_simultaneous_enq_deq, expression: (not (and enqueue dequeue)) }
-    - { type: cover, name: full_state_reached, expression: (read full) }
-  properties:
-    - name: no_overflow
-      kind: safety
-      expression: { kind: always, operand: (implies (read full) (not enqueue)) }
-    - name: no_underflow
-      kind: safety
-      expression: { kind: always, operand: (implies (eq (read head) (read tail)) (not dequeue)) }
-  proof_obligations:
-    - property: no_overflow
-      engine: theorem_proving
-      backend: kōika
-      artifact: { type: coq_theorem, ref: "file://proofs/fifo_proofs.v#no_overflow" }
-      metadata: { coq_tactic: "induction head; simpl; auto." }
-```
-
-### 12.2 Lifted Trace After Simulation (fifo_trace.yaml)
-
-```yaml
-trace:
-  cycles:
-    - cycle: 0
-      state: { head: 0, tail: 0, full: false }
-      fired_rules: [do_enqueue]
-      inputs: { enqueue: true, data_in: 0xabcd }
-    - cycle: 1
-      state: { head: 1, tail: 0, full: false }
-      fired_rules: []
-      inputs: { enqueue: false, dequeue: false }
-    - cycle: 2
-      state: { head: 1, tail: 0, full: false }
-      fired_rules: [do_dequeue]
-      inputs: { dequeue: true }
-      outputs: { data_out: 0xabcd }
-    - cycle: 3
-      state: { head: 1, tail: 1, full: false }
-      fired_rules: []
-      inputs: { enqueue: false, dequeue: false }
-```
-
-This trace can be used to verify that `no_overflow` and `no_underflow` hold, and that the cover `full_state_reached` is eventually hit.
+PERF’s `trace_alignment` dimension uses lifted counterexample traces to score proof scripts that explicitly address the failing scenario, closing the loop between bounded model checking and theorem proving.
 
 ---
 
-## 13. Implementation Roadmap
-
-| Phase | Deliverable |
-|-------|--------------|
-| 1 | YAML schema + validator; reference parser in Python. |
-| 2 | Formal semantics document + Coq embedding of core subset. |
-| 3 | Lowering passes: `spec → kōika`, `spec → acl2`, `spec → assert` (unified). |
-| 4 | `assert → sva`, `assert → vhdl_psl`, `assert → verilog_ovl` backends. |
-| 5 | Kōika compiler with mapping annotation (`kōika → rtl + mapping`). |
-| 6 | Trace dialect definition and `vcd → trace` converter. |
-| 7 | Lifting pass `trace → spec` using mapping and (optionally) LLM inference. |
-| 8 | Integration with Verilator: scripted workflow. |
-| 9 | Evidence registry and traceability database. |
-| 10 | LLM feedback loop (confidence, repair history). |
-
----
-
-## 14. References
+## 12. References
 
 - MLIR documentation on dialects and lowering.
 - Kōika: A Rule‑Based Hardware Design Language in Coq.

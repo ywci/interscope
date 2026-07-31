@@ -6,7 +6,6 @@
 
 import re
 from typing import List, Optional, Tuple
-
 from specir.backends.llm_client import LLMClient
 from specir.backends.acl2_client import ACL2Client, ACL2ClientError
 from specir.verification.proof.acl2.proof_gen import (

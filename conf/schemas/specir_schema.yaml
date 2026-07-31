@@ -128,7 +128,6 @@ properties:
             expression: { type: [ string, array ] }
             clock: { type: string }
             severity: { enum: [ error, warning ] }
-          # severity only meaningful for assert
           if:
             properties:
               type:
@@ -139,7 +138,7 @@ properties:
               severity: { enum: [ error, warning ] }
           else:
             properties:
-              severity: false # disallow severity for assume/cover
+              severity: false
       properties:
         type: array
         items:
@@ -225,7 +224,6 @@ properties:
                   iteration: { type: integer }
                   error: { type: string }
                   resolution: { type: string }
-          # if engine is theorem_proving, backend must be present
           if:
             properties:
               engine:

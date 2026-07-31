@@ -8,7 +8,6 @@ import argparse
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
 from specir.cli.sim import _setup_arg_parser, sim_spec
 from specir.verification.simulation import SimulationError
 

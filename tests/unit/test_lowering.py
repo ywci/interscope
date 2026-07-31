@@ -17,7 +17,6 @@ def create_test_spec_module():
     clocks = [{"name": "clk", "edge": "posedge"}]
     resets = [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}]
 
-    # Directives (one of each type)
     directives = [
         spec_ir.SpecDirectiveOp(
             directive_name="no_simultaneous",
@@ -36,8 +35,6 @@ def create_test_spec_module():
         ),
     ]
 
-    # A simple boolean property (no implication) so it becomes an AssertAlwaysOp,
-    # not a temporal property that would be rejected by OVL.
     prop_op = spec_ir.SpecPropertyOp(
         prop_name="no_overflow",
         kind="safety",
@@ -66,23 +63,18 @@ def test_spec_to_assert_basic():
     assert assert_mod.reset is not None
     assert "rst" in assert_mod.reset.reset_condition
 
-    # Assumptions (from directive)
     assert len(assert_mod.assumptions) == 1
     assume = assert_mod.assumptions[0]
     assert assume.condition == "(not (and enqueue dequeue))"
 
-    # Always checks: two entries – the assert directive, and the simple boolean property
     assert len(assert_mod.always_checks) == 2
     always_conditions = [a.condition for a in assert_mod.always_checks]
-    # The directive expression
+
     assert any("(implies (read full) (not enqueue))" in c for c in always_conditions)
-    # The property expression
     assert any("(not (and (read full) enqueue))" in c for c in always_conditions)
 
-    # Properties: empty because the property was a simple boolean (routed to always_checks)
     assert len(assert_mod.properties) == 0
 
-    # Covers
     assert len(assert_mod.covers) == 1
     cover = assert_mod.covers[0]
     assert cover.condition == "(read full)"
@@ -114,12 +106,9 @@ def test_assert_to_sva_basic():
     assert_mod = spec_to_assert.convert(spec_mod)
     sva_code = assert_to_sva.convert(assert_mod)
 
-    # The SVA backend now uses the module name directly (no extra suffix)
     assert "module fifo_assertions" in sva_code
     assert "assert" in sva_code
-    # Assumptions become assertions with a comment
     assert "assume" in sva_code or "// assume" in sva_code
-    # Cover becomes assertion with a comment
     assert "cover" in sva_code or "// cover" in sva_code
 
 
@@ -135,7 +124,6 @@ def test_assert_to_sva_with_eventually():
     spec_mod.directive_ops = []
     assert_mod = spec_to_assert.convert(spec_mod)
     sva_code = assert_to_sva.convert(assert_mod)
-    # The eventually property is skipped; the generated module has no assertions
     assert "s_eventually" not in sva_code
     assert "endmodule" in sva_code
 
@@ -145,7 +133,6 @@ def test_assert_to_vhdl_basic():
     assert_mod = spec_to_assert.convert(spec_mod)
     vhdl_code = assert_to_vhdl.convert(assert_mod)
 
-    # The VHDL backend now uses the module name directly (no extra suffix)
     assert "package fifo_assertions" in vhdl_code
     assert "assume always" in vhdl_code
     assert "assert always" in vhdl_code
@@ -156,10 +143,8 @@ def test_assert_to_vhdl_basic():
 def test_assert_to_ovl_basic():
     spec_mod = create_test_spec_module()
     assert_mod = spec_to_assert.convert(spec_mod)
-    # Should succeed because there are no temporal properties (only always_checks)
     ovl_code = assert_to_verilog_ovl.convert(assert_mod)
 
-    # The OVL backend now uses the module name directly (no extra suffix)
     assert "module fifo_assertions" in ovl_code
     assert "ovl_assert_always" in ovl_code
     assert "ovl_cover" in ovl_code
@@ -167,7 +152,6 @@ def test_assert_to_ovl_basic():
 
 
 def test_assert_to_ovl_unsupported_property():
-    # Create an assert module with a temporal property (eventually) – should raise
     spec_mod = spec_ir.SpecModule(name="test", clocks=[], resets=[])
     prop_op = spec_ir.SpecPropertyOp(
         prop_name="eventual_grant",

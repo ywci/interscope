@@ -41,7 +41,6 @@ def test_clock():
 
 
 def test_reset():
-    # Field renamed from async_ to async_reset to avoid Python keyword clash
     reset = Reset(name="rst", polarity="active_high", async_reset=False, affects="all")
     assert reset.name == "rst"
     assert reset.polarity == "active_high"

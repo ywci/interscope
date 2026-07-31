@@ -13,7 +13,6 @@ def create_basic_spec_module():
     """Create a simple SpecModule with a counter and a memory."""
     spec_mod = spec_ir.SpecModule(name="counter")
 
-    # State: 8-bit counter and a memory
     spec_mod.state_ops.append(
         spec_ir.SpecStateOp(state_name="count", kind="register", data_type="bits<8>", initial=0)
     )
@@ -25,10 +24,8 @@ def create_basic_spec_module():
         )
     )
 
-    # Input: data_in
     spec_mod.inputs = [spec_ir.Interface(name="data_in", direction="input", data_type="bits<8>")]
 
-    # Rule 1: increment counter when count < 255
     rule1 = spec_ir.SpecRuleOp(
         rule_name="inc",
         condition="(lt (read count) 255)",
@@ -36,7 +33,6 @@ def create_basic_spec_module():
     )
     spec_mod.rule_ops.append(rule1)
 
-    # Rule 2: write to memory (unconditional)
     rule2 = spec_ir.SpecRuleOp(
         rule_name="write_mem",
         condition="true",
@@ -44,7 +40,6 @@ def create_basic_spec_module():
     )
     spec_mod.rule_ops.append(rule2)
 
-    # Property: count <= 255
     spec_mod.property_ops.append(
         spec_ir.SpecPropertyOp(
             prop_name="count_bound",
@@ -53,7 +48,6 @@ def create_basic_spec_module():
         )
     )
 
-    # Proof obligation for the property (Kōika backend)
     spec_mod.proof_obligations.append({
         "property": "count_bound",
         "status": "unproved",
@@ -68,17 +62,14 @@ def create_spec_with_false_operand():
     """Create a SpecModule that uses boolean false in a property operand."""
     spec_mod = spec_ir.SpecModule(name="fifo")
 
-    # Minimal state: a flag register
     spec_mod.state_ops.append(
         spec_ir.SpecStateOp(state_name="full", kind="register", data_type="bool", initial=False)
     )
 
-    # Inputs
     spec_mod.inputs = [
         spec_ir.Interface(name="write_en", direction="input", data_type="bool")
     ]
 
-    # Property: (implies (and write_en (read full)) false)
     spec_mod.property_ops.append(
         spec_ir.SpecPropertyOp(
             prop_name="no_overflow",
@@ -90,7 +81,6 @@ def create_spec_with_false_operand():
         )
     )
 
-    # Proof obligation with Kōika backend
     spec_mod.proof_obligations.append({
         "property": "no_overflow",
         "status": "unproved",
@@ -112,7 +102,6 @@ def create_spec_with_mixed_backends():
         spec_ir.Interface(name="en", direction="input", data_type="bool")
     ]
 
-    # Two properties
     spec_mod.property_ops.append(
         spec_ir.SpecPropertyOp(
             prop_name="prop_a",
@@ -128,14 +117,13 @@ def create_spec_with_mixed_backends():
         )
     )
 
-    # Obligation for Koika
     spec_mod.proof_obligations.append({
         "property": "prop_a",
         "status": "unproved",
         "engine": "theorem_proving",
         "backend": "koika"
     })
-    # Obligation for ACL2
+
     spec_mod.proof_obligations.append({
         "property": "prop_b",
         "status": "unproved",
@@ -219,13 +207,9 @@ def test_boolean_false_converts_to_coq_false():
 
     state_text = "\n".join(koika_mod.state_definitions)
 
-    # The generated theorem should exist
     assert "Theorem no_overflow_proved" in state_text
-    # Extract the part after the theorem name
     after_thm = state_text.split("Theorem no_overflow_proved")[1]
-    # It must NOT be the trivial `-> True`
     assert "-> True" not in after_thm
-    # It must contain either `False` or `~` to represent a negation
     assert "False" in after_thm or "~" in after_thm
 
 
@@ -236,9 +220,7 @@ def test_acl2_obligation_not_added_to_coq():
 
     state_text = "\n".join(koika_mod.state_definitions)
 
-    # prop_a (koika) should be present
     assert "Theorem prop_a_proved" in state_text
-    # prop_b (acl2) should NOT be present
     assert "Theorem prop_b_proved" not in state_text
 
 

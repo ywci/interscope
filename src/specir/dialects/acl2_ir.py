@@ -5,7 +5,6 @@
 
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
-
 from specir.dialects.spec_ir import Dialect, Operation, Type
 
 

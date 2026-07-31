@@ -176,18 +176,14 @@ class TestEvalExpr:
             eval_expr("(mem_read bad 0)", {})
 
     def test_mem_read_non_int_addr(self):
-        # Use a boolean value as address to trigger type error
         with pytest.raises(ExprError, match="Memory address must be integer"):
             eval_expr("(mem_read mem true)", {}, memories={"mem": {}})
 
     def test_concat(self):
-        # Default width of low is 8 bits; shift high by 8
         assert eval_expr("(concat 1 2)", {}) == (1 << 8) | 2
 
     def test_slice(self):
-        # (slice val high low)
         val = 0b110101
-        # bits 5 down to 3 -> 110 = 6
         assert eval_expr(f"(slice {val} 5 3)", {}) == 6
 
     def test_slice_bounds_error(self):

@@ -9,7 +9,6 @@
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, mock_open, MagicMock, call
-
 from specir.verification.proof.koika.prover import KoikaProver
 from specir.verification.proof.koika.proof_gen import (
     build_coq_proof_prompt, extract_proof_script
@@ -221,8 +220,6 @@ class TestProveTheorem:
 
     def test_skeleton_proof_succeeds(self, mock_config, mock_rocq_client):
         """The built‑in skeleton closes the proof without LLM interaction."""
-        # Sequence of rocq.check responses for skeleton steps:
-        # intros, idtac, induction, base case, inversion, simpl, extra tactic, finish
         responses = [
             {"structuredContent": {"state_id": "s1", "goals": ["goal"], "commands_run": 1}, "isError": False},
             {"structuredContent": {"state_id": "s1", "goals": ["Hreach : reachable s |- goal"], "commands_run": 1}, "isError": False},
@@ -244,7 +241,6 @@ class TestProveTheorem:
 
     def test_skeleton_fails_reflection_succeeds(self, mock_config, mock_rocq_client, mock_llm_client):
         """When the skeleton fails, the LLM‑reflection step provides a valid proof."""
-        # Skeleton will fail at the inversion step
         mock_rocq_client.check.side_effect = [
             {"structuredContent": {"state_id": "s1", "goals": ["goal"], "commands_run": 1}, "isError": False},
             {"structuredContent": {"state_id": "s1", "goals": ["Hreach : reachable s |- goal"], "commands_run": 1}, "isError": False},
@@ -253,7 +249,6 @@ class TestProveTheorem:
             {"isError": True, "error": "Inversion failed"},
         ]
 
-        # start_session is called once for skeleton and once for reflection
         mock_rocq_client.start_session.side_effect = [
             ("1", ["goal1"]),
             ("2", ["goal2"]),
@@ -280,7 +275,6 @@ class TestProveTheorem:
         mock_config["provers"]["koika"]["prove"]["step_case_hint"] = "my_step"
         prover = KoikaProver(config=mock_config)
 
-        # Create a mock RocqClient that simulates a successful interactive session
         mock_rocq_instance = MagicMock()
         mock_rocq_instance.start.return_value = None
         mock_rocq_instance.compile_file.return_value = {"success": True}

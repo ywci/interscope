@@ -8,7 +8,6 @@ import tempfile
 import pytest
 from pathlib import Path
 import yaml
-
 from specir.dialects import trace_ir, spec_ir
 from specir.lifting import vcd_to_trace, trace_to_spec
 
@@ -77,15 +76,12 @@ def test_vcd_to_trace_with_mapping(mock_trace_module, monkeypatch, tmp_path):
         f.flush()
         trace_mod = vcd_to_trace.convert(dummy_vcd, mapping_file=Path(f.name))
 
-    # The mock already has 3 annotations; mapping adds 1 more = 4 total
     assert len(trace_mod.annotations) == 4
-    # The last annotation is from the mapping
     assert trace_mod.annotations[-1].signal_name == "head_sig"
     assert trace_mod.annotations[-1].specir_ref == "module.state[name=head]"
 
 
 def test_reconstruct_state(mock_trace_module, mock_spec_module):
-    # Build annotation map from trace annotations
     annotation_map = {
         ann.specir_ref: ann.signal_name
         for ann in mock_trace_module.annotations
@@ -103,7 +99,6 @@ def test_reconstruct_state(mock_trace_module, mock_spec_module):
 
 
 def test_reconstruct_fired_rules(mock_trace_module, mock_spec_module):
-    # Build rule condition signals map
     rule_cond_signals = {}
     for ann in mock_trace_module.annotations:
         if ann.kind == "rule_condition":
@@ -134,7 +129,6 @@ def test_reconstruct_fired_rules(mock_trace_module, mock_spec_module):
 
 def test_convert_to_abstract_trace(mock_trace_module, mock_spec_module):
     abstract = trace_to_spec.convert(mock_trace_module, mock_spec_module)
-    # Output now wrapped in {"trace": {"cycles": [...]}}
     assert "trace" in abstract
     assert "cycles" in abstract["trace"]
     assert len(abstract["trace"]["cycles"]) == 2
@@ -159,7 +153,6 @@ def test_convert_to_yaml(mock_trace_module, mock_spec_module, tmp_path):
 
 
 def test_reconstruct_io(mock_trace_module, mock_spec_module):
-    # Add annotation for input signal
     ann = trace_ir.TraceAnnotationOp(
         signal_name="enq_in",
         specir_ref="module.inputs[name=enqueue]",
@@ -167,7 +160,6 @@ def test_reconstruct_io(mock_trace_module, mock_spec_module):
     )
     mock_trace_module.annotations.append(ann)
 
-    # Build io_signals map
     io_signals = {}
     for a in mock_trace_module.annotations:
         if a.kind in ("input", "output"):
@@ -176,7 +168,6 @@ def test_reconstruct_io(mock_trace_module, mock_spec_module):
     mock_spec_module.inputs = [
         spec_ir.Interface(name="enqueue", direction="input", data_type="bool")
     ]
-    # The value is set as integer 1 (representing a logic '1')
     mock_trace_module.cycles[0].values["enq_in"] = 1
 
     io_vals = trace_to_spec._reconstruct_io(
@@ -185,5 +176,4 @@ def test_reconstruct_io(mock_trace_module, mock_spec_module):
         io_signals,
         mock_trace_module.cycles[0]
     )
-    # _value_to_python returns the int 1 (not True) because the raw value is not a string.
     assert io_vals.get("enqueue") == 1

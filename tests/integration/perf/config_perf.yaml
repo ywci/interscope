@@ -1,0 +1,116 @@
+# tests/integration/perf/config_perf.yaml
+#
+# PERF-specific configuration for integration tests.
+# All settings are tuned for fast execution (small beam, depth, timeouts).
+# LLM provider is set to Ollama by default (can be overridden).
+
+llm:
+  # For integration tests, use a local Ollama instance.
+  # Override via environment variables or by editing this file.
+  provider: "ollama"
+  model: "qwen3.5:27b"
+  api_key: "not-needed"
+  base_url: "http://localhost:11434/v1"
+  temperature: 0.2
+  max_tokens: 131072
+  timeout: 120
+  retries: 3
+
+provers:
+  koika:
+    enabled: true
+    lemma_mining: true
+    # PERF requires the proof library to be disabled to prevent cache bypass
+    use_proof_library: false
+    prove:
+      skill: "rocq-mcp"
+      rocq_mcp_path: "rocq-mcp"
+      coq_tactic_hints:
+      - "induction"
+      - "simpl"
+      - "auto"
+      - "eauto"
+      - "rewrite"
+      - "inversion"
+      - "subst"
+      - "destruct"
+      - "split"
+      - "lia"
+      - "nia"
+      proof_timeout: 600
+      max_consecutive_failures: 10
+      max_steps: 80
+      pre_simplify: true
+      invariant_mining: true
+      skeleton_reflection: true
+      skeleton_step_tactics: []
+
+  acl2:
+    enabled: true
+    lemma_mining: true
+    mcp_path: "acl2-mcp"
+    mcp_timeout: 30
+    init_commands: []
+    prove:
+      skill: "acl2_builtin"
+      hint_classes: [ "rewrite", "linear", "induct" ]
+      skolem_depth: 2
+      defun_sk_enabled: true
+
+verification:
+  default_backend: "koika"
+  simulation:
+    output_dir: "build/sim"
+    cycles: 1000
+    keep_build: false
+    verilator_extra_args: [ "-Wno-fatal", "--assert" ]
+  bmc_max_depth: 100
+  ic3_max_steps: 1000
+  formal_timeout: 300
+  split_monolithic_rules: false
+  rule_split_attribute: "split"
+
+proof:
+  max_repair_attempts: 3
+
+  # PERF: Proof tree Exploration with Reflective Feedback
+  perf:
+    # Small settings for fast integration tests
+    enabled: true
+    beam_size: 2
+    branches_per_node: 2
+    depth_limit: 2
+    dimensions:
+    - "subgoal_reduction"
+    - "trace_alignment"
+    - "syntactic_purity"
+    scoring_tournament_size: 2
+    generation_temperature: 0.4
+    always_verify_children: true
+    # Parallel workers limited to avoid resource exhaustion
+    max_workers: 2
+    # Timeout per node (60 seconds is enough for small tests)
+    timeout_per_node: 60
+
+lifting:
+  vcd_parser: "builtin"
+  default_mapping_file: "build/rtl/mapping.json"
+  llm_lifter_enabled: true
+  llm_lifter_confidence_threshold: 0.7
+
+evidence:
+  db_path: "build/evidence.db"
+  auto_commit: true
+
+logging:
+  level: "INFO"
+  file: "build/logs/interscope.log"
+
+directories:
+  build: "build"
+  rtl: "build/rtl"
+  traces: "build/traces"
+  logs: "build/logs"
+  temp: "build/temp"
+  verify: "build/verify"
+  tools: "tools"

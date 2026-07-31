@@ -9,7 +9,6 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-
 from specir.backends.koika_compiler import (
     _find_compiler,
     compile_ocaml_to_verilog,
@@ -66,15 +65,12 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
         self.design_name = "test_design"
         self.compiler_path = Path("/usr/bin/koika")
 
-        # Write a dummy OCaml file
         self.ml_path = self.output_dir / f"{self.design_name}.ml"
         self.ml_path.write_text("(* dummy *)")
 
-        # Write a dummy Verilog file that the backend expects after compilation
         self.verilog_path = self.output_dir / f"{self.design_name}.v"
         self.verilog_path.write_text("module test_design(); endmodule")
 
-        # Write a minimal mapping.json
         self.mapping_path = self.output_dir / "mapping.json"
         self.mapping_path.write_text(real_json.dumps({"mapping": []}))
 

@@ -10,7 +10,6 @@ import unittest
 from queue import Empty
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-
 from specir.backends.rocq_client import RocqClient, RocqClientError
 
 
@@ -27,7 +26,6 @@ class TestLifecycle(unittest.TestCase):
         mock_process.stderr = MagicMock()
         mock_popen.return_value = mock_process
 
-        # Prevent the initialisation request from blocking for 30 seconds
         with patch.object(self.client, "_send_request", return_value={"result": "ok"}):
             self.client.start()
 
@@ -50,7 +48,6 @@ class TestLifecycle(unittest.TestCase):
         mock_process.stderr = MagicMock()
         mock_popen.return_value = mock_process
 
-        # Prevent the initialisation request from blocking
         with patch.object(self.client, "_send_request", return_value={"result": "ok"}):
             self.client.start()
 
@@ -66,7 +63,6 @@ class TestSendRequest(unittest.TestCase):
         self.client.process.stdin = MagicMock()
         self.client.process.stdout = MagicMock()
         self.client.process.stderr = MagicMock()
-        # Prevent real thread creation
         with patch("threading.Thread"):
             self.client._reader_thread = MagicMock()
             self.client._reader_thread.is_alive.return_value = True

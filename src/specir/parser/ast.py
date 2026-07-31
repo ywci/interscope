@@ -9,6 +9,7 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union
 
+
 @dataclass
 class EvidenceRef:
     """Reference to an evidence artifact."""
@@ -27,7 +28,7 @@ class Evidence:
 
 @dataclass
 class Candidate:
-    """LLM‑generated candidate with confidence score (wraps any value)."""
+    """LLM-generated candidate with confidence score (wraps any value)."""
     value: Any
     confidence: float
     source: Optional[str] = None
@@ -175,10 +176,38 @@ class ProofObligationFeedback:
 
 @dataclass
 class ProofObligation:
-    """Link between a property and verification artifacts."""
+    """
+    Link between a property and verification artifacts.
+
+    PERF (Proof tree Exploration with Reflective Feedback) support:
+    The PERF-specific fields allow per-obligation overrides of the global
+    PERF configuration. If a field is None, the global PERF config value
+    is used instead.
+
+    Fields:
+        property: Name of the property to prove.
+        status: unproved, proved, disproved, inconclusive.
+        engine: theorem_proving, model_checking, simulation, or perf.
+        backend: koika, acl2 (required for theorem_proving/perf).
+        artifact: Optional {type, ref} pointing to proof artifact.
+        assumes: Additional assumptions for this proof.
+        guarantees: Additional guarantees for this proof.
+        metadata: Freeform metadata (includes PERF overrides).
+        confidence: LLM confidence score (0.0-1.0).
+        feedback: Iterative repair history.
+
+        PERF-specific overrides (all optional):
+        perf_beam_size: Number of proof strategies to keep per depth.
+        perf_branches: Number of divergent repair attempts per failed proof.
+        perf_depth_limit: Maximum refinement iterations.
+        perf_primary_dimension: Which Pareto dimension drives beam selection.
+        perf_dimensions: List of Pareto dimensions for scoring.
+        perf_generation_temperature: LLM temperature for generating children.
+        perf_trace_alignment_weight: Weight for trace_alignment dimension (0.0-1.0).
+    """
     property: str
     status: str                   # unproved, proved, disproved, inconclusive
-    engine: str                   # theorem_proving, model_checking, simulation
+    engine: str                   # theorem_proving, model_checking, simulation, perf
     backend: Optional[str] = None  # koika, acl2
     artifact: Optional[Dict[str, str]] = None   # {type, ref}
     assumes: List[Union[str, List]] = field(default_factory=list)
@@ -186,6 +215,89 @@ class ProofObligation:
     metadata: Dict[str, Any] = field(default_factory=dict)
     confidence: Optional[float] = None
     feedback: List[ProofObligationFeedback] = field(default_factory=list)
+
+    # PERF-specific per-obligation overrides (all optional)
+    perf_beam_size: Optional[int] = None
+    perf_branches: Optional[int] = None
+    perf_depth_limit: Optional[int] = None
+    perf_primary_dimension: Optional[str] = None
+    perf_dimensions: Optional[List[str]] = None
+    perf_generation_temperature: Optional[float] = None
+    perf_trace_alignment_weight: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        """Validate PERF fields if they are set."""
+        # Validate beam_size
+        if self.perf_beam_size is not None and self.perf_beam_size < 1:
+            raise ValueError(f"perf_beam_size must be >= 1, got {self.perf_beam_size}")
+
+        # Validate branches
+        if self.perf_branches is not None and self.perf_branches < 1:
+            raise ValueError(f"perf_branches must be >= 1, got {self.perf_branches}")
+
+        # Validate depth_limit
+        if self.perf_depth_limit is not None and self.perf_depth_limit < 1:
+            raise ValueError(f"perf_depth_limit must be >= 1, got {self.perf_depth_limit}")
+
+        # Validate temperature
+        if self.perf_generation_temperature is not None:
+            if not 0.0 <= self.perf_generation_temperature <= 1.0:
+                raise ValueError(
+                    f"perf_generation_temperature must be between 0.0 and 1.0, "
+                    f"got {self.perf_generation_temperature}"
+                )
+
+        # Validate weight
+        if self.perf_trace_alignment_weight is not None:
+            if not 0.0 <= self.perf_trace_alignment_weight <= 1.0:
+                raise ValueError(
+                    f"perf_trace_alignment_weight must be between 0.0 and 1.0, "
+                    f"got {self.perf_trace_alignment_weight}"
+                )
+
+        # Validate dimensions (if provided, check they are non-empty)
+        if self.perf_dimensions is not None:
+            if not self.perf_dimensions:
+                raise ValueError("perf_dimensions list cannot be empty")
+            # Check that all dimensions are strings
+            for dim in self.perf_dimensions:
+                if not isinstance(dim, str):
+                    raise ValueError(
+                        f"perf_dimensions must contain strings, got {type(dim)}"
+                    )
+
+        # Validate primary dimension is in dimensions (if both set)
+        if (self.perf_primary_dimension is not None and
+            self.perf_dimensions is not None and
+            self.perf_primary_dimension not in self.perf_dimensions):
+            raise ValueError(
+                f"perf_primary_dimension '{self.perf_primary_dimension}' must be "
+                f"one of perf_dimensions: {self.perf_dimensions}"
+            )
+
+    def to_perf_overrides(self) -> Dict[str, Any]:
+        """
+        Extract PERF overrides as a dictionary for merging with global config.
+
+        Returns:
+            Dictionary with PERF override keys, excluding None values.
+        """
+        result = {}
+        if self.perf_beam_size is not None:
+            result["beam_size"] = self.perf_beam_size
+        if self.perf_branches is not None:
+            result["branches_per_node"] = self.perf_branches
+        if self.perf_depth_limit is not None:
+            result["depth_limit"] = self.perf_depth_limit
+        if self.perf_primary_dimension is not None:
+            result["primary_dimension"] = self.perf_primary_dimension
+        if self.perf_dimensions is not None:
+            result["dimensions"] = self.perf_dimensions
+        if self.perf_generation_temperature is not None:
+            result["generation_temperature"] = self.perf_generation_temperature
+        if self.perf_trace_alignment_weight is not None:
+            result["trace_alignment_weight"] = self.perf_trace_alignment_weight
+        return result
 
 
 @dataclass

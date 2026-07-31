@@ -13,24 +13,11 @@
 # one per branch.  The scheduler is adjusted to ``conflict_free`` so that
 # at most one of the new rules fires per cycle, preserving the original
 # semantics.
-#
-# Limitations (by design):
-#  - Rules must be explicitly marked with the ``split`` attribute;
-#    otherwise they are left untouched.
-#  - Only the **first** action that contains an `ite` is split.  If
-#    multiple actions contain independent `ite`s the pass raises an
-#    error.
-#  - The pass does **not** verify mutual exclusion; it trusts the
-#    designer.
-#  - The pass operates on the **spec dialect** (``SpecModule``) and
-#    returns a new ``SpecModule``.  It should be invoked **before**
-#    ``spec_to_koika.convert``.
 
 from __future__ import annotations
 
 import copy
 from typing import List, Optional, Tuple
-
 from specir.dialects.spec_ir import (
     SpecModule,
     SpecRuleOp,

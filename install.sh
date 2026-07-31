@@ -197,6 +197,17 @@ install_rocq_mcp() {
         return 0
     fi
 
+    if ! command -v coqc &>/dev/null; then
+        log_info "Installing Coq and coq-lsp globally (for non‑Kōika use)..."
+        install_opam
+        init_opam
+        opam install coq coq-lsp -y || {
+            log_warning "Failed to install Coq/coq‑lsp globally. You may need to install them manually."
+        }
+    else
+        log_info "Coq already available."
+    fi
+
     if command -v rocq-mcp &>/dev/null; then
         log_info "rocq‑mcp already installed."
         safe_smoke_test "coqc --version" coqc --version
@@ -204,14 +215,6 @@ install_rocq_mcp() {
     fi
 
     log_info "Installing rocq‑mcp..."
-
-    install_opam
-    init_opam
-
-    log_info "Installing Coq and coq-lsp via opam (this may take a while)..."
-    opam install coq coq-lsp -y || {
-        log_error "opam install coq coq-lsp failed. Please install them manually and rerun."
-    }
 
     if ! command -v git &>/dev/null; then
         log_error "git not found. Please install git and rerun this script."
@@ -395,10 +398,8 @@ install_koika() {
     fi
     eval $(opam env) 2>/dev/null || true
 
-    # Environment check (OCaml/Coq versions)
     check_koika_environment
 
-    # Full dependency list matching the working test harness
     log_info "Installing Kōika OCaml dependencies..."
     local koika_deps=(
         "zarith" "hashcons" "core" "core_unix" "ppx_jane" "dune=3.19.0"
@@ -408,7 +409,6 @@ install_koika() {
         log_error "Failed to install Kōika OCaml dependencies."
     }
 
-    # Clone Kōika repository
     local KOIKA_DIR="$SCRIPT_DIR/tools/koika"
     if [[ -d "$KOIKA_DIR" ]]; then
         log_info "Kōika directory already exists. Pulling latest changes..."
@@ -423,7 +423,6 @@ install_koika() {
 
     cd "$KOIKA_DIR"
 
-    # Build OCaml targets (cuttlec)
     log_info "Building Kōika OCaml targets..."
     if ! dune build ocaml/cuttlec.exe 2>&1 | tee /tmp/koika_build.log; then
         log_warning "Kōika OCaml target build failed. Dumping build log:"
@@ -432,7 +431,6 @@ install_koika() {
         return 0
     fi
 
-    # Build and install Kōika Coq libraries
     log_info "Building Kōika Coq libraries..."
     if dune build @install 2>&1 | tee /tmp/koika_coq_build.log; then
         dune install 2>&1 | tee /tmp/koika_install.log || true
@@ -440,6 +438,14 @@ install_koika() {
     else
         log_warning "Kōika Coq library build failed. RTL synthesis via Coq DSL will not work."
         log_warning "Check /tmp/koika_coq_build.log for details."
+    fi
+
+    log_info "Installing coq-lsp for interactive proof support (required by PERF / rocq‑mcp)..."
+    if opam install coq-lsp -y; then
+        log_success "coq-lsp installed in the current switch."
+        safe_smoke_test "pet --version" pet --version || true
+    else
+        log_warning "Failed to install coq-lsp. Interactive proof features (skeleton proof, PERF) may not work."
     fi
 
     local BUILD_OCAML="_build/default/ocaml"
@@ -536,7 +542,6 @@ EOF
         echo "export PATH=\"$WRAPPER_DIR:\$PATH\"" >> "$HOME/.bashrc"
     fi
 
-    # Dynamic OCAMLPATH export (uses actual KOIKA_DIR)
     if ! grep -q "OCAMLPATH.*_build/install/default/lib" "$HOME/.bashrc" 2>/dev/null; then
         echo "export OCAMLPATH=\"\${OCAMLPATH:-}:$KOIKA_DIR/_build/install/default/lib\"" >> "$HOME/.bashrc"
     fi
@@ -681,7 +686,6 @@ install_symbiyosys() {
         return 0
     fi
 
-    # Smoke tests
     if $need_sby || command -v sby &>/dev/null; then
         safe_smoke_test "sby --help" sby --help
     fi
@@ -748,5 +752,23 @@ install_acl2_mcp
 install_rocq_mcp
 install_koika
 install_symbiyosys
+
+if [[ "$INSTALL_EXTERNAL" == "true" ]]; then
+    if [[ -n "${KOIKA_SWITCH_NAME:-}" ]] && opam switch list --short 2>/dev/null | grep -q "^${KOIKA_SWITCH_NAME}$"; then
+        echo ""
+        echo "${YELLOW}${BOLD}IMPORTANT:${RESET} Kōika uses its own opam switch '$KOIKA_SWITCH_NAME'."
+        echo "  Activate it before running the project:"
+        echo "    opam switch $KOIKA_SWITCH_NAME"
+        echo "    eval \$(opam env)"
+        echo ""
+    fi
+
+    if command -v pet &>/dev/null; then
+        log_info "pet (coq-lsp) is available – interactive proof features are ready."
+    else
+        log_warning "pet not found.  Interactive Coq features (skeleton proof, PERF) will not work."
+        echo "  Install coq-lsp with: opam install coq-lsp"
+    fi
+fi
 
 log_success "Installation completed successfully."

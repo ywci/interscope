@@ -3,12 +3,10 @@
 # CLI subcommand `lift` – converts a VCD trace to an abstract SpecIR trace YAML.
 # Uses an optional mapping file to annotate signals with semantic meaning.
 
+import yaml
 import argparse
 import sys
 from pathlib import Path
-
-import yaml
-
 from specir.lifting import vcd_to_trace, trace_to_spec
 from specir.parser.parser import parse_specir
 from specir.lowering.ast_to_spec import convert_ast_to_spec_module

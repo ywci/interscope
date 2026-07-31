@@ -12,9 +12,7 @@ import logging.handlers
 import sys
 from pathlib import Path
 from typing import Optional
-
 from specir.utils.config_loader import get_config
-
 
 _LOGGER_SETUP_DONE = False
 

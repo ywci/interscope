@@ -187,7 +187,6 @@ def test_koika_dialect_operations():
 def test_koika_from_spec_module_succeeds():
     """from_spec_module now delegates to the real lowering pass and returns a KoikaModule."""
     spec_mod = spec_ir.SpecModule(name="test")
-    # The lowering requires at least basic state and rules; we can use a minimal module.
     spec_mod.state_ops.append(
         spec_ir.SpecStateOp(state_name="x", kind="register", data_type="bool", initial=False)
     )

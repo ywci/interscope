@@ -3,12 +3,10 @@
 # CLI subcommand `check` – verifies properties from a .specir file
 # against an abstract trace YAML (as produced by the `lift` subcommand).
 
+import yaml
 import argparse
 import sys
 from pathlib import Path
-
-import yaml
-
 from specir.parser.parser import parse_specir
 from specir.verification.property_checker import check_all_properties
 from specir.utils.logger import setup_logging, get_logger

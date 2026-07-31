@@ -12,7 +12,6 @@
 
 import re
 from typing import List, Optional, Dict, Any
-
 from specir.backends.llm_client import LLMClient
 from specir.utils.logger import get_logger
 
@@ -368,3 +367,102 @@ def build_skeleton_reflection_prompt(
         "- Handle `if` conditions by `destruct`-ing them.\n"
         "Return **only** the Coq proof script, without any extra commentary."
     )
+
+
+def generate_coq_proof_variants(
+    llm_client: LLMClient,
+    theorem_name: str,
+    theorem_statement: str,
+    num_variants: int = 4,
+    context: Optional[str] = None,
+    tactic_hints: Optional[List[str]] = None,
+    assumptions: Optional[List[str]] = None,
+    temperature: float = 0.4,
+    max_tokens: int = 2048,
+) -> List[str]:
+    """
+    Generate multiple divergent proof attempts for PERF.
+
+    This function produces `num_variants` different proof scripts by
+    varying the LLM generation temperature and/or adding divergence hints.
+    Each variant is a complete proof script (from Proof. to Qed. or Admitted.).
+
+    Args:
+        llm_client: The LLM client.
+        theorem_name: Name of the theorem.
+        theorem_statement: The theorem statement (Coq).
+        num_variants: Number of variants to generate (N in PERF).
+        context: Optional Coq context (definitions, lemmas).
+        tactic_hints: Optional list of suggested tactics.
+        assumptions: Optional list of assumptions.
+        temperature: LLM temperature for generation (higher = more divergence).
+        max_tokens: Maximum tokens per generation.
+
+    Returns:
+        List of proof scripts (strings), one per variant.
+    """
+    variants = []
+    # Save original temperature
+    original_temp = llm_client.temperature
+    # Use a slightly higher temperature for divergence
+    gen_temp = temperature if temperature > 0 else original_temp
+
+    # Build a base prompt
+    base_prompt = build_coq_proof_prompt(
+        theorem_name=theorem_name,
+        theorem_statement=theorem_statement,
+        context=context,
+        tactic_hints=tactic_hints,
+        assumptions=assumptions,
+        previous_attempts=None,
+    )
+
+    for i in range(num_variants):
+        # Add a slight variation to the prompt to encourage divergence
+        if i > 0:
+            prompt = base_prompt + (
+                f"\n\nTry a fundamentally different proof approach than previous attempts. "
+                f"Use different tactics or a different induction scheme. "
+                f"This is variant {i+1} of {num_variants}."
+            )
+            # Randomly adjust temperature for each variant to increase diversity
+            llm_client.temperature = max(0.1, gen_temp + (i - num_variants/2) * 0.05)
+        else:
+            prompt = base_prompt
+            llm_client.temperature = gen_temp
+
+        try:
+            response = llm_client.generate(prompt, max_tokens=max_tokens)
+            script = extract_proof_script(response)
+            # Only accept scripts that contain a complete proof
+            if script and "Proof." in script and ("Qed." in script or "Admitted." in script):
+                variants.append(script)
+            else:
+                # Fallback: try with a very generic prompt
+                logger.warning("Variant %d did not produce a valid proof script; retrying with default prompt.", i)
+                fallback = build_coq_proof_prompt(
+                    theorem_name=theorem_name,
+                    theorem_statement=theorem_statement,
+                    context=context,
+                    tactic_hints=["induction", "simpl", "auto"],
+                    assumptions=assumptions,
+                )
+                response2 = llm_client.generate(fallback, max_tokens=max_tokens)
+                script2 = extract_proof_script(response2)
+                if script2 and "Proof." in script2:
+                    variants.append(script2)
+                else:
+                    variants.append("Proof. Admitted.")
+        except Exception as e:
+            logger.warning("Variant %d generation failed: %s", i, e)
+            variants.append("Proof. Admitted.")
+
+    # Restore original temperature
+    llm_client.temperature = original_temp
+
+    # Ensure we have exactly num_variants (pad if needed)
+    while len(variants) < num_variants:
+        variants.append("Proof. Admitted.")
+
+    logger.debug("Generated %d proof variants for theorem '%s'", len(variants), theorem_name)
+    return variants[:num_variants]

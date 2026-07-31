@@ -29,7 +29,6 @@ def create_basic_spec_module():
         )
     ]
 
-    # Rule with condition and two write actions
     rule_ops = [
         spec_ir.SpecRuleOp(
             rule_name="inc",
@@ -44,7 +43,7 @@ def create_basic_spec_module():
             rule_name="reset_flag",
             condition="(read flag)",
             actions=["(write flag false)"],
-            priority=5   # lower priority than inc
+            priority=5
         ),
         spec_ir.SpecRuleOp(
             rule_name="noop",
@@ -54,7 +53,6 @@ def create_basic_spec_module():
         )
     ]
 
-    # Property: count never exceeds 255 (safety)
     property_ops = [
         spec_ir.SpecPropertyOp(
             prop_name="count_bound",
@@ -65,7 +63,6 @@ def create_basic_spec_module():
         )
     ]
 
-    # Proof obligation referencing the property
     proof_obligations = [
         {
             "property": "count_bound",
@@ -76,7 +73,6 @@ def create_basic_spec_module():
         }
     ]
 
-    # Inputs / outputs (optional, but test interface conversion)
     inputs = [
         spec_ir.Interface(name="start", direction="input", data_type="bool")
     ]
@@ -109,17 +105,15 @@ class TestSpecToAcl2Basic:
         acl2_mod = spec_to_acl2.convert(create_basic_spec_module())
         init_def = next(d for d in acl2_mod.defuns if d.func_name.endswith("_init"))
         assert init_def.args == []
-        # initial list: count=0, flag=false → nil in ACL2
         assert "0" in init_def.body
-        assert "nil" in init_def.body   # false becomes nil after fix
+        assert "nil" in init_def.body
 
     def test_transition_function_exists(self):
         acl2_mod = spec_to_acl2.convert(create_basic_spec_module())
         step_def = next(d for d in acl2_mod.defuns if d.func_name.endswith("_step"))
         assert step_def.func_name == "counter_step"
-        # Args: st + input names
         assert "st" in step_def.args
-        assert "start" in step_def.args   # from inputs
+        assert "start" in step_def.args
 
     def test_transition_function_uses_cond(self):
         acl2_mod = spec_to_acl2.convert(create_basic_spec_module())
@@ -130,9 +124,7 @@ class TestSpecToAcl2Basic:
         """Highest priority rule (inc, priority 10) should appear first in cond."""
         acl2_mod = spec_to_acl2.convert(create_basic_spec_module())
         step_def = next(d for d in acl2_mod.defuns if d.func_name == "counter_step")
-        # After lowering, inc condition becomes (< (nth 0 st) 255)
-        # reset_flag condition becomes (nth 1 st) because (read flag) → (nth 1 st)
-        inc_cond_start = step_def.body.find("(< (nth 0 st)")  # the start of inc's condition
+        inc_cond_start = step_def.body.find("(< (nth 0 st)")
         flag_cond_start = step_def.body.find("(nth 1 st)")
         assert inc_cond_start != -1, "inc condition not found in transition function"
         assert flag_cond_start != -1, "flag condition not found in transition function"
@@ -142,17 +134,14 @@ class TestSpecToAcl2Basic:
         """Write actions should produce (update-nth idx val st) chains."""
         acl2_mod = spec_to_acl2.convert(create_basic_spec_module())
         step_def = next(d for d in acl2_mod.defuns if d.func_name == "counter_step")
-        # The inc rule writes count and flag. We should see update-nth for both registers.
         assert "update-nth" in step_def.body
-        # Count register is at index 0, flag at index 1 (order of state_ops).
-        assert "update-nth 0" in step_def.body   # count index
-        assert "update-nth 1" in step_def.body   # flag index
+        assert "update-nth 0" in step_def.body
+        assert "update-nth 1" in step_def.body
 
     def test_read_expression_becomes_nth(self):
         """Condition (read count) should become (nth idx st)."""
         acl2_mod = spec_to_acl2.convert(create_basic_spec_module())
         step_def = next(d for d in acl2_mod.defuns if d.func_name == "counter_step")
-        # The condition of inc rule: (lt (read count) 255) -> (< (nth 0 st) 255)
         assert "(nth 0 st)" in step_def.body
 
     def test_no_rules_creates_identity_step(self):
@@ -169,7 +158,6 @@ class TestSpecToAcl2Basic:
         )
         acl2_mod = spec_to_acl2.convert(spec_mod)
         step_def = next(d for d in acl2_mod.defuns if d.func_name == "empty_step")
-        # Should just return st
         assert step_def.body.strip() == "st"
 
 
@@ -179,9 +167,7 @@ class TestAcl2TheoremGeneration:
         assert len(acl2_mod.defthms) == 1
         thm = acl2_mod.defthms[0]
         assert thm.thm_name == "count_bound_correct"
-        # Statement should include hypothesis from assumptions and property operand
         assert "implies" in thm.statement
-        # The property operand (le (read count) 255) becomes (<= (nth 0 st) 255) after lowering
         assert "(<= (nth 0 st) 255)" in thm.statement
 
     def test_hints_from_metadata(self):

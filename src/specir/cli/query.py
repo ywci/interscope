@@ -8,7 +8,6 @@ import argparse
 import sys
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-
 from specir.evidence.registry import EvidenceRegistry
 from specir.utils.logger import setup_logging, get_logger
 

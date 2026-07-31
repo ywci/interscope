@@ -7,7 +7,6 @@
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Union
-
 from specir.parser.ast import (
     Clock, ComponentInstance, Directive, Evidence, EvidenceRef, Fairness,
     Interface, Metadata, Module, Parameter, Property, ProofObligation,
@@ -42,6 +41,7 @@ def _parse_candidate(data: Dict[str, Any]) -> Candidate:
         source=data.get("source"),
         alternatives=data.get("alternatives", []),
     )
+
 
 def _parse_one_of(data: Dict[str, Any]) -> OneOf:
     """Parse a one_of wrapper, e.g. { alternatives: [...], resolution: "user" }."""
@@ -272,20 +272,122 @@ def _parse_metadata(data: Dict[str, Any]) -> Metadata:
 
 
 def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
+    """
+    Parse a proof obligation from YAML data.
+
+    PERF-specific fields are extracted from metadata.perf and mapped to
+    the corresponding fields on the ProofObligation dataclass.
+    """
     feedback = []
     if "feedback" in data:
         feedback = [_parse_proof_obligation_feedback(fb) for fb in data["feedback"]]
+
+    # Get metadata and PERF overrides
+    metadata = data.get("metadata", {})
+    perf_data = metadata.get("perf", {})
+
+    # Parse PERF fields with type validation
+    perf_beam_size = perf_data.get("beam_size")
+    if perf_beam_size is not None:
+        if not isinstance(perf_beam_size, int) or perf_beam_size < 1:
+            raise SpecIRParseError(
+                f"perf.beam_size must be a positive integer, got {perf_beam_size}"
+            )
+
+    perf_branches = perf_data.get("branches_per_node")
+    if perf_branches is not None:
+        if not isinstance(perf_branches, int) or perf_branches < 1:
+            raise SpecIRParseError(
+                f"perf.branches_per_node must be a positive integer, got {perf_branches}"
+            )
+
+    perf_depth_limit = perf_data.get("depth_limit")
+    if perf_depth_limit is not None:
+        if not isinstance(perf_depth_limit, int) or perf_depth_limit < 1:
+            raise SpecIRParseError(
+                f"perf.depth_limit must be a positive integer, got {perf_depth_limit}"
+            )
+
+    perf_primary_dimension = perf_data.get("primary_dimension")
+    if perf_primary_dimension is not None and not isinstance(perf_primary_dimension, str):
+        raise SpecIRParseError(
+            f"perf.primary_dimension must be a string, got {type(perf_primary_dimension)}"
+        )
+
+    perf_dimensions = perf_data.get("dimensions")
+    if perf_dimensions is not None:
+        if not isinstance(perf_dimensions, list):
+            raise SpecIRParseError(
+                f"perf.dimensions must be a list of strings, got {type(perf_dimensions)}"
+            )
+        if not perf_dimensions:
+            raise SpecIRParseError("perf.dimensions list cannot be empty")
+        for dim in perf_dimensions:
+            if not isinstance(dim, str):
+                raise SpecIRParseError(
+                    f"perf.dimensions must contain strings, got {type(dim)}"
+                )
+
+    perf_generation_temperature = perf_data.get("generation_temperature")
+    if perf_generation_temperature is not None:
+        if not isinstance(perf_generation_temperature, (int, float)):
+            raise SpecIRParseError(
+                f"perf.generation_temperature must be a number, got {type(perf_generation_temperature)}"
+            )
+        if not 0.0 <= perf_generation_temperature <= 1.0:
+            raise SpecIRParseError(
+                f"perf.generation_temperature must be between 0.0 and 1.0, "
+                f"got {perf_generation_temperature}"
+            )
+
+    perf_trace_alignment_weight = perf_data.get("trace_alignment_weight")
+    if perf_trace_alignment_weight is not None:
+        if not isinstance(perf_trace_alignment_weight, (int, float)):
+            raise SpecIRParseError(
+                f"perf.trace_alignment_weight must be a number, got {type(perf_trace_alignment_weight)}"
+            )
+        if not 0.0 <= perf_trace_alignment_weight <= 1.0:
+            raise SpecIRParseError(
+                f"perf.trace_alignment_weight must be between 0.0 and 1.0, "
+                f"got {perf_trace_alignment_weight}"
+            )
+
+    # Validate that primary_dimension is in dimensions if both are set
+    if perf_primary_dimension is not None and perf_dimensions is not None:
+        if perf_primary_dimension not in perf_dimensions:
+            raise SpecIRParseError(
+                f"perf.primary_dimension '{perf_primary_dimension}' must be one of "
+                f"perf.dimensions: {perf_dimensions}"
+            )
+
+    # Determine engine - support "perf" as a valid engine value
+    engine = data.get("engine", "theorem_proving")
+    if engine not in ("theorem_proving", "model_checking", "simulation", "perf"):
+        logger.warning(
+            f"Unknown engine '{engine}' in proof obligation, "
+            f"defaulting to 'theorem_proving'"
+        )
+        engine = "theorem_proving"
+
     return ProofObligation(
         property=_require(data, "property", "proof obligation"),
-        status=data.get("status", "unproved"),   # optional, defaults to "unproved"
-        engine=_require(data, "engine", "proof obligation"),
+        status=data.get("status", "unproved"),
+        engine=engine,
         backend=data.get("backend"),
         artifact=data.get("artifact"),
         assumes=data.get("assumes", []),
         guarantees=data.get("guarantees", []),
-        metadata=data.get("metadata", {}),
+        metadata=metadata,
         confidence=data.get("confidence"),
         feedback=feedback,
+        # PERF fields
+        perf_beam_size=perf_beam_size,
+        perf_branches=perf_branches,
+        perf_depth_limit=perf_depth_limit,
+        perf_primary_dimension=perf_primary_dimension,
+        perf_dimensions=perf_dimensions,
+        perf_generation_temperature=perf_generation_temperature,
+        perf_trace_alignment_weight=perf_trace_alignment_weight,
     )
 
 
@@ -344,7 +446,10 @@ def parse_specir(source: Union[str, Path]) -> SpecIR:
     if not version:
         raise SpecIRParseError("Missing 'specir_version' field")
     if version not in SUPPORTED_VERSIONS:
-        logger.warning(f"Unrecognized specir_version '{version}'. Supported versions: {SUPPORTED_VERSIONS}. Proceeding, but validation may fail.")
+        logger.warning(
+            f"Unrecognized specir_version '{version}'. "
+            f"Supported versions: {SUPPORTED_VERSIONS}. Proceeding, but validation may fail."
+        )
 
     module_data = raw.get("module")
     if not module_data:

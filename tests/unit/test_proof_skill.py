@@ -6,7 +6,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
-
 from specir.verification.proof.proof_skill import (
     LLMProofSkill,
     ModelCheckProver

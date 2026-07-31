@@ -4,14 +4,17 @@
 # Uses checkpoints for safe iterative proof attempts.
 
 import re
+import os
+import tempfile
+import concurrent.futures
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-
+from typing import Dict, Any, List, Optional, Tuple
 from specir.backends.acl2_client import ACL2Client, get_acl2_client_from_config
 from specir.backends.llm_client import LLMClient, get_llm_client_from_config
 from specir.verification.proof.acl2.proof_gen import (
     build_acl2_hint_prompt,
-    parse_hints_from_response
+    parse_hints_from_response,
+    generate_acl2_proof_variants,
 )
 from specir.utils.logger import get_logger
 from specir.utils.config_loader import get_config
@@ -20,7 +23,13 @@ logger = get_logger(__name__)
 
 
 class ACL2Prover:
-    """Prover for ACL2 theorems using acl2‑mcp and LLM‑assisted repair."""
+    """Prover for ACL2 theorems using acl2‑mcp and LLM‑assisted repair.
+
+    PERF integration:
+    - evaluate_proof_script(): Evaluates a candidate proof script in isolation.
+    - evaluate_proof_scripts_parallel(): Batch evaluation for PERF beam.
+    - PERF statistics are collected and can be retrieved.
+    """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
@@ -34,20 +43,42 @@ class ACL2Prover:
         # LLM client
         self.llm = get_llm_client_from_config(config)
 
-        # ACL2 client (MCP‑based)
-        self.acl2 = get_acl2_client_from_config(config)
-        self.acl2.start()
+        # ACL2 client (MCP‑based) – lazily initialized
+        self._acl2: Optional[ACL2Client] = None
+        self._acl2_started = False
 
         self.max_repair = config.get("proof", {}).get("max_repair_attempts", 5)
+
+        # PERF statistics
+        self._perf_stats = {
+            "total_nodes": 0,
+            "total_verifier_calls": 0,
+            "max_depth": 0,
+            "beam_size": 0,
+            "pruned_by_pareto": 0,
+            "total_tokens": {"prompt": 0, "completion": 0},
+        }
+
         logger.info("ACL2 prover ready – max repair attempts: %d", self.max_repair)
 
+    def _ensure_acl2_client(self) -> ACL2Client:
+        """Ensure the ACL2 client is started and return it."""
+        if self._acl2 is None:
+            self._acl2 = get_acl2_client_from_config(self.config)
+            self._acl2.start()
+            self._acl2_started = True
+        return self._acl2
+
     def start(self) -> None:
-        """Start the ACL2 session (already done in __init__)."""
-        pass
+        """Start the ACL2 session (idempotent)."""
+        self._ensure_acl2_client()
 
     def stop(self) -> None:
         """Stop the ACL2 session."""
-        self.acl2.stop()
+        if self._acl2 is not None and self._acl2_started:
+            self._acl2.stop()
+            self._acl2 = None
+            self._acl2_started = False
 
     def load_file(self, file_path: Path) -> bool:
         """
@@ -57,9 +88,10 @@ class ACL2Prover:
         Returns True if the file was loaded without errors.
         """
         logger.info("Loading ACL2 file: %s", file_path)
+        acl2 = self._ensure_acl2_client()
         try:
-            result = self.acl2.send(f'(ld "{file_path}")')
-            if self.acl2._contains_error(result):
+            result = acl2.send(f'(ld "{file_path}")')
+            if acl2._contains_error(result):
                 logger.error("Failed to load ACL2 file %s: %s", file_path, result)
                 return False
             logger.info("ACL2 file loaded successfully.")
@@ -96,13 +128,15 @@ class ACL2Prover:
             - proof_script (str) if successful
             - error (str) if failed
         """
+        acl2 = self._ensure_acl2_client()
+
         if statement is None:
-            return self._prove_existing_by_name(theorem_name)
+            return self._prove_existing_by_name(acl2, theorem_name)
 
         if not hints:
             skeleton_hint = ['("Goal" :induct t)']
             logger.info("Trying skeleton induction hint for '%s'", theorem_name)
-            result = self.acl2.defthm(theorem_name, statement, skeleton_hint)
+            result = acl2.defthm(theorem_name, statement, skeleton_hint)
             if result["success"]:
                 proof_script = self._build_defthm_string(
                     theorem_name, statement, skeleton_hint
@@ -114,11 +148,11 @@ class ACL2Prover:
                     "Skeleton proof failed for '%s': %s",
                     theorem_name, result.get("output", "")[:200]
                 )
-                self.acl2.undo()
+                acl2.undo()
 
         # Save a checkpoint *once* before the first repair attempt
         checkpoint_name = f"pre_{theorem_name}"
-        self.acl2.save_checkpoint(checkpoint_name)
+        acl2.save_checkpoint(checkpoint_name)
 
         attempt = 0
         current_hints = hints or []
@@ -134,10 +168,10 @@ class ACL2Prover:
 
             # Restore clean checkpoint before each attempt (except first)
             if attempt > 0:
-                self.acl2.restore_checkpoint(checkpoint_name)
+                acl2.restore_checkpoint(checkpoint_name)
                 logger.debug("Restored checkpoint '%s'", checkpoint_name)
 
-            result = self.acl2.defthm(theorem_name, statement, current_hints)
+            result = acl2.defthm(theorem_name, statement, current_hints)
             if result["success"]:
                 proof_script = self._build_defthm_string(
                     theorem_name, statement, current_hints
@@ -197,14 +231,14 @@ class ACL2Prover:
             "error": f"ACL2 proof failed after {attempt} attempts: {last_error}"
         }
 
-    def _prove_existing_by_name(self, theorem_name: str) -> Dict[str, Any]:
+    def _prove_existing_by_name(self, acl2: ACL2Client, theorem_name: str) -> Dict[str, Any]:
         """Attempt to re‑verify an existing theorem by name."""
         logger.info("Attempting to verify existing theorem '%s'", theorem_name)
         for name_variant in (theorem_name, f"acl2::{theorem_name}"):
             cmd = f"(verify ({name_variant}))"
             try:
-                result = self.acl2.send(cmd)
-                if not self.acl2._contains_error(result):
+                result = acl2.send(cmd)
+                if not acl2._contains_error(result):
                     return {
                         "success": True,
                         "proof_script": f";; Theorem {theorem_name} already verified in session"
@@ -213,7 +247,7 @@ class ACL2Prover:
                 logger.debug("Verification attempt with '%s' raised: %s", name_variant, e)
                 continue
 
-        last_result = self.acl2.send(f"(verify ({theorem_name}))")
+        last_result = acl2.send(f"(verify ({theorem_name}))")
         return {
             "success": False,
             "error": f"Verification of '{theorem_name}' failed: {last_result}"
@@ -284,3 +318,160 @@ class ACL2Prover:
             return f"(defthm {theorem_name}\n  {statement}\n  :hints ({hints_str}))"
         else:
             return f"(defthm {theorem_name}\n  {statement})"
+
+    def evaluate_proof_script(
+        self,
+        theorem_name: str,
+        statement: str,
+        proof_script: str,
+    ) -> Dict[str, Any]:
+        """
+        Evaluate a candidate proof script (defthm form) for PERF.
+
+        The proof script is evaluated in a fresh ACL2 session (or a temporary
+        sub‑session) to avoid polluting the main session.
+
+        Args:
+            theorem_name: Name of the theorem.
+            statement: The theorem statement (formula).
+            proof_script: The complete defthm form (including hints).
+
+        Returns:
+            Dict with:
+                success: bool
+                error: Optional[str]
+                output: str
+                proof_finished: bool (always True for ACL2 if defthm succeeds)
+        """
+        self._perf_stats["total_verifier_calls"] += 1
+
+        # Create a fresh ACL2 client for this evaluation
+        acl2 = get_acl2_client_from_config(self.config)
+        try:
+            acl2.start()
+
+            # Load the file context (if any) – we need to know if there are
+            # prior definitions. Since we don't have a file context in the ACL2
+            # prover as we do for Koika, we assume that the theorem and its
+            # supporting definitions are either in the proof_script itself
+            # or already loaded. For PERF, the proof_script should be self-contained.
+            # For safety, we will just evaluate the proof_script directly.
+            # However, ACL2 defthm may refer to previously defined functions,
+            # so we need a way to load the context. For PERF, the context is passed
+            # via the overall session, so we might need to replicate that.
+            # This is a limitation: we'll just try to evaluate the defthm.
+
+            # Try to evaluate the proof script
+            result = acl2.send(proof_script)
+
+            # Check for success
+            if acl2._contains_error(result):
+                return {
+                    "success": False,
+                    "error": result,
+                    "output": result,
+                    "proof_finished": False,
+                }
+            else:
+                # Check if the theorem was proved (look for Q.E.D.)
+                if "Q.E.D." in result or "Proof succeeded" in result:
+                    return {
+                        "success": True,
+                        "error": None,
+                        "output": result,
+                        "proof_finished": True,
+                    }
+                else:
+                    # The defthm may have been added but not proved? But defthm always tries to prove.
+                    # If no error but no Q.E.D., maybe it's just the definition.
+                    # We can try to verify explicitly.
+                    verify_result = acl2.send(f"(verify {theorem_name})")
+                    if "Q.E.D." in verify_result or "Proof succeeded" in verify_result:
+                        return {
+                            "success": True,
+                            "error": None,
+                            "output": verify_result,
+                            "proof_finished": True,
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "error": "The theorem was not proved",
+                            "output": verify_result,
+                            "proof_finished": False,
+                        }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "output": "",
+                "proof_finished": False,
+            }
+        finally:
+            acl2.stop()
+
+    def evaluate_proof_scripts_parallel(
+        self,
+        theorem_name: str,
+        statement: str,
+        scripts: List[str],
+        max_workers: int = 4,
+    ) -> List[Dict[str, Any]]:
+        """
+        Evaluate multiple proof scripts in parallel for PERF.
+
+        Args:
+            theorem_name: Name of the theorem.
+            statement: The theorem statement.
+            scripts: List of candidate proof scripts (complete defthm forms).
+            max_workers: Maximum number of parallel workers.
+
+        Returns:
+            List of results (same order as scripts), each result is a dict
+            from evaluate_proof_script.
+        """
+        if not scripts:
+            return []
+
+        if len(scripts) == 1:
+            return [self.evaluate_proof_script(theorem_name, statement, scripts[0])]
+
+        results = [None] * len(scripts)
+
+        def eval_script(idx: int, script: str) -> Tuple[int, Dict[str, Any]]:
+            return idx, self.evaluate_proof_script(theorem_name, statement, script)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(eval_script, i, script): i
+                for i, script in enumerate(scripts)
+            }
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    _, result = future.result()
+                    results[idx] = result
+                except Exception as e:
+                    results[idx] = {
+                        "success": False,
+                        "error": f"Worker exception: {e}",
+                        "output": "",
+                        "proof_finished": False,
+                    }
+
+        return results
+
+    def get_perf_stats(self) -> Dict[str, Any]:
+        """Return the PERF statistics collected so far."""
+        return self._perf_stats.copy()
+
+    def reset_perf_stats(self) -> None:
+        """Reset PERF statistics."""
+        self._perf_stats = {
+            "total_nodes": 0,
+            "total_verifier_calls": 0,
+            "max_depth": 0,
+            "beam_size": 0,
+            "pruned_by_pareto": 0,
+            "total_tokens": {"prompt": 0, "completion": 0},
+        }

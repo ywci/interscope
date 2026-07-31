@@ -12,7 +12,6 @@ import sys
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-
 from specir.parser.parser import parse_specir
 from specir.parser.validator import validate_specir_file
 from specir.lowering.ast_to_spec import convert_ast_to_spec_module
@@ -24,8 +23,10 @@ from specir.lowering.assert_to_sva import convert as assert_to_sva_convert
 from specir.lowering.koika_to_rtl import convert as koika_to_rtl_convert
 from specir.verification.model_checker import run_model_check, ModelCheckError
 from specir.utils.logger import setup_logging, get_logger
-from specir.utils.config_loader import load_config, get_project_root
+from specir.utils.config_loader import load_config, get_project_root, _validate_config
 from specir.verification.proof.proof_skill import LLMProofSkill, ProofResult
+from specir.verification.perf.perf_config import PERFConfig, validate_perf_against_config
+from specir.verification.perf.perf_stats import PERFStats
 
 logger = get_logger(__name__)
 
@@ -49,7 +50,10 @@ def _canonical_backend(backend: Optional[str]) -> Optional[str]:
 def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="specir verify",
-        description="Prove proof obligations in a SpecIR design using theorem provers or model checking."
+        description=(
+            "Prove proof obligations in a SpecIR design using theorem provers, "
+            "model checking, or PERF (Proof tree Exploration with Reflective Feedback)."
+        )
     )
     parser.add_argument("input", type=str, help="Path to the .specir file")
     parser.add_argument(
@@ -66,6 +70,17 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Disable LLM assistance (theorem proving only)")
     parser.add_argument("--show-proof", action="store_true",
                         help="Print the generated proof script for each successful obligation")
+
+    # PERF-specific flags
+    parser.add_argument("--perf", action="store_true",
+                        help="Enable PERF (Proof tree Exploration with Reflective Feedback)")
+    parser.add_argument("--no-perf", action="store_true",
+                        help="Disable PERF (fall back to greedy repair)")
+    parser.add_argument("--perf-stats", action="store_true",
+                        help="Print PERF traversal statistics (nodes, depth, tokens)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Parse and validate only (no execution)")
+
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser
 
@@ -82,14 +97,69 @@ def _extract_width(data_type: str) -> Optional[int]:
     return None
 
 
+def _print_perf_stats(stats: PERFStats) -> None:
+    """Pretty-print PERF traversal statistics."""
+    if stats is None:
+        return
+    print()
+    print("=" * 60)
+    print("PERF Traversal Statistics")
+    print("=" * 60)
+    print(stats.summary())
+    print("=" * 60)
+    print()
+
+
 def verify_spec(args: argparse.Namespace) -> int:
     """Execute the verify command."""
     log_level = "DEBUG" if args.debug else "INFO"
     setup_logging(level=log_level)
 
+    # Load configuration (respects SPECIR_CONFIG env variable)
     config = load_config()
     project_root = get_project_root()
 
+    # ---- Apply PERF CLI overrides ----
+    if args.perf:
+        config['proof']['perf']['enabled'] = True
+        # PERF requires use_proof_library = False
+        config['provers']['koika']['use_proof_library'] = False
+        logger.info("PERF enabled via --perf flag")
+    elif args.no_perf:
+        config['proof']['perf']['enabled'] = False
+        logger.info("PERF disabled via --no-perf flag")
+
+    # ---- Validate configuration (using the already-loaded config) ----
+    try:
+        _validate_config(config)   # raises ValueError on conflict
+    except ValueError as e:
+        logger.error(f"Configuration validation failed: {e}")
+        return 1
+
+    # ---- Dry-run ----
+    if args.dry_run:
+        logger.info("DRY RUN: Configuration and spec are valid.")
+        # We still parse the spec to validate it
+        input_path = Path(args.input).resolve()
+        if not input_path.exists():
+            logger.error(f"Input file not found: {input_path}")
+            return 1
+        try:
+            validate_specir_file(input_path)
+            ast_doc = parse_specir(input_path)
+            if not hasattr(ast_doc, "module") or not ast_doc.module:
+                logger.error("Parsed spec does not contain a module")
+                return 1
+            spec_module = convert_ast_to_spec_module(ast_doc.module)
+            logger.info(f"Design: {spec_module.name}")
+            logger.info(f"Obligations: {len(spec_module.proof_obligations)}")
+            logger.info("Dry run completed successfully.")
+            return 0
+        except Exception as e:
+            logger.error(f"Dry run failed: {e}")
+            return 1
+
+    # ---- Parse and validate input spec ----
     input_path = Path(args.input).resolve()
     if not input_path.exists():
         logger.error(f"Input file not found: {input_path}")
@@ -138,6 +208,7 @@ def verify_spec(args: argparse.Namespace) -> int:
         logger.warning("No proof obligations found in the specification.")
         return 0
 
+    # Filter by backend if specified
     if args.backend:
         target_backend = _canonical_backend(args.backend)
         filtered = []
@@ -155,6 +226,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             return 0
         obligations = filtered
 
+    # Split obligations by engine
     theorem_obligations = []
     mc_obligations = []
     for po in obligations:
@@ -166,9 +238,9 @@ def verify_spec(args: argparse.Namespace) -> int:
 
     results: List[Dict[str, Any]] = []
 
+    # ---- Theorem Proving (Koika or ACL2) ----
     if theorem_obligations:
         backend_files: Dict[str, str] = {}
-        acl2_mod_for_lookup = None
         backends_needed: set = set()
 
         for po in theorem_obligations:
@@ -199,7 +271,6 @@ def verify_spec(args: argparse.Namespace) -> int:
             acl2_file = acl2_dir / f"{design_name}.lisp"
             try:
                 acl2_mod = spec_to_acl2_convert(spec_module)
-                acl2_mod_for_lookup = acl2_mod
                 if hasattr(acl2_mod, "to_acl2_code"):
                     acl2_code = acl2_mod.to_acl2_code()
                 else:
@@ -211,6 +282,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                 logger.error(f"Failed to generate ACL2 file: {e}")
                 return 1
 
+        # ---- Instantiate proof skill (which will use PERF if config says so) ----
         try:
             proof_skill = LLMProofSkill(config=config)
             if args.max_attempts is not None:
@@ -221,6 +293,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"Failed to initialize proof skill: {e}")
             return 1
 
+        # ---- Process each theorem obligation ----
         for po in theorem_obligations:
             prop_name = po.get("property") if isinstance(po, dict) else getattr(po, "property", "unknown")
             backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
@@ -228,7 +301,8 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.info(f"Proving '{prop_name}' with backend {canonical}")
 
             context: Dict[str, Any] = {
-                "spec_module": spec_module
+                "spec_module": spec_module,
+                "config": config,
             }
             if canonical == "koika":
                 if "koika" not in backend_files:
@@ -244,7 +318,8 @@ def verify_spec(args: argparse.Namespace) -> int:
                     continue
                 context["acl2_file_path"] = backend_files["acl2"]
                 context["theorem_name"] = f"{prop_name}_correct"
-                statement = _extract_acl2_statement(acl2_mod_for_lookup, prop_name)
+                # For ACL2, we need the statement if available
+                statement = _extract_acl2_statement(acl2_mod, prop_name)
                 context["theorem_statement"] = statement
 
             try:
@@ -275,6 +350,13 @@ def verify_spec(args: argparse.Namespace) -> int:
                 "backend": canonical
             })
 
+        # ---- If --perf-stats, print PERF statistics ----
+        if args.perf_stats:
+            stats = proof_skill.get_last_perf_stats()
+            if stats:
+                _print_perf_stats(stats)
+
+    # ---- Model Checking ----
     if mc_obligations:
         logger.info(f"Running model checking for {len(mc_obligations)} obligation(s).")
         mc_dir = out_dir / "model_check"
@@ -307,7 +389,6 @@ def verify_spec(args: argparse.Namespace) -> int:
         assertions_dir.mkdir(exist_ok=True)
         try:
             assert_mod = spec_to_assert_convert(spec_module)
-
             mc_prop_names = {
                 po.get("property") if isinstance(po, dict) else getattr(po, "property", None)
                 for po in mc_obligations
@@ -320,7 +401,6 @@ def verify_spec(args: argparse.Namespace) -> int:
                 p for p in assert_mod.properties
                 if getattr(p, 'label', None) in mc_prop_names
             ]
-
             signal_widths: Dict[str, int] = {}
             for state_op in spec_module.state_ops:
                 w = _extract_width(state_op.data_type)
@@ -334,7 +414,6 @@ def verify_spec(args: argparse.Namespace) -> int:
                 w = _extract_width(outp.data_type)
                 if w is not None:
                     signal_widths[outp.name] = w
-
             sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths)
             assertions_file = assertions_dir / f"{design_name}_assertions.sv"
             assertions_file.write_text(sva_code, encoding="utf-8")

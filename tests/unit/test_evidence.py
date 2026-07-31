@@ -8,7 +8,6 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
 from specir.evidence.registry import EvidenceRegistry
 from specir.evidence.annotator import (
     create_evidence_ref,

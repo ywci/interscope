@@ -7,7 +7,6 @@ import subprocess
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
 from specir.verification.model_checker import (
     run_model_check,
     ModelCheckError,

@@ -21,7 +21,6 @@ from specir.dialects.spec_ir import (
 
 def create_minimal_ast_module():
     """Build a Module with all optional sections populated."""
-    # State
     state = [
         State(name="cnt", kind="register", type="bits<8>", initial=0,
               attributes=["stable"]),
@@ -29,7 +28,6 @@ def create_minimal_ast_module():
               type={"type": "memory", "elem": "bits<32>", "depth": 16}),
         State(name="flag", kind="register", type="bool", initial=False),
     ]
-    # Rules
     rules = [
         Rule(name="inc", condition="(lt (read cnt) 255)",
              action=["(write cnt (add (read cnt) 1))"],
@@ -38,7 +36,6 @@ def create_minimal_ast_module():
              action=["(write cnt 0)"],
              priority=5),
     ]
-    # Properties
     prop_expr = TemporalExpr(kind="always", operand="(le (read cnt) 255)",
                              bound=None)
     properties = [
@@ -47,7 +44,6 @@ def create_minimal_ast_module():
                  proof_status="unproved",
                  evidence=[EvidenceRef(type="uri", value="file://proof.v")]),
     ]
-    # Directives
     directives = [
         Directive(type="assume", name="no_overlap",
                   expression="(not (and enqueue dequeue))"),
@@ -57,11 +53,9 @@ def create_minimal_ast_module():
         Directive(type="cover", name="max_cnt",
                   expression="(eq (read cnt) 255)"),
     ]
-    # Schedule
     schedule = Schedule(kind="conflict_free",
                         rule_order=["inc", "reset"],
                         conflict_sets=[["inc", "reset"]])
-    # Proof obligations
     proof_obligations = [
         ProofObligation(property="cnt_bound", status="unproved",
                         engine="theorem_proving", backend="koika",
@@ -71,22 +65,20 @@ def create_minimal_ast_module():
                                                          error="type",
                                                          resolution="fixed")]),
     ]
-    # Metadata
     metadata = Metadata(engine="ic3", options={"max_depth": 50})
-    # Top‑level evidence
     top_evidence = [
         Evidence(type="simulation_trace",
                  ref=EvidenceRef(type="uri", value="file://sim.vcd"),
                  engine="verilator", status="active")
     ]
-    # Clocks and resets
+
     clocks = [Clock(name="clk", edge="posedge", period="10ns")]
     resets = [Reset(name="rst_n", polarity="active_low",
                     async_reset=False, affects="all")]
-    # Interfaces
+
     inputs = [ASTInterface(name="start", direction="input", type="bool")]
     outputs = [ASTInterface(name="done", direction="output", type="bool")]
-    # Other optional sections
+
     parameters = [Parameter(name="WIDTH", type="int", default=8)]
     types = [UserType(name="state_t", kind="enum",
                       values=["IDLE", "RUN"], encoding="bits<1>")]
@@ -137,7 +129,6 @@ class TestAstToSpecConversion:
         assert cnt_op.initial == 0
         assert "stable" in cnt_op.attributes
 
-        # memory type serialization
         buf_op = spec.state_ops[1]
         assert buf_op.kind == "memory"
         assert "memory(" in buf_op.data_type
@@ -166,13 +157,12 @@ class TestAstToSpecConversion:
     def test_directive_ops_conversion(self):
         spec = convert_ast_to_spec_module(create_minimal_ast_module())
         assert len(spec.directive_ops) == 3
-        # check types
+
         kinds = [d.kind for d in spec.directive_ops]
         assert "assume" in kinds
         assert "assert" in kinds
         assert "cover" in kinds
 
-        # check a specific directive
         assume_d = next(d for d in spec.directive_ops if d.kind == "assume")
         assert assume_d.directive_name == "no_overlap"
         assert assume_d.expression == "(not (and enqueue dequeue))"
@@ -206,14 +196,12 @@ class TestAstToSpecConversion:
 
     def test_interface_conversion(self):
         spec = convert_ast_to_spec_module(create_minimal_ast_module())
-        # Inputs and outputs should be lists of spec_ir.Interface
         assert len(spec.inputs) == 1
         inp = spec.inputs[0]
         assert isinstance(inp, Interface)
         assert inp.name == "start"
         assert inp.direction == "input"
         assert inp.data_type == "bool"
-
         assert len(spec.outputs) == 1
         out = spec.outputs[0]
         assert isinstance(out, Interface)
@@ -226,16 +214,13 @@ class TestAstToSpecConversion:
         clk = spec.clocks[0]
         assert clk["name"] == "clk"
         assert clk["edge"] == "posedge"
-
         assert len(spec.resets) == 1
         rst = spec.resets[0]
         assert rst["name"] == "rst_n"
         assert rst["polarity"] == "active_low"
-        # async_reset is stored as "async" in the dict
         assert rst["async"] is False
 
     def test_optional_sections_empty_by_default(self):
-        # Module with minimal fields
         minimal = Module(name="min", clocks=[], resets=[], state=[],
                         rules=[])
         spec = convert_ast_to_spec_module(minimal)

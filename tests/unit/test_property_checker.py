@@ -71,7 +71,6 @@ class TestAlways:
         result = check_property(prop, trace)
         assert result.holds is False
         assert result.failing_cycle == 1
-        # The detail now includes the cycle information
         assert "at cycle 1" in result.detail
 
 
@@ -101,7 +100,7 @@ class TestEventually:
     def test_bounded_holds(self):
         trace = make_trace(
             {"state": {"a": 0}},
-            {"state": {"a": 1}},   # within bound of 2
+            {"state": {"a": 1}},
             {"state": {"a": 0}}
         )
         prop = make_property(kind="liveness", temporal_kind="eventually",
@@ -113,13 +112,11 @@ class TestEventually:
         trace = make_trace(
             {"state": {"a": 0}},
             {"state": {"a": 0}},
-            {"state": {"a": 1}}   # beyond bound (bound=1, checks cycles 0 and 1, fails before cycle 2)
+            {"state": {"a": 1}}
         )
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)", bound=1)
         result = check_property(prop, trace)
-        # With the revised bound check (i >= bound), bound=1 means cycles 0 and 1 are checked.
-        # Cycle 1 has a=0, so after checking cycle 1 (i=1) and i>=bound (1>=1 true), it fails.
         assert result.holds is False
         assert "bound" in result.detail
 
@@ -127,11 +124,10 @@ class TestEventually:
 class TestUntil:
     def test_holds(self):
         trace = make_trace(
-            {"state": {"a": 1}},   # left true
-            {"state": {"a": 1}},   # left true
-            {"state": {"a": 0}}    # right becomes true
+            {"state": {"a": 1}},
+            {"state": {"a": 1}},
+            {"state": {"a": 0}}
         )
-        # Until: (eq a 1) until (eq a 0) -> holds because right eventually true and left holds until then
         prop = make_property(temporal_kind="until",
                              left="(eq (read a) 1)",
                              right="(eq (read a) 0)")
@@ -141,8 +137,8 @@ class TestUntil:
     def test_fails_left_broken(self):
       trace = make_trace(
           {"state": {"a": 1}},
-          {"state": {"a": 2}},   # left broken (a≠1), right still false (a≠0)
-          {"state": {"a": 3}}    # right still false
+          {"state": {"a": 2}},
+          {"state": {"a": 3}}
       )
       prop = make_property(temporal_kind="until",
                           left="(eq (read a) 1)",
@@ -192,7 +188,7 @@ class TestAssumptions:
             name="p",
             kind="safety",
             expression=TemporalExpr(kind="always", operand="(eq (read a) 1)"),
-            assumes=["(eq (read a) 0)"]   # false because a=2
+            assumes=["(eq (read a) 0)"]
         )
         result = check_property(prop, trace)
         assert result.holds is True
@@ -203,40 +199,34 @@ class TestTemporalSubOperators:
     def test_rose_in_always(self):
         trace = make_trace(
             {"state": {"sig": 0}},
-            {"state": {"sig": 1}},   # rose here
+            {"state": {"sig": 1}},
             {"state": {"sig": 1}}
         )
-        # Property: eventually rose(sig) should hold (at cycle 1, previous state exists)
         prop = make_property(
             kind="liveness",
             temporal_kind="eventually",
             operand="(rose (read sig))"
         )
         result = check_property(prop, trace)
-        # At cycle 0, rose fails (no prev state) -> returns False, eventually continues.
-        # At cycle 1, rose succeeds. So holds.
         assert result.holds is True
 
     def test_fell_in_always(self):
         trace = make_trace(
             {"state": {"sig": 1}},
-            {"state": {"sig": 0}}    # fell here
+            {"state": {"sig": 0}}
         )
         prop = make_property(
             temporal_kind="always",
-            operand="(not (fell (read sig)))"   # we want to test fell detection; this always fails after cycle 1
+            operand="(not (fell (read sig)))"
         )
         result = check_property(prop, trace)
-        # At cycle 0, fell fails (no prev state) -> not(false) = true, passes.
-        # At cycle 1, fell succeeds -> not(true) = false, fails.
         assert result.holds is False
 
     def test_next_operator(self):
         trace = make_trace(
             {"state": {"a": 1}},
-            {"state": {"a": 2}}    # next value of a is 2
+            {"state": {"a": 2}}
         )
-        # Test next with eventually and bound=0 to avoid failing on missing next_state at last cycle.
         prop = make_property(
             kind="liveness",
             temporal_kind="eventually",
@@ -256,8 +246,6 @@ class TestTemporalSubOperators:
             temporal_kind="always",
             operand="(implies (not (eq (read a) 2)) (stable (read a)))"
         )
-        # At cycle 0: a=1, prev_state None -> stable fails, returns False.
-        #   Antecedent: not(eq a 2) = true, consequent false -> implication false -> fails at cycle 0.
         result = check_property(prop, trace)
         assert result.holds is False
         assert result.failing_cycle == 0
@@ -266,17 +254,15 @@ class TestTemporalSubOperators:
 def test_evaluation_error_caught():
     trace = make_trace({"state": {}})
     prop = make_property(operand="(read unknown)")
-    # Should not raise; check_all_properties catches and returns a result with holds=False
     results = check_all_properties([prop], trace)
     assert len(results) == 1
     assert results[0].holds is False
-    # The error is caught and the operand evaluates to False, so detail reflects that.
     assert "evaluated to false" in results[0].detail.lower()
 
 
 def test_check_all_properties():
-    p1 = make_property(name="p1", operand="(eq 1 1)")   # always true
-    p2 = make_property(name="p2", operand="(eq 1 2)")   # always false
+    p1 = make_property(name="p1", operand="(eq 1 1)")
+    p2 = make_property(name="p2", operand="(eq 1 2)")
     trace = make_trace({"state": {}})
     results = check_all_properties([p1, p2], trace)
     assert len(results) == 2

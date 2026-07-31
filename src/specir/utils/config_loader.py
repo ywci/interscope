@@ -5,11 +5,9 @@
 
 import os
 import re
+import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
-
-import yaml
-
 
 _CONFIG: Optional[Dict[str, Any]] = None
 _PROJECT_ROOT: Optional[Path] = None
@@ -47,12 +45,121 @@ def _substitute_env_vars(value: Any) -> Any:
         return value
 
 
+def _validate_config(config: Dict[str, Any]) -> None:
+    """
+    Validate the configuration for PERF compatibility.
+
+    Checks the critical conflict: PERF enabled with use_proof_library.
+
+    Args:
+        config: The loaded configuration dictionary.
+
+    Raises:
+        ValueError: If PERF is enabled but use_proof_library is also true.
+    """
+    perf_enabled = config.get("proof", {}).get("perf", {}).get("enabled", False)
+    use_library = config.get("provers", {}).get("koika", {}).get(
+        "use_proof_library", True
+    )
+
+    if perf_enabled and use_library:
+        raise ValueError(
+            "Configuration conflict: PERF enabled but use_proof_library is true.\n"
+            "PERF requires 'provers.koika.use_proof_library: false' to prevent cache bypass.\n"
+            "To fix:\n"
+            "  - Set 'proof.perf.enabled: false' to disable PERF, OR\n"
+            "  - Set 'provers.koika.use_proof_library: false' to enable PERF."
+        )
+
+
+def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Apply PERF environment variable overrides to the configuration.
+
+    Supported environment variables:
+      PERF_ENABLED           (true/false)
+      PERF_BEAM_SIZE         (int)
+      PERF_BRANCHES          (int, branches_per_node)
+      PERF_DEPTH             (int, depth_limit)
+      PERF_DIMENSIONS        (comma-separated list, e.g., "subgoal_reduction,trace_alignment")
+      PERF_PRIMARY_DIMENSION (str)
+      PERF_TEMPERATURE       (float, generation_temperature)
+      PERF_MAX_WORKERS       (int)
+      PERF_TIMEOUT_NODE      (int, timeout_per_node)
+      PERF_TOURNAMENT_SIZE   (int, scoring_tournament_size)
+      PERF_ALWAYS_VERIFY     (true/false, always_verify_children)
+    """
+    perf_cfg = config.setdefault("proof", {}).setdefault("perf", {})
+
+    # Core settings
+    if "PERF_ENABLED" in os.environ:
+        val = os.environ["PERF_ENABLED"].lower()
+        perf_cfg["enabled"] = val in ("true", "1", "yes")
+
+    if "PERF_BEAM_SIZE" in os.environ:
+        try:
+            perf_cfg["beam_size"] = int(os.environ["PERF_BEAM_SIZE"])
+        except ValueError:
+            pass
+
+    if "PERF_BRANCHES" in os.environ:
+        try:
+            perf_cfg["branches_per_node"] = int(os.environ["PERF_BRANCHES"])
+        except ValueError:
+            pass
+
+    if "PERF_DEPTH" in os.environ:
+        try:
+            perf_cfg["depth_limit"] = int(os.environ["PERF_DEPTH"])
+        except ValueError:
+            pass
+
+    if "PERF_DIMENSIONS" in os.environ:
+        dims = [d.strip() for d in os.environ["PERF_DIMENSIONS"].split(",") if d.strip()]
+        if dims:
+            perf_cfg["dimensions"] = dims
+
+    if "PERF_PRIMARY_DIMENSION" in os.environ:
+        perf_cfg["primary_dimension"] = os.environ["PERF_PRIMARY_DIMENSION"].strip()
+
+    if "PERF_TEMPERATURE" in os.environ:
+        try:
+            perf_cfg["generation_temperature"] = float(os.environ["PERF_TEMPERATURE"])
+        except ValueError:
+            pass
+
+    if "PERF_MAX_WORKERS" in os.environ:
+        try:
+            perf_cfg["max_workers"] = int(os.environ["PERF_MAX_WORKERS"])
+        except ValueError:
+            pass
+
+    if "PERF_TIMEOUT_NODE" in os.environ:
+        try:
+            perf_cfg["timeout_per_node"] = int(os.environ["PERF_TIMEOUT_NODE"])
+        except ValueError:
+            pass
+
+    if "PERF_TOURNAMENT_SIZE" in os.environ:
+        try:
+            perf_cfg["scoring_tournament_size"] = int(os.environ["PERF_TOURNAMENT_SIZE"])
+        except ValueError:
+            pass
+
+    if "PERF_ALWAYS_VERIFY" in os.environ:
+        val = os.environ["PERF_ALWAYS_VERIFY"].lower()
+        perf_cfg["always_verify_children"] = val in ("true", "1", "yes")
+
+    return config
+
+
 def load_config(config_path: Optional[Path] = None, force_reload: bool = False) -> Dict[str, Any]:
     """
     Load the InterScope configuration file.
 
     Args:
-        config_path: Path to config.yaml. If None, uses <project_root>/conf/config.yaml.
+        config_path: Path to config.yaml. If None, uses <project_root>/conf/config.yaml,
+                     unless the environment variable SPECIR_CONFIG is set.
         force_reload: If True, reload the configuration even if already loaded.
 
     Returns:
@@ -61,6 +168,7 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
     Raises:
         FileNotFoundError: If the configuration file does not exist.
         yaml.YAMLError: If the YAML file is malformed.
+        ValueError: If configuration validation fails.
     """
     global _CONFIG, _PROJECT_ROOT
 
@@ -68,9 +176,14 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         return _CONFIG
 
     if config_path is None:
-        if _PROJECT_ROOT is None:
-            _PROJECT_ROOT = _find_project_root()
-        config_path = _PROJECT_ROOT / "conf" / "config.yaml"
+        # Check environment variable
+        env_path = os.environ.get("SPECIR_CONFIG")
+        if env_path:
+            config_path = Path(env_path)
+        else:
+            if _PROJECT_ROOT is None:
+                _PROJECT_ROOT = _find_project_root()
+            config_path = _PROJECT_ROOT / "conf" / "config.yaml"
 
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
@@ -92,6 +205,7 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         config["provers"][prover].setdefault("enabled", True)
         config["provers"][prover].setdefault("lemma_mining", True)
         config["provers"][prover].setdefault("prove", {})
+
         if prover == "koika":
             config["provers"]["koika"].setdefault("use_proof_library", True)
             prove_cfg = config["provers"]["koika"]["prove"]
@@ -108,6 +222,7 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
             prove_cfg.setdefault("invariant_mining", True)
             prove_cfg.setdefault("skeleton_reflection", True)
             prove_cfg.setdefault("skeleton_step_tactics", [])
+
         elif prover == "acl2":
             prove_cfg = config["provers"]["acl2"]["prove"]
             prove_cfg.setdefault("skill", "acl2_builtin")
@@ -130,6 +245,24 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
 
     config.setdefault("proof", {})
     config["proof"].setdefault("max_repair_attempts", 5)
+
+    perf_defaults = {
+        "enabled": False,
+        "beam_size": 3,
+        "branches_per_node": 4,
+        "depth_limit": 3,
+        "dimensions": ["subgoal_reduction", "trace_alignment", "syntactic_purity"],
+        "primary_dimension": "subgoal_reduction",
+        "scoring_tournament_size": 2,
+        "generation_temperature": 0.4,
+        "always_verify_children": True,
+        "max_workers": 4,
+        "timeout_per_node": 300,
+        "trace_alignment_weight": 0.6,
+    }
+    config["proof"].setdefault("perf", {})
+    for key, default in perf_defaults.items():
+        config["proof"]["perf"].setdefault(key, default)
 
     config.setdefault("lifting", {})
     lifting_defaults = {
@@ -155,10 +288,15 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         "traces": "build/traces",
         "logs": "build/logs",
         "temp": "build/temp",
-        "verify": "build/verify"
+        "verify": "build/verify",
+        "tools": "tools"
     }
     for key, default in dir_defaults.items():
         config["directories"].setdefault(key, default)
+
+    config = _apply_perf_env_overrides(config)
+
+    _validate_config(config)
 
     _CONFIG = config
     return config
@@ -166,10 +304,10 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
 
 def get_config(key: Optional[str] = None, default: Any = None) -> Any:
     """
-    Get a configuration value by dot‑separated key (e.g., "llm.provider").
+    Get a configuration value by dot-separated key (e.g., "llm.provider").
 
     Args:
-        key: Dot‑separated path to the configuration value. If None, returns the whole config.
+        key: Dot-separated path to the configuration value. If None, returns the whole config.
         default: Value to return if the key is not found.
 
     Returns:
@@ -197,3 +335,13 @@ def get_project_root() -> Path:
     if _PROJECT_ROOT is None:
         _PROJECT_ROOT = _find_project_root()
     return _PROJECT_ROOT
+
+
+def reload_config() -> Dict[str, Any]:
+    """
+    Force a reload of the configuration.
+
+    Returns:
+        The newly loaded configuration dictionary.
+    """
+    return load_config(force_reload=True)

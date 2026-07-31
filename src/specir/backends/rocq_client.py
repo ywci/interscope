@@ -2,6 +2,8 @@
 #
 # Low-level client for the rocq-mcp MCP server.
 # Supports passing server-side arguments for flexible configuration.
+# All workspace and file paths are resolved to absolute paths to avoid
+# "invalid path" errors from rocq‑mcp.
 
 import json
 import subprocess
@@ -36,7 +38,8 @@ class RocqClient:
     ):
         self.rocq_mcp_path = rocq_mcp_path
         self.timeout = timeout
-        self.cwd = cwd
+        # Resolve CWD to absolute path if provided
+        self.cwd = cwd.resolve() if cwd is not None else None
         self.server_args = server_args or []
         self.on_notification = on_notification
         self.process: Optional[subprocess.Popen] = None
@@ -51,7 +54,23 @@ class RocqClient:
             cmd = [sys.executable, self.rocq_mcp_path]
         else:
             cmd = [self.rocq_mcp_path]
-        cmd.extend(self.server_args)
+        # Resolve workspace in server_args to absolute path
+        resolved_args = []
+        skip_next = False
+        for i, arg in enumerate(self.server_args):
+            if skip_next:
+                skip_next = False
+                continue
+            if arg == "--workspace" and i + 1 < len(self.server_args):
+                workspace_val = self.server_args[i + 1]
+                # Resolve to absolute if it's a path
+                resolved_ws = str(Path(workspace_val).resolve())
+                resolved_args.append(arg)
+                resolved_args.append(resolved_ws)
+                skip_next = True
+            else:
+                resolved_args.append(arg)
+        cmd.extend(resolved_args)
         return cmd
 
     def start(self) -> None:
@@ -176,6 +195,10 @@ class RocqClient:
         workspace: Optional[Path] = None,
         keep_vo: bool = True
     ) -> Dict[str, Any]:
+        # Resolve file_path and workspace to absolute paths
+        file_path = file_path.resolve()
+        if workspace is not None:
+            workspace = workspace.resolve()
         args = {"file": str(file_path), "keep_vo": keep_vo}
         if workspace is not None:
             args["workspace"] = str(workspace)
@@ -192,6 +215,9 @@ class RocqClient:
         theorem_name: str,
         workspace: Optional[Path] = None
     ) -> Dict[str, Any]:
+        file_path = file_path.resolve()
+        if workspace is not None:
+            workspace = workspace.resolve()
         args = {"file": str(file_path), "theorem": theorem_name}
         if workspace is not None:
             args["workspace"] = str(workspace)
@@ -209,6 +235,9 @@ class RocqClient:
         theorem_name: str,
         workspace: Optional[Path] = None
     ) -> Tuple[str, List[str]]:
+        file_path = file_path.resolve()
+        if workspace is not None:
+            workspace = workspace.resolve()
         params = {"file": str(file_path), "theorem": theorem_name}
         if workspace is not None:
             params["workspace"] = str(workspace)

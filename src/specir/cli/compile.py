@@ -12,7 +12,6 @@ import argparse
 import sys
 from pathlib import Path
 from typing import Optional, Dict
-
 from specir.parser.parser import parse_specir
 from specir.parser.validator import validate_specir_file
 from specir.lowering.ast_to_spec import convert_ast_to_spec_module

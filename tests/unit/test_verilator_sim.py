@@ -6,7 +6,6 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
 from specir.backends import verilator_sim
 from specir.backends.verilator_sim import (
     VerilatorError,
@@ -51,7 +50,6 @@ class TestGenerateTestbench:
             output_path=tb_path
         )
         content = tb_path.read_text()
-        # Default cycles = 1000
         assert 'for (int cycle = 0; cycle < 1000; cycle++)' in content
 
 
@@ -103,11 +101,9 @@ class TestRunSimulation:
         """If the simulation times out, VerilatorError is raised."""
         fake_exe = tmp_dir / "fake_exe"
         fake_exe.write_text("")
-        fake_exe.chmod(0o755)  # make it executable so subprocess can attempt
+        fake_exe.chmod(0o755)
         vcd_path = tmp_dir / "out.vcd"
         with patch("subprocess.run", side_effect=TimeoutError("timed out")):
-            # The actual exception is subprocess.TimeoutExpired, but we can mock with TimeoutError
-            # The code catches subprocess.TimeoutExpired specifically; we can use that.
             import subprocess
             with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(
                 cmd=["fake_exe"], timeout=300, output=b"", stderr=b""

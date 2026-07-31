@@ -11,7 +11,6 @@
 
 import re
 from typing import List, Optional, Dict, Union
-
 from specir.backends.llm_client import LLMClient
 from specir.utils.logger import get_logger
 
@@ -325,3 +324,132 @@ def parse_hints_from_response(response: str) -> Optional[List[str]]:
             return [block]
 
     return None
+
+
+def generate_acl2_proof_variants(
+    llm_client: LLMClient,
+    theorem_name: str,
+    theorem_statement: str,
+    num_variants: int = 4,
+    context: Optional[str] = None,
+    hint_classes: Optional[List[str]] = None,
+    assumptions: Optional[List[str]] = None,
+    temperature: float = 0.4,
+    max_tokens: int = 2048,
+) -> List[str]:
+    """
+    Generate multiple divergent proof attempts for PERF.
+
+    This function produces `num_variants` different proof scripts (defthm forms)
+    by varying the LLM generation temperature and/or adding divergence hints.
+
+    Args:
+        llm_client: The LLM client.
+        theorem_name: Name of the theorem.
+        theorem_statement: The theorem statement (ACL2 formula).
+        num_variants: Number of variants to generate (N in PERF).
+        context: Optional ACL2 context (definitions, lemmas).
+        hint_classes: Suggested hint classes (e.g., ["rewrite", "induct"]).
+        assumptions: Optional list of assumptions.
+        temperature: LLM temperature for generation (higher = more divergence).
+        max_tokens: Maximum tokens per generation.
+
+    Returns:
+        List of proof scripts (complete defthm forms), one per variant.
+    """
+    variants = []
+    # Save original temperature
+    original_temp = llm_client.temperature
+    # Use a slightly higher temperature for divergence
+    gen_temp = temperature if temperature > 0 else original_temp
+
+    # Build a base prompt
+    base_prompt = build_acl2_proof_prompt(
+        theorem_name=theorem_name,
+        theorem_statement=theorem_statement,
+        context=context,
+        hint_classes=hint_classes,
+        assumptions=assumptions,
+        previous_attempts=None,
+    )
+
+    # Different hint variations to try
+    hint_variations = [
+        None,  # Let LLM choose
+        ["induct"],
+        ["rewrite", "linear"],
+        ["expand", "use"],
+        ["induct", "rewrite", "linear"],
+    ]
+
+    for i in range(num_variants):
+        # Add divergence to the prompt
+        if i > 0:
+            # Try a different hint class suggestion
+            hint_idx = i % len(hint_variations)
+            hint_suggestion = hint_variations[hint_idx]
+            if hint_suggestion:
+                hint_str = f"Use hints: {', '.join(hint_suggestion)}. "
+            else:
+                hint_str = "Choose your own hint strategy. "
+
+            prompt = base_prompt + (
+                f"\n\nThis is variant {i+1} of {num_variants}. "
+                f"{hint_str}"
+                f"Try a different approach than previous attempts."
+            )
+            # Randomly adjust temperature for each variant
+            llm_client.temperature = max(0.1, gen_temp + (i - num_variants/2) * 0.05)
+        else:
+            prompt = base_prompt
+            llm_client.temperature = gen_temp
+
+        try:
+            response = llm_client.generate(prompt, max_tokens=max_tokens)
+            script = extract_acl2_proof(response)
+            # Only accept scripts that contain a complete defthm
+            if script and script.startswith("(defthm"):
+                variants.append(script)
+            else:
+                # Fallback: try with the skeleton hint
+                logger.warning("Variant %d did not produce a valid defthm; retrying with skeleton hint.", i)
+                skeleton_prompt = build_acl2_proof_prompt(
+                    theorem_name=theorem_name,
+                    theorem_statement=theorem_statement,
+                    context=context,
+                    hint_classes=["induct"],
+                    assumptions=assumptions,
+                )
+                response2 = llm_client.generate(skeleton_prompt, max_tokens=max_tokens)
+                script2 = extract_acl2_proof(response2)
+                if script2 and script2.startswith("(defthm"):
+                    variants.append(script2)
+                else:
+                    # Create a minimal defthm with skeleton hint
+                    variants.append(
+                        f"(defthm {theorem_name}\n"
+                        f"  {theorem_statement}\n"
+                        f"  :hints ((\"Goal\" :induct t)))"
+                    )
+        except Exception as e:
+            logger.warning("Variant %d generation failed: %s", i, e)
+            # Create a fallback defthm
+            variants.append(
+                f"(defthm {theorem_name}\n"
+                f"  {theorem_statement}\n"
+                f"  :hints ((\"Goal\" :induct t)))"
+            )
+
+    # Restore original temperature
+    llm_client.temperature = original_temp
+
+    # Ensure we have exactly num_variants (pad if needed)
+    while len(variants) < num_variants:
+        variants.append(
+            f"(defthm {theorem_name}\n"
+            f"  {theorem_statement}\n"
+            f"  :hints ((\"Goal\" :induct t)))"
+        )
+
+    logger.debug("Generated %d proof variants for theorem '%s'", len(variants), theorem_name)
+    return variants[:num_variants]

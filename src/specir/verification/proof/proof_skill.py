@@ -6,7 +6,6 @@
 
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-
 from specir.backends.llm_client import get_llm_client_from_config
 from specir.verification.proof.proof import ProofSkill, ProofResult
 from specir.verification.proof.koika.prover import KoikaProver
@@ -14,6 +13,9 @@ from specir.verification.proof.acl2.prover import ACL2Prover
 from specir.verification.model_checker import run_model_check, ModelCheckError
 from specir.utils.logger import get_logger
 from specir.utils.config_loader import get_config
+from specir.verification.perf.perf_config import PERFConfig, validate_perf_against_config
+from specir.verification.perf.perf_stats import PERFStats
+from specir.verification.perf.perf_traversal import PERFTraversal
 
 logger = get_logger(__name__)
 
@@ -62,7 +64,12 @@ class LLMProofSkill(ProofSkill):
     (KoikaProver for Coq, ACL2Prover for ACL2, ModelCheckProver for model
     checking) and manages the repair loop.
 
-    Per‑obligation metadata can override global configuration for settings
+    PERF (Proof tree Exploration with Reflective Feedback):
+    When enabled, the orchestrator uses PERF traversal instead of the
+    linear repair loop. PERF generates multiple divergent proof attempts,
+    scores them using Pareto reflection, and performs beam search.
+
+    Per-obligation metadata can override global configuration for settings
     such as `max_consecutive_failures`, `max_steps`, `pre_simplify`, and
     `invariant_mining`.
     """
@@ -86,6 +93,21 @@ class LLMProofSkill(ProofSkill):
         self.pre_simplify = prove_cfg.get("pre_simplify", True)
         self.invariant_mining = prove_cfg.get("invariant_mining", True)
 
+        # PERF global configuration
+        self.perf_global_config = PERFConfig.from_global_config(self.config)
+        self._last_perf_stats: Optional[PERFStats] = None
+
+        # Validate global config for PERF compatibility
+        try:
+            validate_perf_against_config(self.config)
+        except ValueError as e:
+            logger.warning("PERF configuration validation: %s", e)
+
+        logger.info(
+            "LLMProofSkill initialized: PERF enabled=%s",
+            self.perf_global_config.enabled
+        )
+
     def can_handle(self, proof_obligation: Dict[str, Any]) -> bool:
         engine = (proof_obligation.get("engine") or "").lower()
         if engine == "model_checking":
@@ -104,12 +126,37 @@ class LLMProofSkill(ProofSkill):
         proof_obligation: Dict[str, Any],
         context: Dict[str, Any],
     ) -> ProofResult:
+        """Main prove method with PERF support."""
         engine = (proof_obligation.get("engine") or "").lower()
         if engine == "model_checking":
             return self._prove_model_check(proof_obligation, context)
 
         backend = (proof_obligation.get("backend") or "").lower()
         normalised = backend.replace("ō", "o")
+
+        # Determine PERF configuration for this obligation
+        perf_config = PERFConfig.from_obligation_metadata(
+            self.perf_global_config,
+            proof_obligation.get("metadata", {})
+        )
+
+        # Check if PERF is enabled for this obligation
+        if perf_config.is_enabled_for_obligation(proof_obligation):
+            logger.info(
+                "PERF enabled for obligation '%s' (backend=%s)",
+                proof_obligation.get("property", "unknown"),
+                normalised
+            )
+            # Ensure proof library is disabled (PERF requirement)
+            if self.config.get("provers", {}).get("koika", {}).get("use_proof_library", True):
+                logger.warning(
+                    "PERF enabled but use_proof_library is true. "
+                    "PERF will proceed but the library may bypass traversal."
+                )
+
+            return self._prove_with_perf(proof_obligation, context, perf_config)
+
+        # Fall back to linear prover
         if normalised.startswith("koi"):
             return self._prove_koika(proof_obligation, context)
         elif normalised in ("acl2",):
@@ -298,6 +345,202 @@ class LLMProofSkill(ProofSkill):
                 error_message=result.get("error", "Unknown ACL2 proof failure"),
                 metadata={"backend": "acl2"},
             )
+
+    def _prove_with_perf(
+        self,
+        obligation: Dict[str, Any],
+        context: Dict[str, Any],
+        perf_config: PERFConfig,
+    ) -> ProofResult:
+        """
+        Execute PERF traversal for a proof obligation.
+
+        This is the core integration point between the orchestrator and PERF.
+        It includes a fast skeleton pre‑check if `try_skeleton_first` is enabled.
+        """
+        logger.info(
+            "Starting PERF traversal for '%s' (beam=%d, depth=%d, branches=%d)",
+            obligation.get("property", "unknown"),
+            perf_config.beam_size,
+            perf_config.depth_limit,
+            perf_config.branches_per_node,
+        )
+
+        # ---- Quick skeleton pre‑check ----
+        if perf_config.try_skeleton_first:
+            # Only applicable for Koika backend
+            backend = obligation.get("backend", "koika").lower().replace("ō", "o")
+            if backend.startswith("koi"):
+                coq_file = context.get("coq_file_path")
+                theorem_name = context.get("theorem_name")
+                if coq_file and theorem_name:
+                    logger.info("Attempting fast skeleton proof before PERF...")
+                    # Ensure we have a Koika prover
+                    if self._koika_prover is None:
+                        self._koika_prover = KoikaProver(config=self.config)
+                    skeleton_result = self._koika_prover.prove_with_skeleton_only(
+                        Path(coq_file), theorem_name
+                    )
+                    if skeleton_result and skeleton_result.get("success"):
+                        logger.info("Skeleton proof succeeded – PERF skipped.")
+                        self._last_perf_stats = PERFStats()  # empty stats
+                        return ProofResult(
+                            success=True,
+                            proof_script=skeleton_result["proof_script"],
+                            metadata={"backend": "koika", "skeleton": True}
+                        )
+                    else:
+                        logger.info("Skeleton proof failed – falling back to PERF traversal.")
+            else:
+                logger.info("Skeleton pre‑check is only supported for Koika backend; skipping.")
+
+        # Build PERF context from the existing context
+        perf_context = self._build_perf_context(obligation, context, perf_config)
+
+        try:
+            # Instantiate and run the PERF traversal
+            traversal = PERFTraversal(
+                config=perf_config,
+                llm_client=self.llm,
+                context=perf_context,
+            )
+
+            proof_script, stats = traversal.traverse()
+
+            # Store stats for later retrieval
+            self._last_perf_stats = stats
+
+            # Build the result
+            if proof_script:
+                logger.info(
+                    "PERF found a proof for '%s' at depth %d",
+                    obligation.get("property", "unknown"),
+                    stats.successful_depth or 0
+                )
+                return ProofResult(
+                    success=True,
+                    proof_script=proof_script,
+                    metadata={
+                        "backend": obligation.get("backend", "unknown"),
+                        "perf_stats": stats.to_dict(),
+                        "perf_successful_depth": stats.successful_depth,
+                    }
+                )
+            else:
+                logger.warning(
+                    "PERF exhausted for '%s' (max_depth=%d, nodes=%d)",
+                    obligation.get("property", "unknown"),
+                    stats.max_depth,
+                    stats.total_nodes
+                )
+                return ProofResult(
+                    success=False,
+                    error_message=(
+                        f"PERF exhausted after {stats.max_depth} depths "
+                        f"({stats.total_nodes} nodes evaluated)"
+                    ),
+                    metadata={
+                        "backend": obligation.get("backend", "unknown"),
+                        "perf_stats": stats.to_dict(),
+                    }
+                )
+
+        except Exception as e:
+            logger.exception("PERF traversal raised an exception")
+            return ProofResult(
+                success=False,
+                error_message=f"PERF traversal error: {e}",
+                metadata={"backend": obligation.get("backend", "unknown")},
+            )
+
+    def _build_perf_context(
+        self,
+        obligation: Dict[str, Any],
+        context: Dict[str, Any],
+        perf_config: PERFConfig,
+    ) -> Dict[str, Any]:
+        """
+        Build the PERF context from the existing proof context.
+
+        This extracts and structures all information needed by the PERF traversal.
+        """
+        backend = obligation.get("backend", "koika")
+
+        perf_ctx = {
+            "obligation": obligation,
+            "backend": backend,
+            "config": self.config,
+            "llm": self.llm,
+            "perf_config": perf_config,
+        }
+
+        # Koika-specific context
+        if backend == "koika" or backend.startswith("koi"):
+            perf_ctx["coq_file_path"] = context.get("coq_file_path")
+            perf_ctx["theorem_name"] = context.get("theorem_name")
+            perf_ctx["workspace"] = context.get("workspace")
+            perf_ctx["rocq_path"] = self.config.get("provers", {}).get("koika", {}).get(
+                "prove", {}
+            ).get("rocq_mcp_path", "rocq-mcp")
+            # Extract the theorem statement from the Coq file if not in context
+            if not context.get("theorem_statement") and context.get("coq_file_path"):
+                perf_ctx["theorem_statement"] = self._extract_coq_statement(
+                    Path(context["coq_file_path"]),
+                    context.get("theorem_name", "")
+                )
+
+        # ACL2-specific context
+        elif backend == "acl2":
+            perf_ctx["acl2_file_path"] = context.get("acl2_file_path")
+            perf_ctx["theorem_name"] = context.get("theorem_name")
+            perf_ctx["theorem_statement"] = context.get("theorem_statement")
+            perf_ctx["workspace"] = context.get("workspace")
+            perf_ctx["acl2_mcp_path"] = self.config.get("provers", {}).get("acl2", {}).get(
+                "mcp_path", "acl2-mcp"
+            )
+
+        # Model checking trace (for trace_alignment)
+        if context.get("mc_trace"):
+            perf_ctx["mc_trace"] = context["mc_trace"]
+
+        # Initial script (if available)
+        if context.get("initial_script"):
+            perf_ctx["initial_script"] = context["initial_script"]
+
+        # Spec module
+        if context.get("spec_module"):
+            perf_ctx["spec_module"] = context["spec_module"]
+
+        return perf_ctx
+
+    def _extract_coq_statement(self, coq_file: Path, theorem_name: str) -> str:
+        """Extract the theorem statement from a Coq file."""
+        import re
+        try:
+            content = coq_file.read_text()
+            if theorem_name:
+                pattern = re.compile(
+                    rf"Theorem\s+{re.escape(theorem_name)}\s*:\s*([^.]*)\.", re.DOTALL
+                )
+                match = pattern.search(content)
+                if match:
+                    return match.group(1).strip()
+            # Fallback: find first theorem
+            pattern = re.compile(r"Theorem\s+\w+\s*:\s*([^.]*)\.", re.DOTALL)
+            match = pattern.search(content)
+            if match:
+                return match.group(1).strip()
+        except Exception:
+            pass
+        return ""
+
+    def get_last_perf_stats(self) -> Optional[PERFStats]:
+        """
+        Return the PERF statistics from the last proof attempt.
+
+        Used by the CLI to print statistics when --perf-stats is passed.
+        """
+        return self._last_perf_stats
 
     def close(self) -> None:
         if self._koika_prover:

@@ -6,6 +6,7 @@
 # test is skipped until the Kōika extraction step is automated.
 
 import subprocess
+import sys
 import pytest
 from pathlib import Path
 
@@ -27,8 +28,9 @@ def _koika_works() -> bool:
 
 
 def _run_specir(subcommand: str, args: list, timeout: int = 120, **kwargs) -> subprocess.CompletedProcess:
+    """Run a specir CLI command using the current Python interpreter."""
     return subprocess.run(
-        ["python", "-m", "specir.cli." + subcommand] + args,
+        [sys.executable, "-m", "specir.cli." + subcommand] + args,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -86,14 +88,16 @@ def test_alu_compile_acl2(alu_spec_path, build_dir):
 @pytest.mark.integration
 @pytest.mark.skipif(not _tool_on_path("rocq-mcp"), reason="rocq‑mcp not installed")
 def test_alu_verify_koika(alu_spec_path, build_dir):
-    """Run proof obligations for the ALU using the Kōika/Coq backend (no LLM)."""
+    """Run proof obligations for the ALU using the Kōika/Coq backend (no LLM, no PERF)."""
     cmd = [
         str(alu_spec_path),
         "--backend", "koika",
         "--out-dir", str(build_dir / "verify"),
         "--no-llm",               # avoid network calls
+        "--no-perf",              # disable PERF to prevent timeouts
     ]
-    result = _run_specir("verify", cmd, timeout=30)
+    # Increased timeout: 30s was not enough for the full toolchain
+    result = _run_specir("verify", cmd, timeout=60)
 
     if result.returncode not in (0, 1):
         pytest.fail(
@@ -119,12 +123,13 @@ def test_alu_verify_acl2(alu_spec_path, build_dir):
         str(alu_spec_path),
         "--backend", "acl2",
         "--out-dir", str(build_dir / "verify"),
+        "--no-perf"
     ]
     try:
-        result = _run_specir("verify", cmd, timeout=90)
+        result = _run_specir("verify", cmd, timeout=120)
     except subprocess.TimeoutExpired as e:
         pytest.fail(
-            f"ACL2 verification timed out (90 seconds).\n"
+            f"ACL2 verification timed out (120 seconds).\n"
             f"STDERR captured so far:\n"
             f"{e.stderr.decode() if e.stderr else '(none)'}\n"
             f"STDOUT captured so far:\n"

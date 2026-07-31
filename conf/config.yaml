@@ -12,11 +12,22 @@ provers:
   koika:
     enabled: true
     lemma_mining: true
-    use_proof_library: true
+    use_proof_library: false
     prove:
       skill: "rocq-mcp"
       rocq_mcp_path: "rocq-mcp"
-      coq_tactic_hints: [ "induction", "simpl", "auto", "eauto", "rewrite", "inversion", "subst", "destruct", "split", "lia", "nia" ]
+      coq_tactic_hints:
+      - "induction"
+      - "simpl"
+      - "auto"
+      - "eauto"
+      - "rewrite"
+      - "inversion"
+      - "subst"
+      - "destruct"
+      - "split"
+      - "lia"
+      - "nia"
       proof_timeout: 600
       max_consecutive_failures: 10
       max_steps: 80
@@ -24,6 +35,7 @@ provers:
       invariant_mining: true
       skeleton_reflection: true
       skeleton_step_tactics: []
+
   acl2:
     enabled: true
     lemma_mining: true
@@ -50,7 +62,52 @@ verification:
   rule_split_attribute: "split"
 
 proof:
+  # Fallback: linear repair attempts (used when PERF is disabled)
   max_repair_attempts: 5
+
+  # PERF: Proof tree Exploration with Reflective Feedback
+  #
+  # PERF transforms the proof search from a linear repair loop into a
+  # parallel tree traversal with Pareto pruning and LLM-guided reflection.
+  #
+  # When enabled, PERF automatically forces use_proof_library: false
+  # to prevent the cache from bypassing the traversal.
+  perf:
+    enabled: true
+
+    beam_size: 3 # B: Number of proof strategies to keep
+    branches_per_node: 4 # N: Divergent repair attempts per failed proof
+    depth_limit: 3 # L: Maximum refinement iterations
+
+    # Pareto dimensions for multi-objective scoring
+    # - subgoal_reduction: How many Coq subgoals are closed?
+    # - trace_alignment: How well does the proof handle the MC trace?
+    # - syntactic_purity: Tie-breaker: simpler, non-invasive repairs
+    dimensions:
+    - "subgoal_reduction"
+    - "trace_alignment"
+    - "syntactic_purity"
+    # Tie-breaking: which dimension is used for beam selection
+    primary_dimension: "subgoal_reduction"
+
+    # Reflection scoring settings
+    scoring_tournament_size: 2 # Compare each candidate to K others
+
+    # LLM generation settings
+    generation_temperature: 0.4 # Higher = more divergence between children
+
+    # Verification settings
+    always_verify_children: true # Runs Coq/MC on every generated child
+    max_workers: 4 # Parallel evaluation threads
+    timeout_per_node: 300 # Seconds per node verification
+
+    # Trace alignment weighting (0.0 - 1.0)
+    trace_alignment_weight: 0.6
+
+    # Fast‑path: attempt a built‑in skeleton proof (induction + inversion)
+    # before launching the full PERF beam search.  This can save time on
+    # simple proofs and reduce LLM usage.
+    try_skeleton_first: true
 
 lifting:
   vcd_parser: "builtin"

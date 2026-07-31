@@ -5,7 +5,6 @@
 # assertions with default clock, reset abort, and temporal operators.
 
 from typing import Dict, List, Optional, Union
-
 from specir.dialects import assert_ir
 from specir.utils.expr import parse_sexpr, ExprError
 from specir.utils.logger import get_logger

@@ -7,7 +7,6 @@ import subprocess
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
 from specir.dialects import spec_ir, rtl_ir
 from specir.lowering import koika_to_rtl
 from specir.lowering.koika_to_rtl import (
@@ -109,9 +108,6 @@ class TestCoqGeneration:
             )
         )
         coq = _generate_coq_design(mod, {})
-        # The action is skipped because it contains unsupported 'mul'.
-        # A fallback Dummy_rule is generated, so we check that the
-        # specific compute rule name is absent.
         assert "Inductive reg_t" in coq
         assert "Extraction" in coq
         assert "Compute_act_0" not in coq
@@ -142,7 +138,7 @@ class TestCoqGeneration:
             spec_ir.SpecRuleOp(rule_name="nop", condition="true", actions=[])
         )
         coq = _generate_coq_design(mod, {})
-        assert "Bits.of_nat 1 1" in coq    # true -> 1 for bool
+        assert "Bits.of_nat 1 1" in coq
         assert "Bits.of_nat 16 42" in coq
 
     def test_parameterised_design(self):
@@ -206,12 +202,9 @@ class TestConvert:
     @patch("specir.lowering.koika_to_rtl._find_or_build_koika_coq_path", return_value=("/fake/coq", "-Q"))
     def test_cuttlec_error_raises(self, mock_coq, mock_compiler, mock_exists, mock_read, mock_run):
         mod = self._make_mod()
-        # The convert function calls subprocess.run twice:
-        #   1. coqc  (must succeed)
-        #   2. cuttlec (must fail)
         mock_run.side_effect = [
-            MagicMock(returncode=0),                                          # coqc
-            subprocess.CalledProcessError(1, "cuttlec", stderr="cuttlec error"),  # cuttlec
+            MagicMock(returncode=0),
+            subprocess.CalledProcessError(1, "cuttlec", stderr="cuttlec error")
         ]
         with pytest.raises(KoikaToRTLError, match="Kōika compilation failed"):
             convert(mod, Path("/tmp/output"))
@@ -222,6 +215,5 @@ class TestConvert:
     @patch("specir.lowering.koika_to_rtl._find_or_build_koika_coq_path", return_value=("/fake/coq", "-Q"))
     def test_timeout_raises(self, mock_coq, mock_compiler, mock_exists, mock_run):
         mod = self._make_mod()
-        # Timeout during coqc is not caught by convert; the raw exception propagates
         with pytest.raises(subprocess.TimeoutExpired, match="cmd"):
             convert(mod, Path("/tmp/output"))

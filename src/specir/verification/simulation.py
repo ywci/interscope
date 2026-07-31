@@ -8,7 +8,6 @@
 
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-
 from specir.dialects import spec_ir
 from specir.lowering import koika_to_rtl
 from specir.lowering.split_rules import split_rules

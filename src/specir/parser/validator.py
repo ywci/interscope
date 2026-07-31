@@ -6,12 +6,10 @@
 # the project root). The schema is cached in memory after
 # the first load.
 
+import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
-
-import yaml
 from jsonschema import Draft7Validator, ValidationError, SchemaError
-
 from specir.utils.config_loader import get_project_root
 from specir.parser.parser import SpecIRParseError
 from specir.utils.logger import get_logger

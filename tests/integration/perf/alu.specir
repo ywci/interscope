@@ -1,0 +1,193 @@
+specir_version: "0.1"
+module:
+  name: alu
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: op
+      direction: input
+      type: "bits<2>"
+      protocol: fixed_cycle
+    - name: a
+      direction: input
+      type: "bits<8>"
+      protocol: fixed_cycle
+    - name: b
+      direction: input
+      type: "bits<8>"
+      protocol: fixed_cycle
+
+  outputs:
+    - name: result
+      direction: output
+      type: "bits<8>"
+      protocol: fixed_cycle
+    - name: zero
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+    - name: overflow
+      direction: output
+      type: "bool"
+      protocol: fixed_cycle
+
+  state:
+    - name: result_reg
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: zero_reg
+      kind: register
+      type: "bool"
+      initial: false
+    - name: overflow_reg
+      kind: register
+      type: "bool"
+      initial: false
+    - name: valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: op_reg
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: a_reg
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: b_reg
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  rules:
+    - name: load_inputs
+      condition: "true"
+      priority: 0
+      action:
+        - (write op_reg (read op))
+        - (write a_reg (read a))
+        - (write b_reg (read b))
+
+    - name: execute
+      condition: "true"
+      priority: 1
+      action:
+        - (write result_reg
+            (ite (eq (read op_reg) 0) (add (read a_reg) (read b_reg))
+            (ite (eq (read op_reg) 1) (sub (read a_reg) (read b_reg))
+            (ite (eq (read op_reg) 2) (and (read a_reg) (read b_reg))
+                 (or (read a_reg) (read b_reg))))))
+        - (write overflow_reg
+            (ite (eq (read op_reg) 0)
+                 (and (eq (slice (read a_reg) 7 7) (slice (read b_reg) 7 7))
+                      (neq (slice (read a_reg) 7 7) (slice (add (read a_reg) (read b_reg)) 7 7)))
+                 (ite (eq (read op_reg) 1)
+                      (and (neq (slice (read a_reg) 7 7) (slice (read b_reg) 7 7))
+                           (eq (slice (read a_reg) 7 7) (slice (sub (read a_reg) (read b_reg)) 7 7)))
+                      false)))
+        - (write zero_reg
+            (eq (ite (eq (read op_reg) 0) (add (read a_reg) (read b_reg))
+                (ite (eq (read op_reg) 1) (sub (read a_reg) (read b_reg))
+                (ite (eq (read op_reg) 2) (and (read a_reg) (read b_reg))
+                     (or (read a_reg) (read b_reg)))))
+                0))
+        - (write valid true)
+
+  properties:
+    - name: zero_flag_correct
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read valid)
+                          (eq (read zero_reg) (eq (read result_reg) 0)))
+
+    - name: add_overflow_correct
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (eq (read op_reg) 0)
+                          (eq (read overflow_reg)
+                              (and (eq (slice (read a_reg) 7 7) (slice (read b_reg) 7 7))
+                                   (neq (slice (read a_reg) 7 7) (slice (add (read a_reg) (read b_reg)) 7 7)))))
+
+    - name: sub_overflow_correct
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (eq (read op_reg) 1)
+                          (eq (read overflow_reg)
+                              (and (neq (slice (read a_reg) 7 7) (slice (read b_reg) 7 7))
+                                   (eq (slice (read a_reg) 7 7) (slice (sub (read a_reg) (read b_reg)) 7 7)))))
+
+    - name: result_reg_self
+      kind: safety
+      expression:
+        kind: always
+        operand: (eq (read result_reg) (read result_reg))
+    - name: zero_reg_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read zero_reg) true) (eq (read zero_reg) false))
+    - name: overflow_reg_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read overflow_reg) true) (eq (read overflow_reg) false))
+    - name: valid_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read valid) true) (eq (read valid) false))
+
+  proof_obligations:
+    # Theorem proving (existing)
+    - property: zero_flag_correct
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+      metadata:
+        coq_tactic_hints:
+          - "induction"
+          - "simpl"
+          - "auto"
+          - "lia"
+
+    - property: result_reg_self
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: zero_reg_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: overflow_reg_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: valid_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+
+    # Model‑checking obligations (only properties without bit‑selects)
+    - property: zero_flag_correct
+      engine: model_checking
+    - property: result_reg_self
+      engine: model_checking
+    - property: zero_reg_is_bool
+      engine: model_checking
+    - property: overflow_reg_is_bool
+      engine: model_checking
+    - property: valid_is_bool
+      engine: model_checking
