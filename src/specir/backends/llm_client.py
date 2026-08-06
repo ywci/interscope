@@ -10,7 +10,6 @@ import json
 import logging
 import concurrent.futures
 from typing import Any, Dict, List, Optional, Union, Callable
-
 from specir.utils.logger import get_logger
 
 logger = get_logger(__name__)

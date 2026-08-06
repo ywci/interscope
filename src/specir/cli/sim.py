@@ -7,7 +7,9 @@
 # before simulation (see `split_monolithic_rules` in config.yaml).
 
 import argparse
+import json
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 from specir.parser.parser import parse_specir
@@ -17,6 +19,7 @@ from specir.lowering.split_rules import split_rules
 from specir.verification.simulation import simulate_design, SimulationError
 from specir.utils.logger import setup_logging, get_logger
 from specir.utils.config_loader import load_config, get_project_root
+from specir.utils.result_types import SimulationReport
 
 logger = get_logger(__name__)
 
@@ -35,6 +38,8 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Path to verilator executable (auto‑detected if omitted)")
     parser.add_argument("--koika-path", type=str, default=None,
                         help="Path to the Kōika compiler executable (default from config or PATH)")
+    parser.add_argument("--output-format", choices=["json", "text"], default="text",
+                        help="Output format: json for structured data, text for human-readable summary (default: text)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser
 
@@ -90,6 +95,8 @@ def sim_spec(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Simulating design '{design_name}' for {args.cycles or 'default'} cycles...")
+
+    start_time = time.time()
     try:
         vcd_file = simulate_design(
             spec_module=spec_module,
@@ -99,14 +106,67 @@ def sim_spec(args: argparse.Namespace) -> int:
             verilator_path=args.verilator_path,
             koika_path=args.koika_path
         )
+        duration = time.time() - start_time
         logger.info(f"Simulation finished. VCD: {vcd_file}")
+
+        report = SimulationReport(
+            design_name=design_name,
+            success=True,
+            cycles=args.cycles,
+            vcd_path=str(vcd_file),
+            duration=duration,
+            metadata={"simulation_tool": "verilator"}
+        )
+
+        if args.output_format == "json":
+            print(json.dumps(report.to_dict(), indent=2))
+        else:
+            _print_human_readable(report)
+
         return 0
+
     except SimulationError as e:
+        duration = time.time() - start_time
         logger.error(f"Simulation failed: {e}")
+        report = SimulationReport(
+            design_name=design_name,
+            success=False,
+            error_message=str(e),
+            duration=duration,
+        )
+        if args.output_format == "json":
+            print(json.dumps(report.to_dict(), indent=2))
+        else:
+            _print_human_readable(report)
         return 1
     except Exception as e:
+        duration = time.time() - start_time
         logger.error(f"Unexpected error: {e}")
+        report = SimulationReport(
+            design_name=design_name,
+            success=False,
+            error_message=str(e),
+            duration=duration,
+        )
+        if args.output_format == "json":
+            print(json.dumps(report.to_dict(), indent=2))
+        else:
+            _print_human_readable(report)
         return 1
+
+
+def _print_human_readable(report: SimulationReport) -> None:
+    """Print a human‑readable simulation summary."""
+    status = "PASS" if report.success else "FAIL"
+    print(f"\n===== Simulation Result: {status} =====")
+    print(f"  Design:      {report.design_name}")
+    print(f"  Cycles:      {report.cycles or 'N/A'}")
+    print(f"  VCD trace:   {report.vcd_path or 'N/A'}")
+    if report.error_message:
+        print(f"  Error:       {report.error_message}")
+    if report.duration is not None:
+        print(f"  Duration:    {report.duration:.2f}s")
+    print("=" * 40 + "\n")
 
 
 def main() -> int:

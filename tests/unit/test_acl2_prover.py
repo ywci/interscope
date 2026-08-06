@@ -1,7 +1,7 @@
 # tests/unit/test_acl2_prover.py
 #
 # Unit tests for the ACL2Prover class.
-# Updated to work with lazy initialization (_acl2) and revised prover API.
+# Updated for ProofResult return type.
 
 import warnings
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 from typing import List, Optional
 from specir.verification.proof.acl2.prover import ACL2Prover
+from specir.verification.proof.proof import ProofResult
 
 
 class TestACL2Prover(unittest.TestCase):
@@ -18,7 +19,6 @@ class TestACL2Prover(unittest.TestCase):
 
     def setUp(self):
         """Create a prover instance with mocked dependencies."""
-        # Mock config
         self.config = {
             "proof": {"max_repair_attempts": 3},
             "provers": {
@@ -94,8 +94,9 @@ class TestACL2Prover(unittest.TestCase):
             hints=["((" "Goal" ":induct t))"]
         )
 
-        self.assertTrue(result["success"])
-        self.assertIn("defthm test-thm", result["proof_script"])
+        self.assertIsInstance(result, ProofResult)
+        self.assertTrue(result.success)
+        self.assertIn("defthm test-thm", result.proof_script)
 
         mock_client.save_checkpoint.assert_called_once_with("pre_test-thm")
         mock_client.defthm.assert_called_once_with(
@@ -123,8 +124,8 @@ class TestACL2Prover(unittest.TestCase):
             hints=[]
         )
 
-        self.assertTrue(result["success"])
-        self.assertIn("defthm test-thm", result["proof_script"])
+        self.assertTrue(result.success)
+        self.assertIn("defthm test-thm", result.proof_script)
 
         mock_client.save_checkpoint.assert_called_once_with("pre_test-thm")
         mock_client.restore_checkpoint.assert_called_once_with("pre_test-thm")
@@ -147,9 +148,9 @@ class TestACL2Prover(unittest.TestCase):
             hints=[]
         )
 
-        self.assertFalse(result["success"])
-        self.assertIn("ACL2 proof failed after", result["error"])
-        self.assertIn("attempts", result["error"])
+        self.assertFalse(result.success)
+        self.assertIn("ACL2 proof failed after", result.error_message)
+        self.assertIn("attempts", result.error_message)
 
     def test_prove_theorem_llm_returns_no_hints(self):
         """Test that if LLM returns no hints, the loop stops early."""
@@ -171,7 +172,7 @@ class TestACL2Prover(unittest.TestCase):
             hints=[]
         )
 
-        self.assertFalse(result["success"])
+        self.assertFalse(result.success)
         self.assertEqual(mock_client.defthm.call_count, 2)
 
     def test_prove_theorem_with_statement_none(self):
@@ -185,7 +186,7 @@ class TestACL2Prover(unittest.TestCase):
             statement=None,
             hints=[]
         )
-        self.assertTrue(result["success"])
+        self.assertTrue(result.success)
         mock_client.send.assert_called_with("(verify (test-thm))")
 
     def test_repair_hints_parses_response(self):
@@ -240,7 +241,3 @@ class TestACL2Prover(unittest.TestCase):
         config = {"proof": {"max_repair_attempts": 7}}
         prover = ACL2Prover(config=config)
         self.assertEqual(prover.max_repair, 7)
-
-
-if __name__ == "__main__":
-    unittest.main()

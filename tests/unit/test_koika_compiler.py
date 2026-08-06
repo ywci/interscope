@@ -125,7 +125,3 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
         mock_run.assert_called_once()
         actual_cmd = mock_run.call_args[0][0]
         self.assertEqual(actual_cmd, expected_cmd)
-
-
-if __name__ == "__main__":
-    unittest.main()

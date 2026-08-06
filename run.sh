@@ -118,19 +118,20 @@ run_clean() {
 
 show_help() {
     cat <<EOF
-${BOLD}InterScope run.sh wrapper${RESET} – Version 0.1 (alpha)
+${BOLD}InterScope run.sh wrapper${RESET} – Version 0.2 (with batch & structured output)
+
+${BOLD}Global options:${RESET}
+  --batch [DIR]                Process all .specir files in DIR (default: current directory)
+  --output-format json|text    Output format for results (default: text)
+  --report-file PATH           Save aggregated report to PATH (JSON/CSV)
+  --config FILE                Load additional YAML configuration overrides
+  --debug                      Enable debug logging
 
 ${BOLD}Commands:${RESET}
   --test unit|integration|all   Run tests
   --validate-config             Validate config.yaml (checks for conflicts)
   --compile <file> ...          Compile a .specir file
   --verify <file> ...           Verify proof obligations
-                                Options:
-                                  --perf                Enable PERF traversal (overrides config)
-                                  --no-perf             Disable PERF traversal (overrides config)
-                                  --backend koika|acl2  Override verification backend
-                                  --perf-stats          Print PERF traversal statistics
-                                  --dry-run             Parse and validate only (no execution)
   --sim <file> ...              Simulate a design (compile + Verilator)
   --lift <vcd> ...              Lift VCD trace to abstract trace
   --check <trace> ...           Check properties against trace
@@ -141,31 +142,15 @@ ${BOLD}Commands:${RESET}
   --help                        Show this help
   --version                     Show version
 
-${BOLD}PERF (Proof tree Exploration with Reflective Feedback):${RESET}
-  The --verify command supports PERF, a multi-strategy proof search that:
-    - Generates divergent repair attempts from failed proofs
-    - Scores candidates using Pareto optimality across multiple dimensions
-    - Grounds reflection in actual tool feedback (Coq errors, MC traces)
-
-  To enable PERF, either:
-    1. Set 'proof.perf.enabled: true' in config.yaml
-    2. Pass --perf flag to --verify (overrides config)
-
-  PERF requires 'provers.koika.use_proof_library: false'.
-  If both are enabled, the system will raise a ConfigurationError.
-
 ${BOLD}Examples:${RESET}
-  ./run.sh --validate-config
-  ./run.sh --compile examples/fifo/fifo.specir
-  ./run.sh --verify examples/fifo/fifo.specir --perf --backend koika
-  ./run.sh --verify examples/fifo/fifo.specir --perf --perf-stats
-  ./run.sh --verify examples/fifo/fifo.specir --dry-run
-  ./run.sh --sim examples/fifo/fifo.specir --cycles 100
-  ./run.sh --lift build/traces/fifo.vcd --mapping build/rtl/mapping.json
-  ./run.sh --check build/traces/lifted.yaml --spec examples/fifo/fifo.specir
-  ./run.sh --vcd-to-trace build/traces/fifo.vcd --mapping build/rtl/mapping.json
-  ./run.sh --extract-mapping build/rtl/fifo.v --output mapping.json
-  ./run.sh --clean
+  # Single file with JSON output
+  ./run.sh --output-format json --compile examples/fifo/fifo.specir
+
+  # Batch compile all designs in a directory, save report
+  ./run.sh --batch benchmarks/level1/ --compile --output-format json --report-file compile_results.json
+
+  # Batch verify with PERF and external config
+  ./run.sh --config custom_config.yaml --batch my_designs/ --verify --perf
 
 ${BOLD}Environment Variables (PERF overrides):${RESET}
   PERF_ENABLED=true|false       Override PERF master switch
@@ -203,7 +188,7 @@ case "${1:-}" in
         exec env PYTHONPATH=src uv run python -m specir.cli.validate_config "$@"
         ;;
     --version)
-        echo "InterScope version 0.1 (alpha)"
+        echo "InterScope version 0.2 (alpha)"
         ;;
     --help)
         show_help
@@ -228,6 +213,7 @@ case "${1:-}" in
         exec env PYTHONPATH=src uv run python scripts/extract_mapping.py "$@"
         ;;
     *)
-        log_error "Unknown option '$1'. Use --help for usage."
+        check_uv
+        exec env PYTHONPATH=src uv run python -m specir.cli.main "$@"
         ;;
 esac

@@ -232,15 +232,13 @@ properties:
           then:
             required: [ backend ]
       metadata:
-        type: object
-        additionalProperties: true
+        $ref: "#/definitions/metadata"
       evidence:
         type: array
         items:
           $ref: "#/definitions/evidence"
   metadata:
-    type: object
-    additionalProperties: true
+    $ref: "#/definitions/metadata"
   evidence:
     type: array
     items:
@@ -273,3 +271,25 @@ definitions:
       ref: { $ref: "#/definitions/evidence_ref" }
       engine: { type: string }
       status: { type: string }
+  metadata:
+    type: object
+    properties:
+      engine:
+        type: string
+      options:
+        type: object
+        additionalProperties: true
+      design_category:
+        type: string
+        description: "Category of the design (e.g., FIFO, ALU, etc.)"
+      design_level:
+        type: integer
+        minimum: 1
+        maximum: 4
+        description: "Complexity level of the design (1-4)"
+      expected_properties:
+        type: array
+        items:
+          type: string
+        description: "Names of expected properties that should be provable"
+    additionalProperties: true

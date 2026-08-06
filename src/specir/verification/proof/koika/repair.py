@@ -53,7 +53,6 @@ def repair_coq_proof(
     for attempt in range(max_attempts):
         repaired = llm_client.generate(prompt).strip()
 
-        # Quick sanity checks before trying to compile
         if not _basic_sanity(repaired):
             logger.warning(
                 "Repair attempt %d produced a script that fails basic sanity.",
@@ -64,22 +63,18 @@ def repair_coq_proof(
             )
             continue
 
-        # If we have a rocq client, validate by compiling
         if rocq_client:
             tmp_path = None
             try:
-                # Write the repaired script to a temporary file
                 fd, tmp_path = tempfile.mkstemp(suffix=".v", prefix="repair_")
                 os.close(fd)
                 Path(tmp_path).write_text(repaired, encoding="utf-8")
 
-                # Compile with rocq-mcp
                 compile_result = rocq_client.compile_file(Path(tmp_path))
                 error = rocq_client._extract_error_from_response(compile_result)
                 if error:
                     raise RocqClientError(f"Compilation error: {error}")
 
-                # Compilation succeeded
                 logger.info(
                     "Repair attempt %d succeeded (compiled successfully).",
                     attempt + 1,
@@ -96,15 +91,12 @@ def repair_coq_proof(
                 logger.error("Unexpected error during repair validation: %s", e)
                 prompt = _update_repair_prompt(prompt, repaired, str(e))
             finally:
-                # Clean up the temporary file
                 if tmp_path is not None and os.path.exists(tmp_path):
                     try:
                         os.unlink(tmp_path)
                     except OSError:
                         pass
         else:
-            # Without a client we trust the LLM – return the script as a
-            # plausible candidate.
             logger.info(
                 "Repair attempt %d produced a plausible script (no rocq validation).",
                 attempt + 1,

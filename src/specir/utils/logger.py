@@ -45,21 +45,17 @@ def setup_logging(
     if _LOGGER_SETUP_DONE and not force:
         return
 
-    # Determine log level
     if level is None:
         config_level = get_config("logging.level", "INFO")
         level = config_level
     numeric_level = getattr(logging, level.upper(), logging.INFO)
 
-    # Root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(numeric_level)
 
-    # Remove existing handlers to avoid duplication
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    # Formatter
     console_formatter = logging.Formatter(
         fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
@@ -69,14 +65,12 @@ def setup_logging(
         datefmt="%Y-%m-%d %H:%M:%S"
     )
 
-    # Console handler (stderr)
     if console_enabled:
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(numeric_level)
         console_handler.setFormatter(console_formatter)
         root_logger.addHandler(console_handler)
 
-    # File handler with rotation
     if file_enabled:
         if log_file is None:
             log_dir = get_config("directories.logs", "build/logs")

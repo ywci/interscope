@@ -6,6 +6,9 @@
 # If enabled in config, automatically splits monolithic ite‑rules
 # before synthesis (see `split_monolithic_rules` in config.yaml).
 
+import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from specir.dialects import spec_ir
@@ -18,6 +21,7 @@ from specir.lowering.assert_to_verilog_ovl import convert as assert_to_verilog_o
 from specir.backends import verilator_sim
 from specir.utils.config_loader import get_config, get_project_root
 from specir.utils.logger import get_logger
+from specir.utils.result_types import SimulationReport
 
 logger = get_logger(__name__)
 
@@ -162,6 +166,53 @@ def _generate_assertions(
     return file_path
 
 
+def _collect_verilator_coverage(obj_dir: Path, top_module: str) -> Optional[float]:
+    """
+    Attempt to extract Verilator coverage percentage from a simulation run.
+    Verilator must have been invoked with ``--coverage`` (or equivalent).
+    Returns a float in [0, 100] or None if coverage data is unavailable or
+    the extraction tool cannot be run.
+    """
+    coverage_dat = obj_dir / "coverage.dat"
+    if not coverage_dat.exists():
+        logger.debug("No coverage.dat found in %s", obj_dir)
+        return None
+
+    # Try to run `verilator_coverage` to produce a text report
+    verilator_coverage = shutil.which("verilator_coverage")
+    if not verilator_coverage:
+        logger.debug("verilator_coverage tool not available; skipping coverage extraction.")
+        return None
+
+    try:
+        # Generate an annotated coverage report (text)
+        annotate_dir = obj_dir / "coverage_annotated"
+        annotate_dir.mkdir(exist_ok=True)
+        cmd = [
+            verilator_coverage,
+            "--annotate", str(annotate_dir),
+            "--annotate-min", "1",
+            str(coverage_dat)
+        ]
+        subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+
+        # Read the summary file (if generated) or parse total percentage
+        summary_file = annotate_dir / "coverage_summary.txt"
+        if summary_file.exists():
+            text = summary_file.read_text()
+            # Search for something like "Coverage: 85.2%"
+            match = re.search(r"Coverage[:\s]+([0-9]+(?:\.[0-9]+)?)\s*%", text, re.IGNORECASE)
+            if match:
+                return float(match.group(1))
+        else:
+            # Fallback: parse the top-level annotated HTML? Not robust.
+            pass
+    except Exception as e:
+        logger.warning("Failed to extract Verilator coverage: %s", e)
+
+    return None
+
+
 def simulate_design(
     spec_module: spec_ir.SpecModule,
     output_dir: Optional[Path] = None,
@@ -169,13 +220,25 @@ def simulate_design(
     config: Optional[Dict[str, Any]] = None,
     verilator_path: Optional[str] = None,
     koika_path: Optional[str] = None,
-    assert_lang: Optional[str] = None
-) -> Path:
+    assert_lang: Optional[str] = None,
+    collect_coverage: bool = False,
+) -> SimulationReport:
     """
     Simulate a design from a SpecModule, producing a VCD trace.
 
-    If *assert_lang* is provided (e.g. "sva"), assertion files are
-    generated alongside the RTL but do not affect the simulation itself.
+    Args:
+        spec_module: The SpecIR spec dialect module.
+        output_dir: Directory for build artifacts and VCD.
+        cycles: Number of simulation cycles (default from config).
+        config: Optional config dict (uses global config if None).
+        verilator_path: Path to Verilator executable.
+        koika_path: Path to the Kōika compiler executable.
+        assert_lang: If provided, generate assertions in this language.
+        collect_coverage: If True, attempt to enable Verilator coverage and
+                          extract the final coverage percentage.
+
+    Returns:
+        A SimulationReport containing the outcome, VCD path, coverage, and timing.
     """
     if output_dir is None:
         design_name = spec_module.name
@@ -191,12 +254,14 @@ def simulate_design(
     if koika_path is None:
         koika_path = config.get("verification", {}).get("koika_path")
 
+    # Optional rule splitting
     if config.get("verification", {}).get("split_monolithic_rules", False):
         logger.info("Applying rule‑splitting pass (split_monolithic_rules = true).")
         spec_module = split_rules(spec_module)
 
     design_name = spec_module.name
 
+    # Resolve parameters for type widths
     params: Dict[str, int] = {}
     for name, param_info in spec_module.parameters.items():
         if not isinstance(param_info, dict):
@@ -210,7 +275,7 @@ def simulate_design(
             except ValueError:
                 logger.warning("Could not parse parameter '%s' default '%s' as int; skipping.", name, default)
 
-    # 1. Synthesise with Kōika (Coq DSL) → patched Verilog with input ports
+    # 1. Synthesize with Kōika (Coq DSL) → patched Verilog with input ports
     rtl_dir = output_dir / "rtl"
     rtl_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Lowering SpecIR → RTL (Kōika Coq DSL) ...")
@@ -227,7 +292,7 @@ def simulate_design(
     if assert_lang:
         _generate_assertions(spec_module, assert_lang, output_dir)
 
-    # 3. Generate testbench (resolving parameterised types)
+    # 3. Generate testbench
     tb_path = output_dir / "sim_main.cpp"
     if spec_module.inputs:
         tb_path = _generate_input_testbench(
@@ -241,22 +306,49 @@ def simulate_design(
             cycles=cycles
         )
 
-    # 4. Run Verilator
+    # 4. Run Verilator (with coverage if requested)
     vcd_file = output_dir / "traces" / f"{design_name}.vcd"
     vcd_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Build extra Verilator args
+    extra_args = ["-Wno-fatal", "--assert"]
+    if collect_coverage:
+        extra_args.append("--coverage")
+        logger.info("Verilator coverage collection enabled.")
+
+    obj_dir = output_dir / "obj"
     logger.info("Running Verilator simulation for %d cycles...", cycles)
     try:
         vcd_result = verilator_sim.simulate(
             rtl_module_or_path=verilog_path,
             top_module=design_name,
-            output_dir=output_dir / "obj",
+            output_dir=obj_dir,
             vcd_path=vcd_file,
             cycles=cycles,
             verilator_path=verilator_path or config.get("verification", {}).get("verilator_path"),
-            testbench_path=tb_path
+            testbench_path=tb_path,
+            extra_verilator_args=extra_args,
         )
     except Exception as e:
         raise SimulationError(f"Verilator simulation failed: {e}") from e
 
+    # 5. Collect coverage if requested
+    coverage_pct = None
+    if collect_coverage:
+        # obj_dir contains the build directory (obj_dir/obj_dir/Vtop)
+        # The actual Verilator obj_dir is obj_dir / "obj_dir"
+        build_dir_cov = obj_dir / "obj_dir"
+        if build_dir_cov.exists():
+            coverage_pct = _collect_verilator_coverage(build_dir_cov, design_name)
+        else:
+            logger.debug("Expected Verilator obj_dir not found for coverage: %s", build_dir_cov)
+
     logger.info("Simulation complete. VCD: %s", vcd_result)
-    return vcd_result
+    return SimulationReport(
+        design_name=design_name,
+        success=True,
+        cycles=cycles,
+        coverage=coverage_pct,
+        vcd_path=str(vcd_result),
+        metadata={"simulation_tool": "verilator"},
+    )

@@ -88,8 +88,8 @@ class TestRegistry:
         registry.add_evidence("coq_theorem", "uri", "b", "koika", "p")
         registry.add_evidence("counterexample_trace", "local_id", "c", "BMC", "c")
         stats = registry.get_statistics()
-        assert stats["coq_theorem"] == 2
-        assert stats["counterexample_trace"] == 1
+        assert stats["by_type"]["coq_theorem"] == 2
+        assert stats["by_type"]["counterexample_trace"] == 1
 
     def test_add_counterexample(self, registry, tmp_path):
         trace = tmp_path / "trace.vcd"

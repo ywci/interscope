@@ -246,7 +246,3 @@ class TestProofSkillModelCheck(unittest.TestCase):
         result = self.skill._prove_model_check(obligation, context)
         self.assertFalse(result.success)
         self.assertIn("Missing 'rtl_file_path'", result.error_message)
-
-
-if __name__ == "__main__":
-    unittest.main()

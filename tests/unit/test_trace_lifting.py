@@ -62,7 +62,6 @@ def test_vcd_to_trace_with_mapping(mock_trace_module, monkeypatch, tmp_path):
 
     monkeypatch.setattr(vcd_to_trace, "_parse_vcd", mock_parse)
 
-    # Create a dummy VCD file so the existence check passes
     dummy_vcd = tmp_path / "dummy.vcd"
     dummy_vcd.write_text("")
 

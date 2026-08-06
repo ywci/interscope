@@ -1,7 +1,8 @@
 # src/specir/utils/config_loader.py
 #
-# Loads configuration from conf/config.yaml, supports environment variable substitution,
-# and provides singleton access to configuration for the InterScope project.
+# Loads configuration from conf/config.yaml, supports environment variable
+# substitution, and provides singleton access to configuration for the
+# InterScope project.
 
 import os
 import re
@@ -81,7 +82,7 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
       PERF_BEAM_SIZE         (int)
       PERF_BRANCHES          (int, branches_per_node)
       PERF_DEPTH             (int, depth_limit)
-      PERF_DIMENSIONS        (comma-separated list, e.g., "subgoal_reduction,trace_alignment")
+      PERF_DIMENSIONS        (comma-separated list)
       PERF_PRIMARY_DIMENSION (str)
       PERF_TEMPERATURE       (float, generation_temperature)
       PERF_MAX_WORKERS       (int)
@@ -153,14 +154,67 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
-def load_config(config_path: Optional[Path] = None, force_reload: bool = False) -> Dict[str, Any]:
+def deep_merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Load the InterScope configuration file.
+    Recursively merge *override* into *base*.
+
+    - For keys that are dictionaries in both, merge recursively.
+    - For keys that are lists in both, replace the list (override wins).
+    - For all other cases, the override value replaces the base value.
+
+    Args:
+        base: The base configuration dictionary.
+        override: The dictionary containing overrides.
+
+    Returns:
+        A new merged dictionary (the original ``base`` is not modified).
+    """
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge_configs(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def load_external_config(filepath: Path) -> Dict[str, Any]:
+    """
+    Load a YAML configuration file from *filepath* and return it as a dictionary.
+
+    Args:
+        filepath: Path to the YAML file.
+
+    Returns:
+        The parsed dictionary.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        yaml.YAMLError: If the YAML is malformed.
+    """
+    if not filepath.exists():
+        raise FileNotFoundError(f"External configuration file not found: {filepath}")
+    with open(filepath, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    if not isinstance(raw, dict):
+        raise ValueError(f"External configuration file must be a dictionary: {filepath}")
+    return _substitute_env_vars(raw)
+
+
+def load_config(
+    config_path: Optional[Path] = None,
+    force_reload: bool = False,
+    external_config_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Load the InterScope configuration file, optionally merging an external config.
 
     Args:
         config_path: Path to config.yaml. If None, uses <project_root>/conf/config.yaml,
                      unless the environment variable SPECIR_CONFIG is set.
         force_reload: If True, reload the configuration even if already loaded.
+        external_config_path: Optional path to an additional YAML file whose
+                              contents will be deep‑merged into the main config.
 
     Returns:
         Dictionary containing the configuration.
@@ -172,7 +226,7 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
     """
     global _CONFIG, _PROJECT_ROOT
 
-    if _CONFIG is not None and not force_reload:
+    if _CONFIG is not None and not force_reload and external_config_path is None:
         return _CONFIG
 
     if config_path is None:
@@ -193,6 +247,7 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
 
     config = _substitute_env_vars(raw_config)
 
+    # Apply defaults
     config.setdefault("llm", {})
     config["llm"].setdefault("temperature", 0.2)
     config["llm"].setdefault("max_tokens", 2048)
@@ -295,6 +350,11 @@ def load_config(config_path: Optional[Path] = None, force_reload: bool = False) 
         config["directories"].setdefault(key, default)
 
     config = _apply_perf_env_overrides(config)
+
+    # Merge external config if provided
+    if external_config_path is not None:
+        external = load_external_config(external_config_path)
+        config = deep_merge_configs(config, external)
 
     _validate_config(config)
 

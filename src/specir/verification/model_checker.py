@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from specir.utils.logger import get_logger
@@ -53,11 +54,13 @@ def run_model_check(
                                                   counterexample was found.
             output (str)               : Raw stdout+stderr from the tool.
             error (str or None)        : Error message if the run itself failed.
+            duration (float)           : Wall‑clock time in seconds.
+            details (dict)             : Additional info (engine, depth, timeout, etc.).
     """
+    start_time = time.time()
     config = get_config()
     mc_config = config.get("verification", {}).get("model_checker", {})
 
-    # Resolve tool path – prefer config, then PATH
     tool = mc_config.get("tool_path") or shutil.which("sby")
     if not tool:
         raise ModelCheckError(
@@ -65,7 +68,6 @@ def run_model_check(
             "'verification.model_checker.tool_path' in conf/config.yaml."
         )
 
-    # Resolve parameters
     if depth is None:
         if engine == "bmc":
             depth = config.get("verification", {}).get("bmc_max_depth", 100)
@@ -74,7 +76,6 @@ def run_model_check(
     if timeout is None:
         timeout = config.get("verification", {}).get("formal_timeout", 300)
 
-    # Build a temporary working directory
     work_dir = Path(tempfile.mkdtemp(prefix="specir_mc_"))
     try:
         sby_file = work_dir / "design.sby"
@@ -103,12 +104,15 @@ def run_model_check(
                 cwd=str(work_dir),
             )
         except subprocess.TimeoutExpired:
+            duration = time.time() - start_time
             return {
                 "success": False,
                 "status": "inconclusive",
                 "counterexample_trace": None,
                 "output": "",
                 "error": f"Model checking timed out after {timeout}s.",
+                "duration": duration,
+                "details": {"engine": engine, "depth": depth, "timeout": timeout},
             }
 
         output = result.stdout + "\n" + result.stderr
@@ -116,6 +120,7 @@ def run_model_check(
 
         # Analyse results
         status, counter_trace = _parse_sby_output(output, work_dir)
+        duration = time.time() - start_time
 
         if status == "proved":
             logger.info("Model checking succeeded – all properties hold.")
@@ -125,6 +130,8 @@ def run_model_check(
                 "counterexample_trace": None,
                 "output": output,
                 "error": None,
+                "duration": duration,
+                "details": {"engine": engine, "depth": depth, "timeout": timeout},
             }
         elif status == "disproved":
             logger.warning("Model checker found a counterexample.")
@@ -134,6 +141,8 @@ def run_model_check(
                 "counterexample_trace": counter_trace,
                 "output": output,
                 "error": None,
+                "duration": duration,
+                "details": {"engine": engine, "depth": depth, "timeout": timeout},
             }
         else:
             logger.error("Model checking inconclusive or failed. Output:\n%s", output)
@@ -143,6 +152,8 @@ def run_model_check(
                 "counterexample_trace": None,
                 "output": output,
                 "error": f"Model checking did not produce a definitive result. Output:\n{output[-2000:]}",
+                "duration": duration,
+                "details": {"engine": engine, "depth": depth, "timeout": timeout},
             }
 
     finally:
@@ -162,9 +173,6 @@ def _write_sby_file(
     mode = "bmc" if engine == "bmc" else "prove"
     options = f"mode {mode}\ndepth {depth}\ntimeout {timeout}"
 
-    # The assertion module `{top_module}_assertions` will be automatically
-    # bound by Yosys when reading with `-formal` because the module name
-    # follows the `*_assertions` convention.
     content = f"""[options]
 {options}
 

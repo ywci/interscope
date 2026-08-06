@@ -366,7 +366,6 @@ class LLMProofSkill(ProofSkill):
             perf_config.branches_per_node,
         )
 
-        # ---- Quick skeleton pre‑check ----
         if perf_config.try_skeleton_first:
             # Only applicable for Koika backend
             backend = obligation.get("backend", "koika").lower().replace("ō", "o")
@@ -383,7 +382,7 @@ class LLMProofSkill(ProofSkill):
                     )
                     if skeleton_result and skeleton_result.get("success"):
                         logger.info("Skeleton proof succeeded – PERF skipped.")
-                        self._last_perf_stats = PERFStats()  # empty stats
+                        self._last_perf_stats = PERFStats()
                         return ProofResult(
                             success=True,
                             proof_script=skeleton_result["proof_script"],
@@ -407,10 +406,8 @@ class LLMProofSkill(ProofSkill):
 
             proof_script, stats = traversal.traverse()
 
-            # Store stats for later retrieval
             self._last_perf_stats = stats
 
-            # Build the result
             if proof_script:
                 logger.info(
                     "PERF found a proof for '%s' at depth %d",
@@ -474,7 +471,6 @@ class LLMProofSkill(ProofSkill):
             "perf_config": perf_config,
         }
 
-        # Koika-specific context
         if backend == "koika" or backend.startswith("koi"):
             perf_ctx["coq_file_path"] = context.get("coq_file_path")
             perf_ctx["theorem_name"] = context.get("theorem_name")
@@ -489,7 +485,6 @@ class LLMProofSkill(ProofSkill):
                     context.get("theorem_name", "")
                 )
 
-        # ACL2-specific context
         elif backend == "acl2":
             perf_ctx["acl2_file_path"] = context.get("acl2_file_path")
             perf_ctx["theorem_name"] = context.get("theorem_name")
@@ -503,11 +498,9 @@ class LLMProofSkill(ProofSkill):
         if context.get("mc_trace"):
             perf_ctx["mc_trace"] = context["mc_trace"]
 
-        # Initial script (if available)
         if context.get("initial_script"):
             perf_ctx["initial_script"] = context["initial_script"]
 
-        # Spec module
         if context.get("spec_module"):
             perf_ctx["spec_module"] = context["spec_module"]
 
@@ -525,7 +518,6 @@ class LLMProofSkill(ProofSkill):
                 match = pattern.search(content)
                 if match:
                     return match.group(1).strip()
-            # Fallback: find first theorem
             pattern = re.compile(r"Theorem\s+\w+\s*:\s*([^.]*)\.", re.DOTALL)
             match = pattern.search(content)
             if match:

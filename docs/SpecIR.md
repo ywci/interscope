@@ -302,7 +302,21 @@ metadata:
   options:
     max_depth: 100
     invariant_template: "full -> head != tail"
+  # Optional fields for design classification
+  design_category: "fifo"          # free‑form string (e.g., "alu", "fifo", "riscv")
+  design_level: 2                  # integer 1–4 indicating complexity
+  expected_properties:             # list of property names expected to be provable
+    - "fifo_no_overflow"
+    - "fifo_no_underflow"
 ```
+
+**Description**:
+- `engine` and `options` are the existing fields for engine‑specific parameters.
+- `design_category` is an optional free‑form string that classifies the design (e.g., `"fifo"`, `"alu"`). It may be used to group results during batch evaluation.
+- `design_level` is an optional integer (1–4) that indicates the design’s complexity level. It has no impact on verification semantics.
+- `expected_properties` is an optional list of property names that are expected to be provable for the design. This can be used to compute verification success rates in automated benchmarks.
+
+All these fields are optional; when absent, the design is treated as uncategorised. The schema (`conf/schemas/specir_schema.yaml`) has been updated to accept them.
 
 ---
 

@@ -1,7 +1,7 @@
 # tests/unit/test_verify.py
 #
 # Unit tests for the `specir verify` CLI command.
-# Covers theorem proving (Koika/ACL2) and model-checking obligations.
+# Updated for new ablation flags, output_format, and ProofObligationResult.
 
 import json
 import sys
@@ -22,11 +22,11 @@ from specir.cli.verify import (
 from specir.verification.proof.proof import ProofResult
 from specir.verification.proof.proof_skill import LLMProofSkill
 from specir.verification.model_checker import ModelCheckError
+from specir.utils.result_types import ProofObligationResult, Status
 
 
 def _make_minimal_spec_module(name="test"):
     from specir.dialects.spec_ir import SpecModule, SpecStateOp, SpecRuleOp, SpecPropertyOp
-
     mod = SpecModule(name=name)
     mod.state_ops.append(
         SpecStateOp(state_name="x", kind="register", data_type="bits<8>", initial=0)
@@ -109,6 +109,10 @@ class TestVerifyTheoremProving:
                 no_perf=False,
                 perf_stats=False,
                 dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
             )
             ret = verify_spec(args)
 
@@ -156,6 +160,10 @@ class TestVerifyTheoremProving:
                 no_perf=False,
                 perf_stats=False,
                 dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
             )
             ret = verify_spec(args)
 
@@ -201,6 +209,10 @@ class TestVerifyTheoremProving:
                 no_perf=False,
                 perf_stats=False,
                 dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
             )
             verify_spec(args)
 
@@ -267,6 +279,10 @@ class TestVerifyModelChecking:
                 no_perf=False,
                 perf_stats=False,
                 dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
             )
             ret = verify_spec(args)
 
@@ -328,6 +344,10 @@ class TestVerifyModelChecking:
                 no_perf=False,
                 perf_stats=False,
                 dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
             )
             ret = verify_spec(args)
 
@@ -374,6 +394,10 @@ class TestVerifyModelChecking:
                 no_perf=False,
                 perf_stats=False,
                 dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
             )
             ret = verify_spec(args)
 
@@ -444,6 +468,10 @@ class TestVerifyModelChecking:
                 no_perf=False,
                 perf_stats=False,
                 dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
             )
             ret = verify_spec(args)
 
@@ -455,22 +483,41 @@ class TestVerifyModelChecking:
 class TestReport:
     def test_report_file_written(self, tmp_path):
         results = [
-            {"property": "p", "status": "passed", "detail": "", "backend": "koika"}
+            ProofObligationResult(
+                property="p", status=Status.PASS, backend="koika"
+            )
         ]
         report_path = tmp_path / "report.json"
-        args = argparse.Namespace(report=str(report_path), debug=False)
+        args = argparse.Namespace(
+            input=str(tmp_path / "test.specir"),
+            backend=None,
+            report=str(report_path),
+            debug=False,
+            output_format="text",
+        )
         _finish_summary(results, args)
         assert report_path.exists()
         data = json.loads(report_path.read_text())
-        assert len(data["results"]) == 1
-        assert data["results"][0]["status"] == "passed"
+        assert len(data["obligations"]) == 1
+        assert data["obligations"][0]["status"] == "PASS"
 
     def test_summary_output(self, capsys):
         results = [
-            {"property": "a", "status": "passed", "detail": "", "backend": "koika"},
-            {"property": "b", "status": "failed", "detail": "error msg", "backend": "acl2"},
+            ProofObligationResult(
+                property="a", status=Status.PASS, backend="koika"
+            ),
+            ProofObligationResult(
+                property="b", status=Status.FAIL, backend="acl2",
+                error_message="error msg"
+            ),
         ]
-        args = argparse.Namespace(report=None, debug=False)
+        args = argparse.Namespace(
+            input="test.specir",
+            backend=None,
+            report=None,
+            debug=False,
+            output_format="text",
+        )
         ret = _finish_summary(results, args)
         captured = capsys.readouterr()
         assert "PASS: a (koika)" in captured.out

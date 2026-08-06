@@ -10,6 +10,7 @@
 import argparse
 import sys
 import json
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from specir.parser.parser import parse_specir
@@ -27,6 +28,11 @@ from specir.utils.config_loader import load_config, get_project_root, _validate_
 from specir.verification.proof.proof_skill import LLMProofSkill, ProofResult
 from specir.verification.perf.perf_config import PERFConfig, validate_perf_against_config
 from specir.verification.perf.perf_stats import PERFStats
+from specir.utils.result_types import (
+    VerificationReport,
+    ProofObligationResult,
+    Status,
+)
 
 logger = get_logger(__name__)
 
@@ -66,18 +72,25 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Maximum repair attempts (overrides config, theorem proving only)")
     parser.add_argument("--report", "-r", type=str, default=None,
                         help="Save verification report to this JSON file")
+    parser.add_argument("--output-format", choices=["json", "text"], default="text",
+                        help="Output format: json for structured data, text for summary (default: text)")
     parser.add_argument("--no-llm", action="store_true",
                         help="Disable LLM assistance (theorem proving only)")
     parser.add_argument("--show-proof", action="store_true",
                         help="Print the generated proof script for each successful obligation")
 
-    # PERF-specific flags
     parser.add_argument("--perf", action="store_true",
                         help="Enable PERF (Proof tree Exploration with Reflective Feedback)")
     parser.add_argument("--no-perf", action="store_true",
                         help="Disable PERF (fall back to greedy repair)")
     parser.add_argument("--perf-stats", action="store_true",
                         help="Print PERF traversal statistics (nodes, depth, tokens)")
+    parser.add_argument("--no-pareto", action="store_true",
+                        help="Disable Pareto pruning (for ablation experiments)")
+    parser.add_argument("--no-trace-alignment", action="store_true",
+                        help="Disable trace alignment dimension (for ablation)")
+    parser.add_argument("--no-reflection", action="store_true",
+                        help="Disable reflection feedback (for ablation)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Parse and validate only (no execution)")
 
@@ -115,31 +128,39 @@ def verify_spec(args: argparse.Namespace) -> int:
     log_level = "DEBUG" if args.debug else "INFO"
     setup_logging(level=log_level)
 
-    # Load configuration (respects SPECIR_CONFIG env variable)
     config = load_config()
     project_root = get_project_root()
 
-    # ---- Apply PERF CLI overrides ----
     if args.perf:
         config['proof']['perf']['enabled'] = True
-        # PERF requires use_proof_library = False
         config['provers']['koika']['use_proof_library'] = False
         logger.info("PERF enabled via --perf flag")
     elif args.no_perf:
         config['proof']['perf']['enabled'] = False
         logger.info("PERF disabled via --no-perf flag")
 
-    # ---- Validate configuration (using the already-loaded config) ----
+    perf_cfg = config.setdefault("proof", {}).setdefault("perf", {})
+    if args.no_pareto:
+        perf_cfg["scoring_tournament_size"] = 0
+        logger.info("Ablation: Pareto pruning disabled")
+    if args.no_trace_alignment:
+        dims = perf_cfg.get("dimensions", [])
+        if "trace_alignment" in dims:
+            dims.remove("trace_alignment")
+            perf_cfg["dimensions"] = dims
+            logger.info("Ablation: trace_alignment dimension removed")
+    if args.no_reflection:
+        perf_cfg["use_reflection"] = False
+        logger.info("Ablation: reflection feedback disabled")
+
     try:
-        _validate_config(config)   # raises ValueError on conflict
+        _validate_config(config)
     except ValueError as e:
         logger.error(f"Configuration validation failed: {e}")
         return 1
 
-    # ---- Dry-run ----
     if args.dry_run:
         logger.info("DRY RUN: Configuration and spec are valid.")
-        # We still parse the spec to validate it
         input_path = Path(args.input).resolve()
         if not input_path.exists():
             logger.error(f"Input file not found: {input_path}")
@@ -159,7 +180,6 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"Dry run failed: {e}")
             return 1
 
-    # ---- Parse and validate input spec ----
     input_path = Path(args.input).resolve()
     if not input_path.exists():
         logger.error(f"Input file not found: {input_path}")
@@ -208,7 +228,6 @@ def verify_spec(args: argparse.Namespace) -> int:
         logger.warning("No proof obligations found in the specification.")
         return 0
 
-    # Filter by backend if specified
     if args.backend:
         target_backend = _canonical_backend(args.backend)
         filtered = []
@@ -226,7 +245,6 @@ def verify_spec(args: argparse.Namespace) -> int:
             return 0
         obligations = filtered
 
-    # Split obligations by engine
     theorem_obligations = []
     mc_obligations = []
     for po in obligations:
@@ -236,9 +254,8 @@ def verify_spec(args: argparse.Namespace) -> int:
         else:
             theorem_obligations.append(po)
 
-    results: List[Dict[str, Any]] = []
+    results: List[ProofObligationResult] = []
 
-    # ---- Theorem Proving (Koika or ACL2) ----
     if theorem_obligations:
         backend_files: Dict[str, str] = {}
         backends_needed: set = set()
@@ -271,10 +288,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             acl2_file = acl2_dir / f"{design_name}.lisp"
             try:
                 acl2_mod = spec_to_acl2_convert(spec_module)
-                if hasattr(acl2_mod, "to_acl2_code"):
-                    acl2_code = acl2_mod.to_acl2_code()
-                else:
-                    acl2_code = _generate_acl2_from_module(acl2_mod)
+                acl2_code = acl2_mod.to_acl2_code() if hasattr(acl2_mod, "to_acl2_code") else _generate_acl2_from_module(acl2_mod)
                 acl2_file.write_text(acl2_code, encoding="utf-8")
                 backend_files["acl2"] = str(acl2_file)
                 logger.info(f"ACL2 file written to {acl2_file}")
@@ -282,7 +296,6 @@ def verify_spec(args: argparse.Namespace) -> int:
                 logger.error(f"Failed to generate ACL2 file: {e}")
                 return 1
 
-        # ---- Instantiate proof skill (which will use PERF if config says so) ----
         try:
             proof_skill = LLMProofSkill(config=config)
             if args.max_attempts is not None:
@@ -293,13 +306,13 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"Failed to initialize proof skill: {e}")
             return 1
 
-        # ---- Process each theorem obligation ----
         for po in theorem_obligations:
             prop_name = po.get("property") if isinstance(po, dict) else getattr(po, "property", "unknown")
             backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend_raw) or "koika"
             logger.info(f"Proving '{prop_name}' with backend {canonical}")
 
+            start_time = time.time()
             context: Dict[str, Any] = {
                 "spec_module": spec_module,
                 "config": config,
@@ -307,18 +320,27 @@ def verify_spec(args: argparse.Namespace) -> int:
             if canonical == "koika":
                 if "koika" not in backend_files:
                     logger.error("Coq file not generated; cannot prove.")
-                    results.append({"property": prop_name, "status": "error", "detail": "Coq file missing"})
+                    results.append(ProofObligationResult(
+                        property=prop_name,
+                        status=Status.ERROR,
+                        backend=canonical,
+                        error_message="Coq file missing"
+                    ))
                     continue
                 context["coq_file_path"] = backend_files["koika"]
                 context["theorem_name"] = f"{prop_name}_proved"
             else:
                 if "acl2" not in backend_files:
                     logger.error("ACL2 file not generated; cannot prove.")
-                    results.append({"property": prop_name, "status": "error", "detail": "ACL2 file missing"})
+                    results.append(ProofObligationResult(
+                        property=prop_name,
+                        status=Status.ERROR,
+                        backend=canonical,
+                        error_message="ACL2 file missing"
+                    ))
                     continue
                 context["acl2_file_path"] = backend_files["acl2"]
                 context["theorem_name"] = f"{prop_name}_correct"
-                # For ACL2, we need the statement if available
                 statement = _extract_acl2_statement(acl2_mod, prop_name)
                 context["theorem_statement"] = statement
 
@@ -326,37 +348,41 @@ def verify_spec(args: argparse.Namespace) -> int:
                 result: ProofResult = proof_skill.prove(po, context)
             except Exception as e:
                 logger.error(f"Proof attempt for '{prop_name}' failed with exception: {e}")
-                results.append({"property": prop_name, "status": "error", "detail": str(e)})
+                results.append(ProofObligationResult(
+                    property=prop_name,
+                    status=Status.ERROR,
+                    backend=canonical,
+                    error_message=str(e),
+                    duration=time.time() - start_time
+                ))
                 continue
+
+            duration = time.time() - start_time
+            status = Status.PASS if result.success else Status.FAIL
+            proof_script = result.proof_script if args.show_proof or args.debug else None
 
             if result.success:
                 logger.info(f"  PASS: {prop_name}")
-                status = "passed"
-                detail = result.proof_script or ""
-                if args.show_proof or args.debug:
-                    print(f"\n----- Proof for {prop_name} ({canonical}) -----")
-                    print(detail)
-                    print("---------------------------------------------\n")
                 _safe_register_evidence(spec_module, prop_name, canonical, result)
             else:
                 logger.error(f"  FAIL: {prop_name}: {result.error_message}")
-                status = "failed"
-                detail = result.error_message or ""
 
-            results.append({
-                "property": prop_name,
-                "status": status,
-                "detail": detail,
-                "backend": canonical
-            })
+            results.append(ProofObligationResult(
+                property=prop_name,
+                status=status,
+                backend=canonical,
+                iterations=result.iterations,
+                proof_script=result.proof_script if result.success else None,
+                error_message=result.error_message,
+                duration=duration,
+                details=result.metadata
+            ))
 
-        # ---- If --perf-stats, print PERF statistics ----
         if args.perf_stats:
             stats = proof_skill.get_last_perf_stats()
-            if stats:
+            if stats and args.output_format != "json":
                 _print_perf_stats(stats)
 
-    # ---- Model Checking ----
     if mc_obligations:
         logger.info(f"Running model checking for {len(mc_obligations)} obligation(s).")
         mc_dir = out_dir / "model_check"
@@ -370,7 +396,12 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"RTL generation for model checking failed: {e}")
             for po in mc_obligations:
                 prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
-                results.append({"property": prop, "status": "error", "detail": str(e)})
+                results.append(ProofObligationResult(
+                    property=prop,
+                    status=Status.ERROR,
+                    backend="model_checking",
+                    error_message=str(e)
+                ))
             return _finish_summary(results, args)
 
         rtl_file = rtl_dir / f"{design_name}.v"
@@ -382,7 +413,12 @@ def verify_spec(args: argparse.Namespace) -> int:
                 logger.error("Could not locate generated Verilog file for model checking.")
                 for po in mc_obligations:
                     prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
-                    results.append({"property": prop, "status": "error", "detail": "Verilog file not found"})
+                    results.append(ProofObligationResult(
+                        property=prop,
+                        status=Status.ERROR,
+                        backend="model_checking",
+                        error_message="Verilog file not found"
+                    ))
                 return _finish_summary(results, args)
 
         assertions_dir = mc_dir / "assertions"
@@ -421,7 +457,12 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"Assertion generation failed: {e}")
             for po in mc_obligations:
                 prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
-                results.append({"property": prop, "status": "error", "detail": str(e)})
+                results.append(ProofObligationResult(
+                    property=prop,
+                    status=Status.ERROR,
+                    backend="model_checking",
+                    error_message=str(e)
+                ))
             return _finish_summary(results, args)
 
         try:
@@ -434,44 +475,68 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"Model checking error: {e}")
             for po in mc_obligations:
                 prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
-                results.append({"property": prop, "status": "error", "detail": str(e)})
+                results.append(ProofObligationResult(
+                    property=prop,
+                    status=Status.ERROR,
+                    backend="model_checking",
+                    error_message=str(e)
+                ))
             return _finish_summary(results, args)
 
-        if mc_result["status"] == "proved":
-            for po in mc_obligations:
-                prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
+        mc_status = Status.PASS if mc_result.get("success") else Status.FAIL
+        for po in mc_obligations:
+            prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
+            if mc_status == Status.PASS:
                 logger.info(f"  PASS: {prop} (model checking)")
-                results.append({
-                    "property": prop,
-                    "status": "passed",
-                    "detail": "Model checking succeeded",
-                    "backend": "model_checking"
-                })
                 _safe_register_mc_evidence(spec_module, prop, mc_result)
-        else:
-            for po in mc_obligations:
-                prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
+                results.append(ProofObligationResult(
+                    property=prop,
+                    status=Status.PASS,
+                    backend="model_checking",
+                    details={"engine": mc_result.get("details", {}).get("engine", "bmc")},
+                    duration=mc_result.get("duration")
+                ))
+            else:
                 logger.error(f"  FAIL: {prop} (model checking): {mc_result.get('error') or 'Counterexample found'}")
-                detail = mc_result.get("output", "")
-                if mc_result.get("counterexample_trace"):
-                    detail += f"\nCounterexample trace: {mc_result['counterexample_trace']}"
-                results.append({
-                    "property": prop,
-                    "status": "failed",
-                    "detail": detail,
-                    "backend": "model_checking"
-                })
+                results.append(ProofObligationResult(
+                    property=prop,
+                    status=Status.FAIL,
+                    backend="model_checking",
+                    error_message=mc_result.get("error"),
+                    duration=mc_result.get("duration")
+                ))
 
     return _finish_summary(results, args)
 
 
-def _finish_summary(results: List[Dict[str, Any]], args: argparse.Namespace) -> int:
+def _finish_summary(results: List[ProofObligationResult], args: argparse.Namespace) -> int:
     """Print summary and save report if requested."""
-    _print_summary(results)
-    if args.report:
-        _save_report(results, args.report)
+    report = VerificationReport(
+        design_name="",
+        backend="",
+        obligations=results,
+    )
 
-    all_passed = all(r["status"] == "passed" for r in results)
+    if hasattr(args, 'input'):
+        report.design_name = Path(args.input).stem
+
+    if args.backend:
+        report.backend = _canonical_backend(args.backend) or "mixed"
+    else:
+        backends = set(o.backend for o in results)
+        report.backend = ", ".join(sorted(backends)) if backends else "unknown"
+
+    if args.output_format == "json":
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        _print_summary(report)
+
+    if args.report:
+        with open(args.report, "w") as f:
+            json.dump(report.to_dict(), f, indent=2)
+        logger.info(f"Report saved to {args.report}")
+
+    all_passed = all(o.status == Status.PASS for o in results)
     return 0 if all_passed else 1
 
 
@@ -532,23 +597,17 @@ def _safe_register_mc_evidence(spec_module, prop_name: str, mc_result: Dict[str,
         logger.warning(f"Failed to register model‑checking evidence: {e}")
 
 
-def _print_summary(results: List[Dict[str, Any]]) -> None:
-    passed = sum(1 for r in results if r["status"] == "passed")
-    failed = len(results) - passed
+def _print_summary(report: VerificationReport) -> None:
+    """Print a human‑readable verification summary."""
+    passed = sum(1 for o in report.obligations if o.status == Status.PASS)
+    failed = len(report.obligations) - passed
     print(f"\n===== Verification Summary: {passed} passed, {failed} failed =====\n")
-    for r in results:
-        status_label = "PASS" if r["status"] == "passed" else "FAIL"
-        backend = r.get("backend", "?")
-        print(f"{status_label}: {r['property']} ({backend})")
-        if r["status"] != "passed" and r.get("detail"):
-            print(f"   Error: {r['detail'][:200]}")
+    for obl in report.obligations:
+        status_label = "PASS" if obl.status == Status.PASS else "FAIL"
+        print(f"{status_label}: {obl.property} ({obl.backend})")
+        if obl.status != Status.PASS and obl.error_message:
+            print(f"   Error: {obl.error_message[:200]}")
     print(f"\n===== {'All properties hold' if failed == 0 else 'Some properties failed'} =====\n")
-
-
-def _save_report(results: List[Dict[str, Any]], report_path: str) -> None:
-    with open(report_path, "w") as f:
-        json.dump({"results": results}, f, indent=2)
-    logger.info(f"Report saved to {report_path}")
 
 
 def _generate_acl2_from_module(acl2_mod) -> str:

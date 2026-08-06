@@ -6,6 +6,7 @@
 import re
 import os
 import tempfile
+import time
 import concurrent.futures
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -16,6 +17,7 @@ from specir.verification.proof.acl2.proof_gen import (
     parse_hints_from_response,
     generate_acl2_proof_variants,
 )
+from specir.verification.proof.proof import ProofResult
 from specir.utils.logger import get_logger
 from specir.utils.config_loader import get_config
 
@@ -105,59 +107,49 @@ class ACL2Prover:
         theorem_name: str,
         statement: Optional[str] = None,
         hints: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    ) -> ProofResult:
         """
-        Prove an ACL2 theorem using the current session (which must already
-        contain all required function definitions). Uses checkpoint/rollback
-        for safe iterative repair.
+        Prove an ACL2 theorem using the current session. Returns a ProofResult
+        with structured metadata.
 
         If *statement* is None, the theorem is assumed to already exist in the
-        session (e.g., loaded from a file) and we attempt to re‑verify it by
-        name.
-
-        Args:
-            theorem_name: Name of the theorem (e.g., "no-overflow").
-            statement: ACL2 formula (e.g., "(implies (full st) (not (enqueue st)))").
-                       If None, the theorem must already be present in the session.
-            hints: Optional list of hint strings.  Each entry is a complete
-                   ACL2 hint expression, e.g. ``("Goal" :induct t)``.
-
-        Returns:
-            Dictionary with keys:
-            - success (bool)
-            - proof_script (str) if successful
-            - error (str) if failed
+        session and we attempt to re‑verify it by name.
         """
+        start_time = time.time()
         acl2 = self._ensure_acl2_client()
 
+        # Handle existing theorem by name
         if statement is None:
-            return self._prove_existing_by_name(acl2, theorem_name)
+            return self._prove_existing_by_name(acl2, theorem_name, start_time)
 
+        # Try skeleton induction first if no hints provided
         if not hints:
             skeleton_hint = ['("Goal" :induct t)']
             logger.info("Trying skeleton induction hint for '%s'", theorem_name)
             result = acl2.defthm(theorem_name, statement, skeleton_hint)
             if result["success"]:
-                proof_script = self._build_defthm_string(
-                    theorem_name, statement, skeleton_hint
-                )
+                proof_script = self._build_defthm_string(theorem_name, statement, skeleton_hint)
+                duration = time.time() - start_time
                 logger.info("Skeleton proof succeeded for '%s'.", theorem_name)
-                return {"success": True, "proof_script": proof_script}
-            else:
-                logger.info(
-                    "Skeleton proof failed for '%s': %s",
-                    theorem_name, result.get("output", "")[:200]
+                return ProofResult(
+                    success=True,
+                    proof_script=proof_script,
+                    duration=duration,
+                    backend="acl2",
+                    metadata={"automation": "skeleton"}
                 )
+            else:
+                logger.info("Skeleton proof failed for '%s': %s", theorem_name, result.get("output", "")[:200])
                 acl2.undo()
 
-        # Save a checkpoint *once* before the first repair attempt
+        # Save a checkpoint before repair loop
         checkpoint_name = f"pre_{theorem_name}"
         acl2.save_checkpoint(checkpoint_name)
 
         attempt = 0
         current_hints = hints or []
         last_error = None
-        prev_hints_list: List[List[str]] = []   # for dead‑end detection
+        prev_hints_list: List[List[str]] = []
         same_error_count = 0
 
         logger.info("Starting main proof attempt loop for '%s' (max %d attempts).",
@@ -166,47 +158,45 @@ class ACL2Prover:
         while attempt < self.max_repair:
             logger.info("Proof attempt %d/%d", attempt + 1, self.max_repair)
 
-            # Restore clean checkpoint before each attempt (except first)
             if attempt > 0:
                 acl2.restore_checkpoint(checkpoint_name)
-                logger.debug("Restored checkpoint '%s'", checkpoint_name)
 
             result = acl2.defthm(theorem_name, statement, current_hints)
             if result["success"]:
-                proof_script = self._build_defthm_string(
-                    theorem_name, statement, current_hints
-                )
+                proof_script = self._build_defthm_string(theorem_name, statement, current_hints)
+                duration = time.time() - start_time
                 logger.info("ACL2 proof succeeded for '%s'.", theorem_name)
-                return {"success": True, "proof_script": proof_script}
+                return ProofResult(
+                    success=True,
+                    proof_script=proof_script,
+                    duration=duration,
+                    backend="acl2",
+                    iterations=attempt + 1,
+                    metadata={"automation": "llm_repair"}
+                )
 
             last_error = result.get("output", "ACL2 proof failed")
-            logger.warning(
-                "ACL2 proof attempt %d for %s failed: %s",
-                attempt + 1, theorem_name, last_error[:200]
-            )
+            logger.warning("ACL2 proof attempt %d for %s failed: %s", attempt + 1, theorem_name, last_error[:200])
 
             prev_hints_list.append(current_hints[:])
-            if len(prev_hints_list) >= 2:
-                if prev_hints_list[-1] == prev_hints_list[-2]:
-                    logger.warning("LLM returned identical hints twice; stopping repair.")
-                    break
-            # Detect if the same error is occurring repeatedly
-            error_key = last_error[:80]  # simple fingerprint
-            if attempt > 0 and error_key in (err[:80] for err in [last_error]):  # crude
+            if len(prev_hints_list) >= 2 and prev_hints_list[-1] == prev_hints_list[-2]:
+                logger.warning("LLM returned identical hints twice; stopping repair.")
+                break
+
+            error_key = last_error[:80]
+            if attempt > 0 and error_key in [err[:80] for err in [last_error]]:
                 same_error_count += 1
                 if same_error_count >= 3:
-                    logger.warning("The same error has occurred %d times; stopping repair.",
-                                   same_error_count)
+                    logger.warning("The same error has occurred %d times; stopping repair.", same_error_count)
                     break
 
+            # Strategy reflection at midpoint
             if attempt + 1 == self.max_repair // 2:
-                logger.info("Triggering strategy reflection after %d failed attempts.",
-                            attempt + 1)
+                logger.info("Triggering strategy reflection after %d failed attempts.", attempt + 1)
                 new_approach = self._request_strategy_reflection(
                     theorem_name, statement, current_hints, last_error
                 )
                 if new_approach:
-                    # Reset with the new hints
                     current_hints = new_approach
                     prev_hints_list.clear()
                     same_error_count = 0
@@ -225,13 +215,18 @@ class ACL2Prover:
 
             attempt += 1
 
+        duration = time.time() - start_time
         logger.error("ACL2 proof failed after %d attempts", attempt)
-        return {
-            "success": False,
-            "error": f"ACL2 proof failed after {attempt} attempts: {last_error}"
-        }
+        return ProofResult(
+            success=False,
+            error_message=f"ACL2 proof failed after {attempt} attempts: {last_error}",
+            duration=duration,
+            backend="acl2",
+            iterations=attempt,
+            metadata={"automation": "llm_repair_exhausted"}
+        )
 
-    def _prove_existing_by_name(self, acl2: ACL2Client, theorem_name: str) -> Dict[str, Any]:
+    def _prove_existing_by_name(self, acl2: ACL2Client, theorem_name: str, start_time: float) -> ProofResult:
         """Attempt to re‑verify an existing theorem by name."""
         logger.info("Attempting to verify existing theorem '%s'", theorem_name)
         for name_variant in (theorem_name, f"acl2::{theorem_name}"):
@@ -239,19 +234,27 @@ class ACL2Prover:
             try:
                 result = acl2.send(cmd)
                 if not acl2._contains_error(result):
-                    return {
-                        "success": True,
-                        "proof_script": f";; Theorem {theorem_name} already verified in session"
-                    }
+                    duration = time.time() - start_time
+                    return ProofResult(
+                        success=True,
+                        proof_script=f";; Theorem {theorem_name} already verified in session",
+                        duration=duration,
+                        backend="acl2",
+                        metadata={"automation": "pre-proven"}
+                    )
             except Exception as e:
                 logger.debug("Verification attempt with '%s' raised: %s", name_variant, e)
                 continue
 
         last_result = acl2.send(f"(verify ({theorem_name}))")
-        return {
-            "success": False,
-            "error": f"Verification of '{theorem_name}' failed: {last_result}"
-        }
+        duration = time.time() - start_time
+        return ProofResult(
+            success=False,
+            error_message=f"Verification of '{theorem_name}' failed: {last_result}",
+            duration=duration,
+            backend="acl2",
+            metadata={"automation": "none"}
+        )
 
     def _repair_hints(
         self,
@@ -285,8 +288,6 @@ class ACL2Prover:
     ) -> Optional[List[str]]:
         """
         Ask the LLM for a completely new proof approach after repeated failures.
-
-        Returns a new list of hints (or None if no useful response).
         """
         prompt = (
             "You are an expert in ACL2 hardware verification.\n\n"
@@ -327,21 +328,6 @@ class ACL2Prover:
     ) -> Dict[str, Any]:
         """
         Evaluate a candidate proof script (defthm form) for PERF.
-
-        The proof script is evaluated in a fresh ACL2 session (or a temporary
-        sub‑session) to avoid polluting the main session.
-
-        Args:
-            theorem_name: Name of the theorem.
-            statement: The theorem statement (formula).
-            proof_script: The complete defthm form (including hints).
-
-        Returns:
-            Dict with:
-                success: bool
-                error: Optional[str]
-                output: str
-                proof_finished: bool (always True for ACL2 if defthm succeeds)
         """
         self._perf_stats["total_verifier_calls"] += 1
 
@@ -349,17 +335,6 @@ class ACL2Prover:
         acl2 = get_acl2_client_from_config(self.config)
         try:
             acl2.start()
-
-            # Load the file context (if any) – we need to know if there are
-            # prior definitions. Since we don't have a file context in the ACL2
-            # prover as we do for Koika, we assume that the theorem and its
-            # supporting definitions are either in the proof_script itself
-            # or already loaded. For PERF, the proof_script should be self-contained.
-            # For safety, we will just evaluate the proof_script directly.
-            # However, ACL2 defthm may refer to previously defined functions,
-            # so we need a way to load the context. For PERF, the context is passed
-            # via the overall session, so we might need to replicate that.
-            # This is a limitation: we'll just try to evaluate the defthm.
 
             # Try to evaluate the proof script
             result = acl2.send(proof_script)
@@ -382,9 +357,6 @@ class ACL2Prover:
                         "proof_finished": True,
                     }
                 else:
-                    # The defthm may have been added but not proved? But defthm always tries to prove.
-                    # If no error but no Q.E.D., maybe it's just the definition.
-                    # We can try to verify explicitly.
                     verify_result = acl2.send(f"(verify {theorem_name})")
                     if "Q.E.D." in verify_result or "Proof succeeded" in verify_result:
                         return {
@@ -419,16 +391,6 @@ class ACL2Prover:
     ) -> List[Dict[str, Any]]:
         """
         Evaluate multiple proof scripts in parallel for PERF.
-
-        Args:
-            theorem_name: Name of the theorem.
-            statement: The theorem statement.
-            scripts: List of candidate proof scripts (complete defthm forms).
-            max_workers: Maximum number of parallel workers.
-
-        Returns:
-            List of results (same order as scripts), each result is a dict
-            from evaluate_proof_script.
         """
         if not scripts:
             return []

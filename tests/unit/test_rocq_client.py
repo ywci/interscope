@@ -187,7 +187,3 @@ class TestPublicAPI(unittest.TestCase):
             mock_call.return_value = {"goals": []}
             with self.assertRaises(RocqClientError):
                 client.start_session(Path("test.v"), "theorem")
-
-
-if __name__ == "__main__":
-    unittest.main()

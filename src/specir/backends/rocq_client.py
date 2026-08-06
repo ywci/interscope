@@ -13,7 +13,6 @@ import queue
 import itertools
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
-
 from specir.utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -1,8 +1,7 @@
 # tests/unit/test_cli_sim.py
 #
 # Unit tests for the `specir sim` CLI subcommand.
-# Verifies argument parsing and the main execution flow
-# with mocked simulation backend.
+# Updated to include the `output_format` attribute in mock args.
 
 import argparse
 import pytest
@@ -26,6 +25,7 @@ class TestArgumentParser:
         assert args.cycles is None
         assert args.verilator_path is None
         assert args.koika_path is None
+        assert args.output_format == "text"
         assert args.debug is False
 
     def test_all_optional_arguments(self):
@@ -36,12 +36,14 @@ class TestArgumentParser:
             "--cycles", "500",
             "--verilator-path", "/usr/local/bin/verilator",
             "--koika-path", "/usr/local/bin/koika",
+            "--output-format", "json",
             "--debug"
         ])
         assert args.out_dir == "/tmp/build"
         assert args.cycles == 500
         assert args.verilator_path == "/usr/local/bin/verilator"
         assert args.koika_path == "/usr/local/bin/koika"
+        assert args.output_format == "json"
         assert args.debug is True
 
     def test_short_flags(self):
@@ -58,13 +60,14 @@ class TestArgumentParser:
 class TestSimSpecExecution:
     @pytest.fixture
     def mock_args(self):
-        """Return an argparse.Namespace with typical values."""
+        """Return an argparse.Namespace with typical values including output_format."""
         args = argparse.Namespace()
         args.input = "/path/to/design.specir"
         args.out_dir = None
         args.cycles = None
         args.verilator_path = None
         args.koika_path = None
+        args.output_format = "text"      # new field
         args.debug = False
         return args
 
@@ -95,7 +98,6 @@ class TestSimSpecExecution:
              patch("specir.cli.sim.parse_specir") as mock_parse, \
              patch("specir.cli.sim.convert_ast_to_spec_module",
                    side_effect=Exception("conversion error")):
-            # parse_specir must return an object with a .module attribute
             mock_ast = MagicMock()
             mock_ast.module = MagicMock()
             mock_parse.return_value = mock_ast

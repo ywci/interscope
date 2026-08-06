@@ -5,12 +5,18 @@
 # adding, querying, updating, and deleting evidence entries.
 
 import sqlite3
+import json
+import csv
 import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from specir.utils.config_loader import get_config, get_project_root
+from specir.utils.logger import get_logger
 
+logger = get_logger(__name__)
+
+# Only the CREATE TABLE statement – indexes are created separately after migration.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,14 +26,21 @@ CREATE TABLE IF NOT EXISTS evidence (
     engine TEXT NOT NULL,
     status TEXT,
     property_name TEXT,
+    design_name TEXT,
+    iterations INTEGER,
+    llm_used INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE INDEX IF NOT EXISTS idx_evidence_type ON evidence(type);
-CREATE INDEX IF NOT EXISTS idx_evidence_property ON evidence(property_name);
-CREATE INDEX IF NOT EXISTS idx_evidence_engine ON evidence(engine);
-CREATE INDEX IF NOT EXISTS idx_evidence_status ON evidence(status);
 """
+
+# Index definitions – run after schema migration.
+INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_evidence_type ON evidence(type);",
+    "CREATE INDEX IF NOT EXISTS idx_evidence_property ON evidence(property_name);",
+    "CREATE INDEX IF NOT EXISTS idx_evidence_engine ON evidence(engine);",
+    "CREATE INDEX IF NOT EXISTS idx_evidence_status ON evidence(status);",
+    "CREATE INDEX IF NOT EXISTS idx_evidence_design ON evidence(design_name);",
+]
 
 
 class EvidenceRegistry:
@@ -53,11 +66,39 @@ class EvidenceRegistry:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
         self._init_db()
+        self._migrate()
+        self._create_indexes()
 
     def _init_db(self) -> None:
         """Create tables if they don't exist."""
         with self._get_connection() as conn:
             conn.executescript(SCHEMA)
+
+    def _create_indexes(self) -> None:
+        """Create indexes on the evidence table."""
+        with self._get_connection() as conn:
+            for stmt in INDEXES:
+                conn.execute(stmt)
+
+    def _migrate(self) -> None:
+        """Add columns introduced in newer versions if they are missing."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # Get existing columns
+            cursor.execute("PRAGMA table_info(evidence)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            new_cols = {
+                "design_name": "TEXT",
+                "iterations": "INTEGER",
+                "llm_used": "INTEGER",
+            }
+            for col, col_type in new_cols.items():
+                if col not in existing_cols:
+                    try:
+                        conn.execute(f"ALTER TABLE evidence ADD COLUMN {col} {col_type}")
+                        logger.info("Added column '%s' to evidence table.", col)
+                    except sqlite3.OperationalError as e:
+                        logger.warning("Could not add column '%s': %s", col, e)
 
     def _get_connection(self) -> sqlite3.Connection:
         """
@@ -77,7 +118,10 @@ class EvidenceRegistry:
                      ref_value: str,
                      engine: str,
                      status: Optional[str] = None,
-                     property_name: Optional[str] = None) -> int:
+                     property_name: Optional[str] = None,
+                     design_name: Optional[str] = None,
+                     iterations: Optional[int] = None,
+                     llm_used: Optional[bool] = None) -> int:
         """
         Add a new evidence entry.
 
@@ -89,18 +133,24 @@ class EvidenceRegistry:
             engine: Verification engine (e.g., 'BMC', 'IC3', 'theorem_proving', 'perf_koika').
             status: Optional status (e.g., 'active', 'proved', 'counterexample').
             property_name: Optional property name associated with this evidence.
+            design_name: Optional design name for batch tracking.
+            iterations: Optional number of iterations (for PERF).
+            llm_used: Whether an LLM was involved (bool).
 
         Returns:
             The auto-incremented ID of the new entry.
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            llm_int = None if llm_used is None else (1 if llm_used else 0)
             cursor.execute(
                 """
-                INSERT INTO evidence (type, ref_type, ref_value, engine, status, property_name)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO evidence (type, ref_type, ref_value, engine, status,
+                                      property_name, design_name, iterations, llm_used)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (evidence_type, ref_type, ref_value, engine, status, property_name)
+                (evidence_type, ref_type, ref_value, engine, status,
+                 property_name, design_name, iterations, llm_int)
             )
             return cursor.lastrowid
 
@@ -131,6 +181,7 @@ class EvidenceRegistry:
                       property_name: Optional[str] = None,
                       engine: Optional[str] = None,
                       status: Optional[str] = None,
+                      design_name: Optional[str] = None,
                       limit: int = 100) -> List[Dict[str, Any]]:
         """
         List evidence entries with optional filters.
@@ -140,6 +191,7 @@ class EvidenceRegistry:
             property_name: Filter by property name.
             engine: Filter by engine.
             status: Filter by status.
+            design_name: Filter by design name.
             limit: Maximum number of entries to return.
 
         Returns:
@@ -159,6 +211,9 @@ class EvidenceRegistry:
         if status:
             query += " AND status = ?"
             params.append(status)
+        if design_name:
+            query += " AND design_name = ?"
+            params.append(design_name)
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
 
@@ -170,12 +225,14 @@ class EvidenceRegistry:
     def get_latest_evidence(self,
                             evidence_type: Optional[str] = None,
                             property_name: Optional[str] = None,
-                            engine: Optional[str] = None) -> Optional[Dict[str, Any]]:
+                            engine: Optional[str] = None,
+                            design_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Retrieve the most recent evidence entry matching filters."""
         results = self.list_evidence(
             evidence_type=evidence_type,
             property_name=property_name,
             engine=engine,
+            design_name=design_name,
             limit=1
         )
         return results[0] if results else None
@@ -202,13 +259,130 @@ class EvidenceRegistry:
             cursor.execute("DELETE FROM evidence WHERE id = ?", (evidence_id,))
             return cursor.rowcount > 0
 
-    def get_statistics(self) -> Dict[str, int]:
-        """Return counts of evidence by type."""
+    def get_statistics(self) -> Dict[str, Any]:
+        """Return counts of evidence by type, plus overall totals."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT type, COUNT(*) as count FROM evidence GROUP BY type")
             rows = cursor.fetchall()
-            return {row["type"]: row["count"] for row in rows}
+            by_type = {row["type"]: row["count"] for row in rows}
+            cursor.execute("SELECT COUNT(*) FROM evidence")
+            total = cursor.fetchone()[0]
+            return {"total": total, "by_type": by_type}
+
+    def get_summary_stats(self) -> Dict[str, Any]:
+        """
+        Return comprehensive summary statistics grouped by backend, design, and status.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM evidence")
+            total = cursor.fetchone()[0]
+
+            cursor.execute("SELECT engine, COUNT(*) FROM evidence GROUP BY engine")
+            by_backend = {row[0]: row[1] for row in cursor.fetchall()}
+
+            cursor.execute("SELECT status, COUNT(*) FROM evidence GROUP BY status")
+            by_status = {row[0] if row[0] else "unknown": row[1] for row in cursor.fetchall()}
+
+            cursor.execute("SELECT design_name, COUNT(*) FROM evidence WHERE design_name IS NOT NULL GROUP BY design_name")
+            by_design = {row[0]: row[1] for row in cursor.fetchall()}
+
+            cursor.execute(
+                "SELECT engine, COUNT(*) FROM evidence WHERE type IN ('coq_theorem','acl2_theorem') AND status='proved' GROUP BY engine"
+            )
+            proved_by_backend = {row[0]: row[1] for row in cursor.fetchall()}
+
+            return {
+                "total_entries": total,
+                "by_backend": by_backend,
+                "by_status": by_status,
+                "by_design": by_design,
+                "proved_by_backend": proved_by_backend,
+            }
+
+    def query(
+        self,
+        design: Optional[str] = None,
+        backend: Optional[str] = None,
+        status: Optional[str] = None,
+        property_name: Optional[str] = None,
+        evidence_type: Optional[str] = None,
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """
+        Query evidence entries with optional filters.
+
+        Args:
+            design: Filter by design_name.
+            backend: Filter by engine (e.g., 'perf_koika', 'BMC').
+            status: Filter by status.
+            property_name: Filter by property name.
+            evidence_type: Filter by type.
+            limit: Max rows to return.
+
+        Returns:
+            List of matching evidence dictionaries.
+        """
+        return self.list_evidence(
+            evidence_type=evidence_type,
+            property_name=property_name,
+            engine=backend,
+            status=status,
+            design_name=design,
+            limit=limit,
+        )
+
+    def export_to_json(
+        self,
+        filepath: Union[str, Path],
+        design: Optional[str] = None,
+        backend: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> None:
+        """
+        Export matching evidence entries to a JSON file.
+
+        Args:
+            filepath: Output JSON file path.
+            design: Optional filter by design_name.
+            backend: Optional filter by engine.
+            status: Optional filter by status.
+        """
+        entries = self.query(design=design, backend=backend, status=status, limit=100000)
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(entries, f, indent=2, default=str)
+        logger.info("Exported %d evidence entries to %s", len(entries), filepath)
+
+    def export_to_csv(
+        self,
+        filepath: Union[str, Path],
+        design: Optional[str] = None,
+        backend: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> None:
+        """
+        Export matching evidence entries to a CSV file.
+
+        Args:
+            filepath: Output CSV file path.
+            design: Optional filter by design_name.
+            backend: Optional filter by engine.
+            status: Optional filter by status.
+        """
+        entries = self.query(design=design, backend=backend, status=status, limit=100000)
+        if not entries:
+            return
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        fieldnames = entries[0].keys()
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(entries)
+        logger.info("Exported %d evidence entries to %s", len(entries), filepath)
 
     def add_counterexample(
         self,
@@ -216,6 +390,7 @@ class EvidenceRegistry:
         engine: str = "BMC",
         trace_path: Optional[Path] = None,
         status: str = "counterexample",
+        design_name: Optional[str] = None,
     ) -> int:
         """
         Add a counterexample evidence entry (typically from model checking).
@@ -227,6 +402,7 @@ class EvidenceRegistry:
                         the ref_type will be 'uri' and the value the absolute
                         path.  Otherwise 'local_id' and the property name.
             status: Evidence status (default 'counterexample').
+            design_name: Optional design name.
 
         Returns:
             ID of the newly created evidence entry.
@@ -244,20 +420,13 @@ class EvidenceRegistry:
             ref_value=ref_value,
             engine=engine,
             status=status,
-            property_name=property_name
+            property_name=property_name,
+            design_name=design_name,
         )
 
     def get_counterexample(self, property_name: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve the most recent counterexample trace for a property.
-
-        This is used by PERF's trace_alignment dimension to get MC traces.
-
-        Args:
-            property_name: Name of the property.
-
-        Returns:
-            The most recent counterexample evidence entry, or None if not found.
         """
         return self.get_latest_evidence(
             evidence_type="counterexample_trace",
@@ -271,13 +440,6 @@ class EvidenceRegistry:
     ) -> Optional[Dict[str, Any]]:
         """
         Retrieve a proven theorem for a property (from any engine).
-
-        Args:
-            property_name: Name of the property.
-            backend: The backend used ('koika' or 'acl2').
-
-        Returns:
-            The most recent proven theorem evidence entry, or None if not found.
         """
         evidence_type = "coq_theorem" if backend == "koika" else "acl2_theorem"
         return self.get_latest_evidence(
@@ -291,19 +453,11 @@ class EvidenceRegistry:
         property_name: Optional[str] = None,
         backend: Optional[str] = None,
         status: Optional[str] = None,
+        design_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retrieve PERF-generated evidence (proofs and counterexamples).
-
-        Args:
-            property_name: Optional filter by property name.
-            backend: Optional filter by backend ('koika' or 'acl2').
-            status: Optional filter by status ('proved', 'counterexample', etc.).
-
-        Returns:
-            List of evidence entries where engine starts with 'perf_'.
         """
-        # Build engine filter
         if backend:
             engine_filter = f"perf_{backend}" if backend in ("koika", "acl2") else f"perf_{backend}"
         else:
@@ -315,10 +469,10 @@ class EvidenceRegistry:
                 property_name=property_name,
                 engine=engine_filter,
                 status=status,
+                design_name=design_name,
                 limit=1000
             )
         else:
-            # List all perf_* engines via LIKE query
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 query = "SELECT * FROM evidence WHERE engine LIKE 'perf_%'"
@@ -329,6 +483,9 @@ class EvidenceRegistry:
                 if status:
                     query += " AND status = ?"
                     params.append(status)
+                if design_name:
+                    query += " AND design_name = ?"
+                    params.append(design_name)
                 query += " ORDER BY created_at DESC LIMIT 1000"
                 cursor.execute(query, params)
                 return [dict(row) for row in cursor.fetchall()]
@@ -337,34 +494,22 @@ class EvidenceRegistry:
     def get_perf_statistics(self) -> Dict[str, Any]:
         """
         Return statistics about PERF-generated evidence.
-
-        Returns:
-            Dictionary with:
-              - total_perf_entries: total number of PERF evidence entries
-              - by_type: count by evidence type
-              - by_status: count by status
-              - by_property: list of per-property stats
-              - success_rate: percentage of proved entries
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            # Total PERF entries
             cursor.execute("SELECT COUNT(*) FROM evidence WHERE engine LIKE 'perf_%'")
             total = cursor.fetchone()[0]
 
-            # By type
             cursor.execute(
                 "SELECT type, COUNT(*) FROM evidence WHERE engine LIKE 'perf_%' GROUP BY type"
             )
             by_type = {row[0]: row[1] for row in cursor.fetchall()}
 
-            # By status
             cursor.execute(
                 "SELECT status, COUNT(*) FROM evidence WHERE engine LIKE 'perf_%' GROUP BY status"
             )
             by_status = {row[0]: row[1] for row in cursor.fetchall()}
 
-            # Per property
             cursor.execute(
                 "SELECT property_name, type, status, COUNT(*) FROM evidence "
                 "WHERE engine LIKE 'perf_%' AND property_name IS NOT NULL "
@@ -372,14 +517,13 @@ class EvidenceRegistry:
             )
             rows = cursor.fetchall()
             per_property = {}
-            for prop, typ, status, count in rows:
+            for prop, typ, stat, count in rows:
                 if prop not in per_property:
                     per_property[prop] = {}
                 if typ not in per_property[prop]:
                     per_property[prop][typ] = {}
-                per_property[prop][typ][status] = count
+                per_property[prop][typ][stat] = count
 
-            # Success rate
             proved = by_status.get("proved", 0)
             total_non_null = total or 1
             success_rate = proved / total_non_null if total_non_null > 0 else 0.0

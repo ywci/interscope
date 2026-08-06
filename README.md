@@ -11,7 +11,8 @@ The project provides:
 - **Trace lifting** from Verilator VCD simulations back to abstract SpecIR traces.  
 - **Evidence registry** for tracking proven theorems, counterexamples, and coverage.  
 - A **user‑customisable proof library** (`src/lib/koika/assist.py`) that can be extended with new theorems.  
-- **PERF (Proof tree Exploration with Reflective Feedback)** – an advanced test‑time proof search that uses tree exploration, Pareto pruning, and LLM reflection to tackle hard proof obligations, with explicit integration of model‑checking counterexamples.
+- **PERF (Proof tree Exploration with Reflective Feedback)** – an advanced test‑time proof search that uses tree exploration, Pareto pruning, and LLM reflection to tackle hard proof obligations, with explicit integration of model‑checking counterexamples.  
+- **Batch processing** of multiple `.specir` files with structured reporting for integration into evaluation pipelines.
 
 ---
 
@@ -35,6 +36,7 @@ Edit `conf/config.yaml` to set:
 - Model‑checking parameters (`bmc_max_depth`, `ic3_max_steps`, `formal_timeout`).
 - Simulation settings (cycles, Verilator path).
 - **PERF settings**: beam size, branching factor, depth limit, Pareto dimensions, etc. (see below).
+- **Synthesis settings** (optional) for RTL quality experiments.
 
 All paths are optional; the tool works with sensible defaults.
 
@@ -43,6 +45,17 @@ All paths are optional; the tool works with sensible defaults.
 ## Usage
 
 The main entry point is the `run.sh` wrapper. All commands are forwarded to the `specir` CLI running inside the uv environment.
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--batch [DIR]` | Process all `.specir` files found recursively in DIR (default: current directory). |
+| `--output-format json\|text` | Output results in structured JSON or human‑readable text (default: text). |
+| `--report-file <path>` | Save aggregated results to the specified file (JSON/CSV). |
+| `--config <file>` | Load additional configuration from an external YAML file (deep‑merged with defaults). |
+
+These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 
 ### Basic Commands
 
@@ -53,14 +66,16 @@ The main entry point is the `run.sh` wrapper. All commands are forwarded to the 
 | `./run.sh --sim <file.specir>` | Compile to RTL and run Verilator simulation (produces a VCD trace). |
 | `./run.sh --lift <vcd_file>` | Lift a VCD trace to an abstract SpecIR trace (YAML). |
 | `./run.sh --check <trace.yaml>` | Check properties against an abstract trace. |
-| `./run.sh --query ...` | Query the evidence registry (SQLite). |
+| `./run.sh --query ...` | Query the evidence registry (SQLite) – now with `export`, `stats`, and `filter` sub‑commands. |
 
 **Additional flags**  
 
 - `--show-proof` : When verifying, print the complete proof script for each successful obligation.  
 - `--no-llm` : Disable LLM assistance (use built‑in provers only) – useful for fast integration tests.  
 - `--assert-lang sva|vhdl|verilog_ovl` (for `--compile` with `--backend assert`): choose the target assertion language.  
-- `--cycles N` : Override the simulation cycle count.
+- `--cycles N` : Override the simulation cycle count.  
+- `--coverage` (sim) : Enable Verilator coverage collection and report coverage percentage.  
+- `--synthesize` (compile/sim) : After RTL generation, run Yosys synthesis and report area/delay/power (optional, requires Yosys).
 
 ### Choosing a Verification Backend
 
@@ -139,20 +154,65 @@ When PERF is used on an obligation that also has a model‑checking counterpart 
 
 This closes the loop between bounded model checking (fast but incomplete) and theorem proving (complete but slow).
 
-### Example: PERF on the FIFO Design
+---
+
+## Batch Processing and Structured Output
+
+For running experiments over multiple designs, InterScope now supports batch mode and structured JSON output.
 
 ```bash
-cd examples/fifo
-../../run.sh --verify fifo.specir --backend koika --perf --perf-stats
+# Batch compile all designs in a directory, output JSON
+./run.sh --batch benchmarks/level1/ --compile --output-format json --report-file compile_results.json
 ```
 
-PERF will try to prove the `fifo_no_overflow` property even though the proof library is disabled.  It may find a proof after a few depths, or report exhaustion.
+Individual commands can also produce JSON output without batch mode:
+
+```bash
+./run.sh --compile examples/fifo/fifo.specir --output-format json
+./run.sh --verify examples/fifo/fifo.specir --backend koika --output-format json
+./run.sh --sim examples/fifo/fifo.specir --cycles 100 --output-format json
+```
+
+The JSON output for each command follows a standardised schema defined in `src/specir/utils/result_types.py`. Aggregated batch reports include summary statistics and can be exported to CSV as well.
 
 ---
 
-### Examples
+## Evidence Registry Enhancements
 
-#### FIFO Design (Kōika + ACL2 + Simulation)
+The evidence registry (`specir query`) now supports additional sub‑commands for exporting and analyzing verification results:
+
+```bash
+# Export all evidence to JSON
+./run.sh --query export results.json
+
+# Show summary statistics
+./run.sh --query stats
+
+# Filter evidence by design and status
+./run.sh --query filter --design fifo --status proved
+```
+
+The registry schema has been extended to record `design_name`, `iterations`, and `llm_used` for better provenance tracking.
+
+---
+
+## RTL Synthesis (Optional)
+
+For RTL quality experiments, InterScope integrates Yosys synthesis:
+
+```bash
+# Generate RTL and run Yosys synthesis to obtain area/delay metrics
+./run.sh --compile examples/fifo/fifo.specir --synthesize
+./run.sh --sim examples/fifo/fifo.specir --synthesize
+```
+
+The synthesis results (area, cell count, delay) are included in the structured output and can be saved with `--report-file`.
+
+---
+
+## Examples
+
+### FIFO Design (Kōika + ACL2 + Simulation)
 
 ```bash
 cd examples/fifo
@@ -164,67 +224,23 @@ cd examples/fifo
 ../../run.sh --check build/traces/lifted.yaml --spec fifo.specir
 ```
 
-#### ALU (Kōika + ACL2)
+### Batch Compilation and Verification for a Directory
 
 ```bash
-cd examples/simple_alu
-../../run.sh --compile alu.specir
-../../run.sh --verify alu.specir --backend koika
-../../run.sh --verify alu.specir --backend acl2
-../../run.sh --sim alu.specir --cycles 100
+# Compile all designs in a directory
+../../run.sh --batch benchmarks/level1/ --compile --output-format json
+
+# Verify with PERF, disable Pareto pruning (ablation study)
+../../run.sh --batch benchmarks/level1/ --verify --backend koika --perf --no-pareto --output-format json --report-file ablation_no_pareto.json
 ```
 
-#### RISC‑V Mini
-
-```bash
-cd examples/riscv_mini
-../../run.sh --verify riscv_mini.specir --backend koika
-# The pc_aligned property is automatically proved.
-```
-
-#### UART
-
-```bash
-cd examples/uart
-../../run.sh --verify uart.specir --backend koika
-```
-
-#### FIR Filter
-
-```bash
-cd examples/fir
-../../run.sh --compile fir.specir
-../../run.sh --verify fir.specir --backend koika
-../../run.sh --verify fir.specir --backend acl2
-```
-
-The FIR filter demonstrates a **sequential schedule**, global input assumptions, and proof obligations that are automatically discharged by the proof library.
-
-#### Model Checking
-
-To verify properties using model checking, ensure that the proof obligation in the `.specir` file specifies `engine: model_checking` (and optionally `metadata.mc_engine: bmc` or `induction`).  Then run:
+### Model Checking
 
 ```bash
 ./run.sh --verify examples/fifo/fifo.specir --backend model_checking
 ```
 
-The CLI will:
-
-1. Synthesise RTL via Kōika.  
-2. Generate SVA assertions.  
-3. Run SymbiYosys (`sby`).  
-4. Report the results.  If a counterexample is found, its VCD trace is saved and can be lifted for inspection.
-
-**Current limitations**  
-Model checking currently supports **Boolean safety properties only**.  Properties that use bit‑selects (e.g., `(slice … 7 7)`) are not yet compatible with Yosys and will be skipped.  Use the theorem‑proving backends (Kōika/ACL2) for such properties.
-
-**Theorem‑proving limitations**  
-The Kōika backend currently works best on designs with a **single rule** and simple arithmetic.  
-Designs with deeply nested `ite` expressions (e.g., a single `execute` rule that branches on an opcode) or multiple rules may generate Coq models that are too complex for the automated proof pipeline.  
-For such designs, **model checking** is the recommended verification method.  
-**PERF** can also be used to explore multiple repair strategies for such complex designs, often yielding a proof where the standard repair loop fails.
-
-#### Assertion Generation (standalone)
+### Assertion Generation (standalone)
 
 ```bash
 ./run.sh --compile examples/fifo/fifo.specir --backend assert --assert-lang sva
@@ -233,8 +249,6 @@ For such designs, **model checking** is the recommended verification method.
 ```
 
 The generated assertion files are placed in `build/<design>/assertions/`.
-
-All example designs (FIFO, ALU, Counter, FIR, RISC‑V mini, UART) now include pre‑configured `proof_obligations` with `engine: model_checking`.  You can therefore run `./run.sh --verify <design>.specir --backend model_checking` for any of them.
 
 ---
 

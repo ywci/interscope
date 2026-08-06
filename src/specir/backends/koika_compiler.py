@@ -11,7 +11,6 @@
 import subprocess
 from pathlib import Path
 from typing import Optional
-
 from specir.dialects import rtl_ir
 from specir.utils.logger import get_logger
 

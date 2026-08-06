@@ -10,12 +10,49 @@ from typing import List, Optional, Dict, Any
 
 @dataclass
 class ProofResult:
-    """Result of a proof attempt."""
+    """Result of a proof attempt.
+
+    Attributes:
+        success: Whether the proof succeeded.
+        proof_script: The generated proof script (Coq/ACL2), if any.
+        error_message: Error message if failed.
+        auxiliary_lemmas: Additional lemmas generated.
+        metadata: Extra data (proof steps, repair attempts, automation level, etc.).
+        iterations: Number of PERF iterations (if applicable).
+        duration: Wall-clock time in seconds.
+        backend: The backend used (e.g. "koika", "acl2").
+    """
     success: bool
-    proof_script: Optional[str] = None          # The generated proof script (Coq/ACL2)
-    error_message: Optional[str] = None         # Error message if failed
-    auxiliary_lemmas: List[str] = field(default_factory=list)  # Additional lemmas generated
-    metadata: Dict[str, Any] = field(default_factory=dict)    # e.g., proof steps, repair attempts
+    proof_script: Optional[str] = None
+    error_message: Optional[str] = None
+    auxiliary_lemmas: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    iterations: Optional[int] = None
+    duration: Optional[float] = None
+    backend: Optional[str] = None
+
+    @property
+    def status(self) -> str:
+        """Derive a string status code from the success flag and error message."""
+        if self.success:
+            return "PASS"
+        if self.error_message and "timeout" in self.error_message.lower():
+            return "TIMEOUT"
+        return "FAIL"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to a dictionary suitable for JSON serialisation."""
+        return {
+            "success": self.success,
+            "status": self.status,
+            "proof_script": self.proof_script,
+            "error_message": self.error_message,
+            "auxiliary_lemmas": self.auxiliary_lemmas,
+            "metadata": self.metadata,
+            "iterations": self.iterations,
+            "duration": self.duration,
+            "backend": self.backend,
+        }
 
     @classmethod
     def combine(cls, results: List['ProofResult']) -> 'ProofResult':

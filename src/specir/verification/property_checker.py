@@ -190,7 +190,7 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
         if not assume_result.holds:
             return PropertyCheckResult(
                 name=prop.name,
-                holds=True,           # vacuously true
+                holds=True,
                 vacuous=True,
                 detail=f"Assumption violated at cycle {assume_result.failing_cycle}",
             )

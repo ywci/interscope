@@ -4,12 +4,14 @@
 # Verifies that simulate_design calls the consolidated
 # koika_to_rtl synthesis pass, the Verilator backend, and
 # optionally generates assertion files.
+# Updated for SimulationReport return type.
 
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from specir.dialects import spec_ir
 from specir.verification.simulation import simulate_design, SimulationError
+from specir.utils.result_types import SimulationReport
 
 
 def _make_spec_module(name="test"):
@@ -26,7 +28,7 @@ def _make_spec_module(name="test"):
 
 class TestSimulateDesign:
     def test_success(self, tmp_path):
-        """A full simulation should succeed and return the VCD path."""
+        """A full simulation should succeed and return a SimulationReport with the VCD path."""
         spec_mod = _make_spec_module()
         vcd_path = tmp_path / "traces" / "test.vcd"
         vcd_path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,7 +52,8 @@ class TestSimulateDesign:
 
             mock_rtl.assert_called_once()
             mock_sim.assert_called_once()
-            assert result == vcd_path
+            assert isinstance(result, SimulationReport)
+            assert result.vcd_path == str(vcd_path)
 
     def test_synthesis_fails(self, tmp_path):
         """If koika_to_rtl.convert raises, a SimulationError is raised."""
@@ -76,7 +79,7 @@ class TestSimulateDesign:
                 simulate_design(spec_mod, output_dir=tmp_path)
 
     def test_default_output_dir(self, tmp_path):
-        """If output_dir is not given, it should default to build/<design>/sim."""
+        """If output_dir is not given, it should default to build/<design>/sim and return a report."""
         spec_mod = _make_spec_module()
         vcd = tmp_path / "traces" / "test.vcd"
         vcd.parent.mkdir(parents=True)
@@ -99,7 +102,8 @@ class TestSimulateDesign:
             mock_rtl.return_value.top_module.file_path = rtl_file
 
             result = simulate_design(spec_module=spec_mod, config=config)
-            assert result == vcd
+            assert isinstance(result, SimulationReport)
+            assert result.vcd_path == str(vcd)
 
     def test_cycles_from_config(self, tmp_path):
         """If cycles is not given, the config default is used."""
@@ -164,7 +168,8 @@ class TestSimulateDesign:
             )
 
             mock_gen.assert_called_once_with(spec_mod, "sva", tmp_path)
-            assert result == vcd_path
+            assert isinstance(result, SimulationReport)
+            assert result.vcd_path == str(vcd_path)
 
     def test_assertion_generation_not_called_by_default(self, tmp_path):
         """Without assert_lang, _generate_assertions is not called."""

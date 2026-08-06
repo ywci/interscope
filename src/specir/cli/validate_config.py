@@ -3,10 +3,6 @@
 # CLI subcommand `validate-config` – validates the InterScope configuration
 # file (conf/config.yaml) and checks for common conflicts, especially
 # the PERF vs. use_proof_library conflict.
-#
-# Usage:
-#   python -m specir.cli.validate_config
-#   python -m specir.cli.validate_config --config /path/to/config.yaml
 
 import yaml
 import argparse
@@ -16,6 +12,15 @@ from specir.utils.logger import setup_logging, get_logger
 from specir.utils.config_loader import get_project_root, load_config
 
 logger = get_logger(__name__)
+
+if sys.stdout.isatty():
+    RED = "\033[31m"
+    YELLOW = "\033[33m"
+    RESET = "\033[0m"
+else:
+    RED = ""
+    YELLOW = ""
+    RESET = ""
 
 
 def _setup_arg_parser() -> argparse.ArgumentParser:
@@ -48,12 +53,10 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
     errors = []
     warnings = []
 
-    # 1. Check file existence
     if not config_path.exists():
         errors.append(f"Configuration file not found: {config_path}")
         return False
 
-    # 2. Load YAML
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
@@ -68,7 +71,6 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
         errors.append("Configuration root must be a dictionary")
         return False
 
-    # 3. Check PERF vs. use_proof_library conflict
     perf_enabled = config.get("proof", {}).get("perf", {}).get("enabled", False)
     use_library = config.get("provers", {}).get("koika", {}).get("use_proof_library", True)
 
@@ -85,7 +87,6 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
             "  2. Use cached proofs: Set 'perf.enabled: false' in the proof config."
         )
 
-    # 4. Check LLM configuration if PERF is enabled
     if perf_enabled:
         llm_cfg = config.get("llm", {})
         provider = llm_cfg.get("provider", "").lower()
@@ -104,7 +105,6 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
                 "Please set 'llm.model' (e.g., 'qwen3.5:27b', 'gpt-4')."
             )
 
-        # Check if provider is supported
         supported = {"ollama", "openai", "anthropic", "deepseek"}
         if provider and provider not in supported:
             warnings.append(
@@ -112,7 +112,6 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
                 f"Supported providers: {', '.join(sorted(supported))}"
             )
 
-    # 5. Check PERF parameter validity (if enabled)
     if perf_enabled:
         perf_cfg = config.get("proof", {}).get("perf", {})
         beam = perf_cfg.get("beam_size", 3)
@@ -131,7 +130,6 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
         if not isinstance(dims, list):
             errors.append("'dimensions' must be a list of strings")
 
-    # 6. Print results
     if verbose:
         print()
         print("=" * 60)

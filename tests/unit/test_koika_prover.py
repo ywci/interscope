@@ -5,6 +5,8 @@
 # - Proof prompt construction and script extraction
 # - Proof repair with sanity checking
 # - Skeleton proof, skeleton reflection, and configurable hints
+#
+# Updated for ProofResult return type.
 
 import pytest
 from pathlib import Path
@@ -16,6 +18,7 @@ from specir.verification.proof.koika.proof_gen import (
 from specir.verification.proof.koika.repair import (
     repair_coq_proof, _basic_sanity
 )
+from specir.verification.proof.proof import ProofResult
 
 
 @pytest.fixture
@@ -105,7 +108,8 @@ class TestProveTheorem:
              patch.object(prover, "_try_interactive_proof",
                           return_value=({"success": True, "proof_script": "Proof. auto. Qed."}, None, None)):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
-        assert result["success"] is True
+        assert isinstance(result, ProofResult)
+        assert result.success is True
 
     def test_prove_theorem_compilation_fails(self, mock_config, mock_rocq_client, mock_llm_client):
         mock_rocq_client.compile_file.return_value = {"isError": True, "error": "Compilation error"}
@@ -116,7 +120,7 @@ class TestProveTheorem:
              patch.object(prover, "_attempt_llm_proof_generation", return_value=None), \
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
-        assert result["success"] is False
+        assert result.success is False
 
     def test_prove_theorem_no_goals(self, mock_config, mock_rocq_client):
         mock_rocq_client.start_session.return_value = ("1", [])
@@ -127,7 +131,7 @@ class TestProveTheorem:
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."), \
              patch.object(prover, "_attempt_llm_proof_generation", return_value=None):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
-        assert result["success"] is False
+        assert result.success is False
 
     def test_prove_theorem_tactic_fails_then_repair_succeeds(self, mock_config, mock_rocq_client, mock_llm_client):
         """When the interactive prover fails, the full pipeline returns failure."""
@@ -139,7 +143,7 @@ class TestProveTheorem:
                           return_value=({"success": False, "error": "proof failed"}, None, None)), \
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
-        assert result["success"] is False
+        assert result.success is False
 
     def test_prove_theorem_commands_run_zero(self, mock_config, mock_rocq_client, mock_llm_client):
         mock_rocq_client.check.return_value = {
@@ -153,7 +157,7 @@ class TestProveTheorem:
              patch.object(prover, "_apply_library_proof", return_value=None), \
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
-        assert result["success"] is False
+        assert result.success is False
 
     def test_prove_theorem_too_many_failures(self, mock_config, mock_rocq_client, mock_llm_client):
         mock_rocq_client.check.return_value = {
@@ -167,7 +171,7 @@ class TestProveTheorem:
              patch.object(prover, "_apply_library_proof", return_value=None), \
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
-        assert result["success"] is False
+        assert result.success is False
 
     def test_prove_theorem_library_proof_applied(self, mock_config, mock_rocq_client):
         prover = KoikaProver(config=mock_config)
@@ -176,8 +180,8 @@ class TestProveTheorem:
              patch.object(prover, "_apply_library_proof", return_value="Proof. auto. Qed.") as mock_apply:
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
             mock_apply.assert_called_once_with(Path("test.v"), "theorem_name")
-            assert result["success"] is True
-            assert result["proof_script"] == "Proof. auto. Qed."
+            assert result.success is True
+            assert result.proof_script == "Proof. auto. Qed."
 
     def test_prove_theorem_pre_simplify_enabled(self, mock_config, mock_rocq_client, mock_llm_client):
         mock_config["provers"]["koika"]["prove"]["pre_simplify"] = True
@@ -196,7 +200,7 @@ class TestProveTheorem:
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
 
-        assert result["success"] is True
+        assert result.success is True
         assert mock_rocq_client.check.call_count == 2
 
     def test_prove_theorem_pre_simplify_disabled(self, mock_config, mock_rocq_client, mock_llm_client):
@@ -215,7 +219,7 @@ class TestProveTheorem:
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
 
-        assert result["success"] is True
+        assert result.success is True
         mock_rocq_client.check.assert_called_once()
 
     def test_skeleton_proof_succeeds(self, mock_config, mock_rocq_client):
@@ -237,7 +241,7 @@ class TestProveTheorem:
              patch("pathlib.Path.read_text", return_value="Theorem theorem_name : Admitted."):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
 
-        assert result["success"] is True
+        assert result.success is True
 
     def test_skeleton_fails_reflection_succeeds(self, mock_config, mock_rocq_client, mock_llm_client):
         """When the skeleton fails, the LLM‑reflection step provides a valid proof."""
@@ -267,7 +271,7 @@ class TestProveTheorem:
              patch.object(prover, "_fallback_verify", return_value={"success": True}):
             result = prover.prove_theorem(Path("test.v"), "theorem_name")
 
-        assert result["success"] is True
+        assert result.success is True
 
     def test_configurable_hints_in_prompt(self, mock_config, mock_rocq_client, mock_llm_client):
         """Custom base_case_hint and step_case_hint are forwarded to the prompt builder."""

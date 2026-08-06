@@ -8,7 +8,6 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
-
 from specir.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -277,7 +276,9 @@ def simulate(
     cycles: int = 1000,
     testbench_path: Optional[Path] = None,
     verilator_path: Optional[str] = None,
-    keep_build: bool = False
+    keep_build: bool = False,
+    coverage: bool = False,
+    extra_verilator_args: Optional[List[str]] = None,
 ) -> Path:
     """
     High-level function: build and run a Verilator simulation.
@@ -297,6 +298,9 @@ def simulate(
         testbench_path: Optional user-provided testbench .cpp file.
         verilator_path: Path to verilator executable.
         keep_build: If True, keep the obj_dir build directory.
+        coverage: If True, enable Verilator coverage collection (--coverage).
+        extra_verilator_args: Additional Verilator command-line arguments
+                              (default: ["-Wno-fatal", "--assert"]).
 
     Returns:
         Path to the generated VCD file.
@@ -341,6 +345,17 @@ def simulate(
         vcd_path = output_dir / "sim.vcd"
     vcd_path = Path(vcd_path)
 
+    # Build extra args
+    ver_args = extra_verilator_args if extra_verilator_args is not None else []
+    if coverage:
+        ver_args.append("--coverage")
+        logger.info("Verilator coverage collection enabled.")
+    # Ensure default arguments are present unless explicitly overridden
+    default_args = ["-Wno-fatal", "--assert"]
+    for arg in default_args:
+        if arg not in ver_args:
+            ver_args.append(arg)
+
     sim_exe = build_simulation(
         rtl_paths=rtl_paths,
         top_module=top_module,
@@ -348,7 +363,7 @@ def simulate(
         verilator_path=verilator_path,
         trace_enable=True,
         testbench_path=testbench_path,
-        extra_verilator_args=["-Wno-fatal", "--assert"]
+        extra_verilator_args=ver_args,
     )
 
     try:
