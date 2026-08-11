@@ -222,7 +222,7 @@ def convert(assert_module: assert_ir.AssertModule,
             try:
                 rst_expr = _sva_expr(mod_reset.reset_condition)
             except Exception:
-                rst_expr = mod_reset.reset_condition  # fallback
+                rst_expr = mod_reset.reset_condition
             lines.append(f"    if ({rst_expr}) begin")
             lines.append(f"      // reset active – no assertion check")
             lines.append(f"    end else begin")

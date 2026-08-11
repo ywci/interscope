@@ -1,7 +1,7 @@
 # tests/unit/test_proof_skill.py
 #
 # Complete unit tests for LLMProofSkill: ACL2, Koika, and model-checking paths.
-# Includes lazy initialization, error handling, and dispatch logic.
+# Updated to mock prove_theorem return values as ProofResult dataclasses.
 
 import unittest
 from unittest.mock import MagicMock, patch
@@ -77,7 +77,7 @@ class TestProofSkillACL2(unittest.TestCase):
     def test_prove_acl2_success(self):
         obligation = {"property": "no_overflow", "metadata": {"acl2_hints": ["((" "Goal" ":induct t))"]}}
         context = {"acl2_file_path": "/path/file.lisp", "theorem_name": "no_overflow_correct", "theorem_statement": "(implies (full st) (not (enqueue st)))"}
-        self.mock_prover.prove_theorem.return_value = {"success": True, "proof_script": "(defthm no_overflow_correct ...)"}
+        self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="(defthm no_overflow_correct ...)")
         result = self.skill._prove_acl2(obligation, context)
         self.assertTrue(result.success)
         self.assertEqual(result.proof_script, "(defthm no_overflow_correct ...)")
@@ -85,7 +85,7 @@ class TestProofSkillACL2(unittest.TestCase):
     def test_prove_acl2_without_statement(self):
         obligation = {"property": "no_overflow"}
         context = {"acl2_file_path": "/path/file.lisp", "theorem_name": "no_overflow_correct"}
-        self.mock_prover.prove_theorem.return_value = {"success": True, "proof_script": "..."}
+        self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="...")
         result = self.skill._prove_acl2(obligation, context)
         self.assertTrue(result.success)
 
@@ -106,7 +106,7 @@ class TestProofSkillACL2(unittest.TestCase):
     def test_prove_acl2_prover_failure(self):
         obligation = {"property": "no_overflow"}
         context = {"acl2_file_path": "/path/file.lisp", "theorem_name": "no_overflow_correct"}
-        self.mock_prover.prove_theorem.return_value = {"success": False, "error": "induction error"}
+        self.mock_prover.prove_theorem.return_value = ProofResult(success=False, error_message="induction error")
         result = self.skill._prove_acl2(obligation, context)
         self.assertFalse(result.success)
         self.assertIn("induction error", result.error_message)
@@ -143,7 +143,7 @@ class TestProofSkillKoika(unittest.TestCase):
     def test_prove_koika_success(self):
         obligation = {"property": "my_prop"}
         context = {"coq_file_path": "/path/file.v", "theorem_name": "my_prop_proved"}
-        self.mock_prover.prove_theorem.return_value = {"success": True, "proof_script": "Proof. trivial. Qed."}
+        self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="Proof. trivial. Qed.")
         result = self.skill._prove_koika(obligation, context)
         self.assertTrue(result.success)
         self.assertEqual(result.metadata["backend"], "koika")
@@ -166,7 +166,7 @@ class TestProofSkillKoika(unittest.TestCase):
     def test_prove_koika_lazy_initialization(self):
         obligation = {"property": "my_prop"}
         context = {"coq_file_path": "/path/file.v", "theorem_name": "my_prop_proved"}
-        self.mock_prover.prove_theorem.return_value = {"success": True, "proof_script": ""}
+        self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="")
         self.skill._prove_koika(obligation, context)
         self.mock_prover_cls.assert_called_once()
         self.mock_prover_cls.reset_mock()

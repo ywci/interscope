@@ -110,7 +110,7 @@ def build_repair_prompt_from_error(
     failed_script: str,
     error_msg: str,
     theorem_name: Optional[str] = None,
-    theorem_statement: Optional[str] = None,
+    theorem_statement: Optional[str] = None
 ) -> str:
     """Public wrapper for `_build_repair_prompt`."""
     return _build_repair_prompt(
@@ -122,7 +122,7 @@ def _build_repair_prompt(
     failed_script: str,
     error_msg: str,
     theorem_name: Optional[str],
-    theorem_statement: Optional[str],
+    theorem_statement: Optional[str]
 ) -> str:
     """Build a prompt asking the LLM to fix a failing Coq proof."""
     parts = ["The following Coq proof failed with an error.\n"]
@@ -144,7 +144,7 @@ def _build_repair_prompt(
 def _update_repair_prompt(
     previous_prompt: str,
     attempted_script: str,
-    new_error: str,
+    new_error: str
 ) -> str:
     """Extend the prompt with information about the latest failed attempt."""
     return (

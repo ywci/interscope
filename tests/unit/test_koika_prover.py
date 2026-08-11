@@ -1,12 +1,8 @@
 # tests/unit/test_koika_prover.py
 #
-# Unit tests for Kōika/Coq proof infrastructure:
-# - KoikaProver orchestration and fallback behavior
-# - Proof prompt construction and script extraction
-# - Proof repair with sanity checking
-# - Skeleton proof, skeleton reflection, and configurable hints
-#
-# Updated for ProofResult return type.
+# Unit tests for Kōika/Coq proof infrastructure.
+# Tests cover prover orchestration, proof prompt construction, script extraction,
+# repair with sanity checks, skeleton proofs, skeleton reflection, and configurable hints.
 
 import pytest
 from pathlib import Path

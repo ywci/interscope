@@ -2,7 +2,7 @@
 #
 # Integration test for the counter example.
 # Compiles to Kōika/Coq and ACL2. The Kōika verification test uses the
-# library proof for count_bound (added to proof_lib.py). The simulation +
+# library proof for count_bound. The simulation +
 # lift + check test is skipped until the Kōika extraction step is automated.
 
 import os

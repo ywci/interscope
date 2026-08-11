@@ -89,10 +89,12 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
       PERF_TIMEOUT_NODE      (int, timeout_per_node)
       PERF_TOURNAMENT_SIZE   (int, scoring_tournament_size)
       PERF_ALWAYS_VERIFY     (true/false, always_verify_children)
+      PERF_MAX_TOOL_FAILURES (int, max_tool_failures_before_fallback)
+      PERF_FAST_FAILURE_DIAGNOSTICS (true/false, enable_fast_failure_diagnostics)
+      PERF_COQC_TIMEOUT      (int, coqc_timeout)
     """
     perf_cfg = config.setdefault("proof", {}).setdefault("perf", {})
 
-    # Core settings
     if "PERF_ENABLED" in os.environ:
         val = os.environ["PERF_ENABLED"].lower()
         perf_cfg["enabled"] = val in ("true", "1", "yes")
@@ -150,6 +152,22 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     if "PERF_ALWAYS_VERIFY" in os.environ:
         val = os.environ["PERF_ALWAYS_VERIFY"].lower()
         perf_cfg["always_verify_children"] = val in ("true", "1", "yes")
+
+    if "PERF_MAX_TOOL_FAILURES" in os.environ:
+        try:
+            perf_cfg["max_tool_failures_before_fallback"] = int(os.environ["PERF_MAX_TOOL_FAILURES"])
+        except ValueError:
+            pass
+
+    if "PERF_FAST_FAILURE_DIAGNOSTICS" in os.environ:
+        val = os.environ["PERF_FAST_FAILURE_DIAGNOSTICS"].lower()
+        perf_cfg["enable_fast_failure_diagnostics"] = val in ("true", "1", "yes")
+
+    if "PERF_COQC_TIMEOUT" in os.environ:
+        try:
+            perf_cfg["coqc_timeout"] = int(os.environ["PERF_COQC_TIMEOUT"])
+        except ValueError:
+            pass
 
     return config
 
@@ -230,7 +248,6 @@ def load_config(
         return _CONFIG
 
     if config_path is None:
-        # Check environment variable
         env_path = os.environ.get("SPECIR_CONFIG")
         if env_path:
             config_path = Path(env_path)
@@ -247,7 +264,6 @@ def load_config(
 
     config = _substitute_env_vars(raw_config)
 
-    # Apply defaults
     config.setdefault("llm", {})
     config["llm"].setdefault("temperature", 0.2)
     config["llm"].setdefault("max_tokens", 2048)
@@ -263,6 +279,7 @@ def load_config(
 
         if prover == "koika":
             config["provers"]["koika"].setdefault("use_proof_library", True)
+            config["provers"]["koika"].setdefault("use_mc_lemmas", False)
             prove_cfg = config["provers"]["koika"]["prove"]
             prove_cfg.setdefault("skill", "rocq-mcp")
             prove_cfg.setdefault("coq_tactic_hints", [
@@ -314,6 +331,15 @@ def load_config(
         "max_workers": 4,
         "timeout_per_node": 300,
         "trace_alignment_weight": 0.6,
+        "try_skeleton_first": True,
+        "temperature_decay": 0.0,
+        "temperature_min": 0.1,
+        "early_stop_patience": 0,
+        "early_stop_min_improvement": 0.01,
+        "use_template_generator": False,
+        "max_tool_failures_before_fallback": 3,
+        "enable_fast_failure_diagnostics": True,
+        "coqc_timeout": 300
     }
     config["proof"].setdefault("perf", {})
     for key, default in perf_defaults.items():
@@ -351,7 +377,6 @@ def load_config(
 
     config = _apply_perf_env_overrides(config)
 
-    # Merge external config if provided
     if external_config_path is not None:
         external = load_external_config(external_config_path)
         config = deep_merge_configs(config, external)

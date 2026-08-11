@@ -10,12 +10,12 @@ from specir.parser.ast import (
     Schedule, Clock, Reset, Interface as ASTInterface,
     Parameter, ComponentInstance, Fairness, ProofObligation,
     ProofObligationFeedback, Metadata, Evidence, EvidenceRef,
-    UserType,
+    UserType
 )
 from specir.lowering.ast_to_spec import convert_ast_to_spec_module
 from specir.dialects.spec_ir import (
     SpecModule, SpecStateOp, SpecRuleOp, SpecPropertyOp,
-    SpecDirectiveOp, SpecScheduleOp, Interface,
+    SpecDirectiveOp, SpecScheduleOp, Interface
 )
 
 

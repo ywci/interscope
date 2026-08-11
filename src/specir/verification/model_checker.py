@@ -30,7 +30,7 @@ def run_model_check(
     engine: str = "bmc",
     depth: Optional[int] = None,
     timeout: Optional[int] = None,
-    extra_args: Optional[List[str]] = None,
+    extra_args: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Run a model checker on the given RTL and assertion files.
@@ -86,7 +86,7 @@ def run_model_check(
             top_module=top_module,
             engine=engine,
             depth=depth,
-            timeout=timeout,
+            timeout=timeout
         )
 
         cmd = [tool, "-f", str(sby_file)]
@@ -100,8 +100,8 @@ def run_model_check(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=timeout + 30,   # safety margin
-                cwd=str(work_dir),
+                timeout=timeout + 30,
+                cwd=str(work_dir)
             )
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
@@ -112,13 +112,12 @@ def run_model_check(
                 "output": "",
                 "error": f"Model checking timed out after {timeout}s.",
                 "duration": duration,
-                "details": {"engine": engine, "depth": depth, "timeout": timeout},
+                "details": {"engine": engine, "depth": depth, "timeout": timeout}
             }
 
         output = result.stdout + "\n" + result.stderr
         logger.debug("Model checker output:\n%s", output)
 
-        # Analyse results
         status, counter_trace = _parse_sby_output(output, work_dir)
         duration = time.time() - start_time
 
@@ -131,7 +130,7 @@ def run_model_check(
                 "output": output,
                 "error": None,
                 "duration": duration,
-                "details": {"engine": engine, "depth": depth, "timeout": timeout},
+                "details": {"engine": engine, "depth": depth, "timeout": timeout}
             }
         elif status == "disproved":
             logger.warning("Model checker found a counterexample.")
@@ -142,7 +141,7 @@ def run_model_check(
                 "output": output,
                 "error": None,
                 "duration": duration,
-                "details": {"engine": engine, "depth": depth, "timeout": timeout},
+                "details": {"engine": engine, "depth": depth, "timeout": timeout}
             }
         else:
             logger.error("Model checking inconclusive or failed. Output:\n%s", output)
@@ -153,7 +152,7 @@ def run_model_check(
                 "output": output,
                 "error": f"Model checking did not produce a definitive result. Output:\n{output[-2000:]}",
                 "duration": duration,
-                "details": {"engine": engine, "depth": depth, "timeout": timeout},
+                "details": {"engine": engine, "depth": depth, "timeout": timeout}
             }
 
     finally:
@@ -167,7 +166,7 @@ def _write_sby_file(
     top_module: str,
     engine: str,
     depth: int,
-    timeout: int,
+    timeout: int
 ) -> None:
     """Write a SymbiYosys .sby script for the given design."""
     mode = "bmc" if engine == "bmc" else "prove"

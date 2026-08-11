@@ -47,7 +47,6 @@ class TestSafeWidth:
         assert _safe_width("bits<32>") == 32
 
     def test_fallback(self):
-        # Unknown type defaults to 32 with a warning
         assert _safe_width("bits<W>") == 32
         assert _safe_width("unknown") == 32
 

@@ -310,20 +310,6 @@ class EvidenceRegistry:
         evidence_type: Optional[str] = None,
         limit: int = 1000,
     ) -> List[Dict[str, Any]]:
-        """
-        Query evidence entries with optional filters.
-
-        Args:
-            design: Filter by design_name.
-            backend: Filter by engine (e.g., 'perf_koika', 'BMC').
-            status: Filter by status.
-            property_name: Filter by property name.
-            evidence_type: Filter by type.
-            limit: Max rows to return.
-
-        Returns:
-            List of matching evidence dictionaries.
-        """
         return self.list_evidence(
             evidence_type=evidence_type,
             property_name=property_name,

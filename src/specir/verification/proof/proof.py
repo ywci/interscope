@@ -51,7 +51,7 @@ class ProofResult:
             "metadata": self.metadata,
             "iterations": self.iterations,
             "duration": self.duration,
-            "backend": self.backend,
+            "backend": self.backend
         }
 
     @classmethod
@@ -63,7 +63,7 @@ class ProofResult:
             metadata={
                 "total": len(results),
                 "passed": sum(1 for r in results if r.success),
-                "failed": sum(1 for r in results if not r.success),
+                "failed": sum(1 for r in results if not r.success)
             }
         )
 

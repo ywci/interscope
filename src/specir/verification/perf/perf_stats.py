@@ -3,7 +3,8 @@
 # PERF statistics collection and reporting.
 # Tracks key metrics during a PERF traversal, including node counts,
 # verifier calls, depth reached, beam sizes, Pareto pruning,
-# and token usage. Provides serialization for reporting.
+# token usage, and progress‑tracking for early stopping.
+# Provides serialization for reporting.
 
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
@@ -27,6 +28,9 @@ class PERFStats:
         start_time: Timestamp when the traversal started.
         end_time: Timestamp when the traversal ended (set on finish).
         depth_stats: Optional list of per-depth statistics (nodes, beam size, etc.).
+        best_primary_score: Best observed score on the primary dimension across depths.
+        consecutive_no_improvement: Number of consecutive depths where the best
+            primary score did not improve by at least *min_improvement*.
     """
 
     total_nodes: int = 0
@@ -40,6 +44,10 @@ class PERFStats:
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     depth_stats: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Progress‑tracking fields for early stopping
+    best_primary_score: float = 0.0
+    consecutive_no_improvement: int = 0
 
     def record_node(self, details: Optional[Dict[str, Any]] = None) -> None:
         """Record that one node was generated."""
@@ -79,8 +87,23 @@ class PERFStats:
             "depth": depth,
             "nodes": nodes,
             "beam": beam,
-            "pruned": pruned,
+            "pruned": pruned
         })
+
+    def record_progress(self, primary_score: float, min_improvement: float) -> None:
+        """
+        Update progress‑tracking fields.
+
+        If *primary_score* improves the best observed score by at least
+        *min_improvement* (relative to the current best), the counter
+        ``consecutive_no_improvement`` is reset to 0.  Otherwise it is
+        incremented by 1.
+        """
+        if primary_score >= self.best_primary_score + min_improvement:
+            self.best_primary_score = primary_score
+            self.consecutive_no_improvement = 0
+        else:
+            self.consecutive_no_improvement += 1
 
     def start(self) -> None:
         """Set the start timestamp."""
@@ -103,6 +126,8 @@ class PERFStats:
         self.start_time = None
         self.end_time = None
         self.depth_stats = []
+        self.best_primary_score = 0.0
+        self.consecutive_no_improvement = 0
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -122,7 +147,8 @@ class PERFStats:
             "start_time": self.start_time,
             "end_time": self.end_time,
             "depth_stats": self.depth_stats,
-            # node_details omitted by default to keep output size manageable
+            "best_primary_score": self.best_primary_score,
+            "consecutive_no_improvement": self.consecutive_no_improvement
         }
 
     def summary(self) -> str:
@@ -143,6 +169,8 @@ class PERFStats:
             f"Successful depth:        {self.successful_depth if self.successful_depth is not None else 'None'}",
             f"Prompt tokens used:      {self.total_tokens.get('prompt', 0)}",
             f"Completion tokens used:  {self.total_tokens.get('completion', 0)}",
+            f"Best primary score:      {self.best_primary_score:.3f}",
+            f"Consecutive no‑improve:  {self.consecutive_no_improvement}",
             f"Start time:              {self.start_time or 'N/A'}",
             f"End time:                {self.end_time or 'N/A'}",
         ]

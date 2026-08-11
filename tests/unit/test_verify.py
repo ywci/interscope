@@ -2,6 +2,7 @@
 #
 # Unit tests for the `specir verify` CLI command.
 # Updated for new ablation flags, output_format, and ProofObligationResult.
+# Also updated to include `show_proof` in Namespace objects used by _finish_summary.
 
 import json
 import sys
@@ -17,7 +18,7 @@ from specir.cli.verify import (
     _extract_acl2_statement,
     _safe_register_evidence,
     _safe_register_mc_evidence,
-    _generate_acl2_from_module,
+    _generate_acl2_from_module
 )
 from specir.verification.proof.proof import ProofResult
 from specir.verification.proof.proof_skill import LLMProofSkill
@@ -73,7 +74,7 @@ class TestVerifyTheoremProving:
         return_value={
             "directories": {"build": "build"},
             "provers": {"koika": {"prove": {}}},
-        },
+        }
     )
     def test_koika_proof_passes(
         self, mock_cfg, mock_val, mock_parse, mock_conv, mock_skill, tmp_path
@@ -112,7 +113,7 @@ class TestVerifyTheoremProving:
                 no_pareto=False,
                 no_trace_alignment=False,
                 no_reflection=False,
-                output_format="text",
+                output_format="text"
             )
             ret = verify_spec(args)
 
@@ -127,8 +128,8 @@ class TestVerifyTheoremProving:
         "specir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
-            "provers": {"koika": {"prove": {}}},
-        },
+            "provers": {"koika": {"prove": {}}}
+        }
     )
     def test_koika_proof_fails(
         self, mock_cfg, mock_val, mock_parse, mock_conv, mock_skill, tmp_path
@@ -163,7 +164,7 @@ class TestVerifyTheoremProving:
                 no_pareto=False,
                 no_trace_alignment=False,
                 no_reflection=False,
-                output_format="text",
+                output_format="text"
             )
             ret = verify_spec(args)
 
@@ -212,7 +213,7 @@ class TestVerifyTheoremProving:
                 no_pareto=False,
                 no_trace_alignment=False,
                 no_reflection=False,
-                output_format="text",
+                output_format="text"
             )
             verify_spec(args)
 
@@ -232,7 +233,7 @@ class TestVerifyModelChecking:
         return_value={
             "directories": {"build": "build"},
             "verification": {"bmc_max_depth": 100},
-        },
+        }
     )
     def test_mc_passes(
         self,
@@ -242,7 +243,7 @@ class TestVerifyModelChecking:
         mock_conv,
         mock_rtl,
         mock_mc,
-        tmp_path,
+        tmp_path
     ):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
@@ -263,7 +264,7 @@ class TestVerifyModelChecking:
                 "status": "proved",
                 "counterexample_trace": None,
                 "output": "",
-                "error": None,
+                "error": None
             }
 
             args = argparse.Namespace(
@@ -282,7 +283,7 @@ class TestVerifyModelChecking:
                 no_pareto=False,
                 no_trace_alignment=False,
                 no_reflection=False,
-                output_format="text",
+                output_format="text"
             )
             ret = verify_spec(args)
 
@@ -298,8 +299,8 @@ class TestVerifyModelChecking:
         "specir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
-            "verification": {"bmc_max_depth": 100},
-        },
+            "verification": {"bmc_max_depth": 100}
+        }
     )
     def test_mc_counterexample(
         self,
@@ -309,7 +310,7 @@ class TestVerifyModelChecking:
         mock_conv,
         mock_rtl,
         mock_mc,
-        tmp_path,
+        tmp_path
     ):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
@@ -325,7 +326,7 @@ class TestVerifyModelChecking:
             "status": "disproved",
             "counterexample_trace": trace_path,
             "output": "",
-            "error": None,
+            "error": None
         }
 
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
@@ -347,7 +348,7 @@ class TestVerifyModelChecking:
                 no_pareto=False,
                 no_trace_alignment=False,
                 no_reflection=False,
-                output_format="text",
+                output_format="text"
             )
             ret = verify_spec(args)
 
@@ -369,7 +370,7 @@ class TestVerifyModelChecking:
         mock_conv,
         mock_rtl,
         mock_mc,
-        tmp_path,
+        tmp_path
     ):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
@@ -397,7 +398,7 @@ class TestVerifyModelChecking:
                 no_pareto=False,
                 no_trace_alignment=False,
                 no_reflection=False,
-                output_format="text",
+                output_format="text"
             )
             ret = verify_spec(args)
 
@@ -427,7 +428,7 @@ class TestVerifyModelChecking:
         mock_rtl,
         mock_mc,
         mock_skill,
-        tmp_path,
+        tmp_path
     ):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
@@ -494,6 +495,7 @@ class TestReport:
             report=str(report_path),
             debug=False,
             output_format="text",
+            show_proof=False
         )
         _finish_summary(results, args)
         assert report_path.exists()
@@ -509,7 +511,7 @@ class TestReport:
             ProofObligationResult(
                 property="b", status=Status.FAIL, backend="acl2",
                 error_message="error msg"
-            ),
+            )
         ]
         args = argparse.Namespace(
             input="test.specir",
@@ -517,6 +519,7 @@ class TestReport:
             report=None,
             debug=False,
             output_format="text",
+            show_proof=False
         )
         ret = _finish_summary(results, args)
         captured = capsys.readouterr()

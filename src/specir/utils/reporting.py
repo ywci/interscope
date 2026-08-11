@@ -1,7 +1,8 @@
 # src/specir/utils/reporting.py
 #
 # Aggregation and export of compilation, verification, and simulation
-# results produced by InterScope.
+# results produced by InterScope.  Used to generate machine‑readable
+# output files and summary statistics.
 
 import csv
 import json
@@ -28,7 +29,6 @@ def aggregate_compilation_reports(
     total_designs = len(reports)
     overall_success_count = sum(1 for r in reports if r.overall_success())
 
-    # Per‑backend statistics
     backend_map: Dict[str, List[BackendResult]] = {}
     for report in reports:
         for res in report.results:

@@ -142,7 +142,7 @@ def _reconstruct_fired_rules(
 
 def _reconstruct_io(
     interfaces: List[Union[spec_ir.Interface, Dict[str, Any]]],
-    direction_kind: str,            # "inputs" or "outputs"
+    direction_kind: str,  # "inputs" or "outputs"
     io_signals: Dict[str, str],
     cycle_data: trace_ir.TraceCycleData
 ) -> Dict[str, Any]:
@@ -180,7 +180,7 @@ def convert(
         Each cycle contains ``cycle``, ``state``, ``fired_rules``, ``inputs``, ``outputs``.
     """
     # Build unified annotation maps
-    annotation_map: Dict[str, str] = {}         # specir_ref -> signal_name
+    annotation_map: Dict[str, str] = {}          # specir_ref -> signal_name
     rule_cond_signals: Dict[str, str] = {}       # rule_name -> signal_name
     io_signals: Dict[str, str] = {}              # specir_ref -> signal_name
 

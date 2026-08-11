@@ -38,7 +38,8 @@ def build_acl2_proof_prompt(
     context: Optional[str] = None,
     hint_classes: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
-    previous_attempts: Optional[List[Dict[str, str]]] = None
+    previous_attempts: Optional[List[Dict[str, str]]] = None,
+    strategy_hint: Optional[str] = None,
 ) -> str:
     """
     Build a prompt for an LLM to generate a complete ACL2 proof (defthm with hints).
@@ -51,6 +52,7 @@ def build_acl2_proof_prompt(
         assumptions: List of assumptions (environment constraints).
         previous_attempts: List of previous failed attempts, each as a dict with
                            keys "script" and "error", for repair feedback.
+        strategy_hint: Optional description of a specific proof strategy to use.
 
     Returns:
         A string prompt suitable for an LLM.
@@ -73,6 +75,8 @@ def build_acl2_proof_prompt(
         parts.append(f"Available definitions / lemmas:\n{context_str}\n")
     if assumes_str:
         parts.append(f"Assumptions:\n{assumes_str}\n")
+    if strategy_hint:
+        parts.append(f"**Proof strategy to use:** {strategy_hint}\n")
     parts.append(f"Suggested hint classes: {hints_str}")
     parts.append(
         "Generate a complete ACL2 defthm form that includes an appropriate "
@@ -284,7 +288,6 @@ def extract_acl2_proof(response: str) -> str:
 
     if defthm_lines:
         return "\n".join(defthm_lines)
-    # Fallback: return everything
     return response
 
 
@@ -302,7 +305,6 @@ def parse_hints_from_response(response: str) -> Optional[List[str]]:
         A list of one element containing the full hint s-expression, or None.
     """
     response = response.strip()
-    # Remove markdown fences if present
     if response.startswith("```"):
         lines = response.splitlines()
         if len(lines) >= 3:
@@ -336,46 +338,40 @@ def generate_acl2_proof_variants(
     assumptions: Optional[List[str]] = None,
     temperature: float = 0.4,
     max_tokens: int = 2048,
+    previous_attempts: Optional[List[Dict[str, str]]] = None,
+    diversity_tags: Optional[List[str]] = None,
+    repair_mode: bool = False,
 ) -> List[str]:
     """
     Generate multiple divergent proof attempts for PERF.
 
-    This function produces `num_variants` different proof scripts (defthm forms)
-    by varying the LLM generation temperature and/or adding divergence hints.
+    If *repair_mode* is True, the LLM is asked to produce **one repaired
+    ``defthm``** (fixing the error in *previous_attempts*) and the
+    remaining divergent ``defthm`` forms in a single response, separated
+    by ``### REPAIR`` and ``### VARIANT N`` markers.  The returned list
+    always starts with the repaired script and then the requested number
+    of variants; the total length is *num_variants*.
 
-    Args:
-        llm_client: The LLM client.
-        theorem_name: Name of the theorem.
-        theorem_statement: The theorem statement (ACL2 formula).
-        num_variants: Number of variants to generate (N in PERF).
-        context: Optional ACL2 context (definitions, lemmas).
-        hint_classes: Suggested hint classes (e.g., ["rewrite", "induct"]).
-        assumptions: Optional list of assumptions.
-        temperature: LLM temperature for generation (higher = more divergence).
-        max_tokens: Maximum tokens per generation.
-
-    Returns:
-        List of proof scripts (complete defthm forms), one per variant.
+    All other parameters are as before.
     """
+    if repair_mode and not previous_attempts:
+        repair_mode = False
+
+    if repair_mode:
+        return _generate_acl2_with_repair(
+            llm_client, theorem_name, theorem_statement, num_variants,
+            context, hint_classes, assumptions, temperature, max_tokens,
+            previous_attempts, diversity_tags,
+        )
+
+    # Original behaviour (non‑repair)
     variants = []
-    # Save original temperature
     original_temp = llm_client.temperature
-    # Use a slightly higher temperature for divergence
     gen_temp = temperature if temperature > 0 else original_temp
 
-    # Build a base prompt
-    base_prompt = build_acl2_proof_prompt(
-        theorem_name=theorem_name,
-        theorem_statement=theorem_statement,
-        context=context,
-        hint_classes=hint_classes,
-        assumptions=assumptions,
-        previous_attempts=None,
-    )
-
-    # Different hint variations to try
+    # Hint variations for diversity (used only when diversity_tags not provided)
     hint_variations = [
-        None,  # Let LLM choose
+        None,
         ["induct"],
         ["rewrite", "linear"],
         ["expand", "use"],
@@ -383,35 +379,40 @@ def generate_acl2_proof_variants(
     ]
 
     for i in range(num_variants):
-        # Add divergence to the prompt
-        if i > 0:
-            # Try a different hint class suggestion
-            hint_idx = i % len(hint_variations)
-            hint_suggestion = hint_variations[hint_idx]
-            if hint_suggestion:
-                hint_str = f"Use hints: {', '.join(hint_suggestion)}. "
-            else:
-                hint_str = "Choose your own hint strategy. "
+        prompt = build_acl2_proof_prompt(
+            theorem_name=theorem_name,
+            theorem_statement=theorem_statement,
+            context=context,
+            hint_classes=hint_classes,
+            assumptions=assumptions,
+            previous_attempts=previous_attempts,
+        )
 
-            prompt = base_prompt + (
-                f"\n\nThis is variant {i+1} of {num_variants}. "
-                f"{hint_str}"
-                f"Try a different approach than previous attempts."
-            )
-            # Randomly adjust temperature for each variant
+        # Inject diversity tag if available
+        tag = None
+        if diversity_tags and i < len(diversity_tags):
+            tag = diversity_tags[i]
+            prompt += f"\n\n**Strategy hint for this variant:** {tag}"
+
+        # Add variation when no explicit tags (or combine)
+        if not diversity_tags:
+            if i > 0:
+                hint_idx = i % len(hint_variations)
+                hint_suggestion = hint_variations[hint_idx]
+                hint_str = f"Use hints: {', '.join(hint_suggestion)}. " if hint_suggestion else "Choose your own hint strategy. "
+                prompt += f"\n\nThis is variant {i+1} of {num_variants}. {hint_str}Try a different approach than previous attempts."
             llm_client.temperature = max(0.1, gen_temp + (i - num_variants/2) * 0.05)
         else:
-            prompt = base_prompt
-            llm_client.temperature = gen_temp
+            if i > 0:
+                prompt += f"\n\nThis is variant {i+1} of {num_variants}. Build on the strategy hint above and try a different approach than previous attempts."
+            llm_client.temperature = max(0.1, gen_temp + (i - num_variants/2) * 0.05)
 
         try:
             response = llm_client.generate(prompt, max_tokens=max_tokens)
             script = extract_acl2_proof(response)
-            # Only accept scripts that contain a complete defthm
             if script and script.startswith("(defthm"):
                 variants.append(script)
             else:
-                # Fallback: try with the skeleton hint
                 logger.warning("Variant %d did not produce a valid defthm; retrying with skeleton hint.", i)
                 skeleton_prompt = build_acl2_proof_prompt(
                     theorem_name=theorem_name,
@@ -420,12 +421,13 @@ def generate_acl2_proof_variants(
                     hint_classes=["induct"],
                     assumptions=assumptions,
                 )
+                if tag:
+                    skeleton_prompt += f"\n\n**Strategy hint:** {tag}"
                 response2 = llm_client.generate(skeleton_prompt, max_tokens=max_tokens)
                 script2 = extract_acl2_proof(response2)
                 if script2 and script2.startswith("(defthm"):
                     variants.append(script2)
                 else:
-                    # Create a minimal defthm with skeleton hint
                     variants.append(
                         f"(defthm {theorem_name}\n"
                         f"  {theorem_statement}\n"
@@ -433,23 +435,129 @@ def generate_acl2_proof_variants(
                     )
         except Exception as e:
             logger.warning("Variant %d generation failed: %s", i, e)
-            # Create a fallback defthm
             variants.append(
                 f"(defthm {theorem_name}\n"
                 f"  {theorem_statement}\n"
                 f"  :hints ((\"Goal\" :induct t)))"
             )
 
-    # Restore original temperature
     llm_client.temperature = original_temp
-
-    # Ensure we have exactly num_variants (pad if needed)
     while len(variants) < num_variants:
         variants.append(
             f"(defthm {theorem_name}\n"
             f"  {theorem_statement}\n"
             f"  :hints ((\"Goal\" :induct t)))"
         )
-
-    logger.debug("Generated %d proof variants for theorem '%s'", len(variants), theorem_name)
     return variants[:num_variants]
+
+
+def _generate_acl2_with_repair(
+    llm_client: LLMClient,
+    theorem_name: str,
+    theorem_statement: str,
+    num_variants: int,
+    context: Optional[str],
+    hint_classes: Optional[List[str]],
+    assumptions: Optional[List[str]],
+    temperature: float,
+    max_tokens: int,
+    previous_attempts: Optional[List[Dict[str, str]]],
+    diversity_tags: Optional[List[str]],
+) -> List[str]:
+    """Build a single prompt that asks for one repair + (num_variants-1) divergent defthms,
+    then parse the response."""
+    prompt = build_acl2_proof_prompt(
+        theorem_name=theorem_name,
+        theorem_statement=theorem_statement,
+        context=context,
+        hint_classes=hint_classes,
+        assumptions=assumptions,
+        previous_attempts=previous_attempts
+    )
+
+    n_extra = max(1, num_variants - 1)
+    prompt += (
+        "\n\n"
+        "Your response must contain **one repaired defthm** that fixes the error, "
+        f"followed by **{n_extra} additional, meaningfully different defthm forms**.\n\n"
+        "Format your reply exactly like this:\n\n"
+        "### REPAIR\n"
+        "(defthm ...)\n\n"
+        f"### VARIANT 1\n"
+        "(defthm ...)\n\n"
+        f"... up to VARIANT {n_extra}\n\n"
+        "Return ONLY the sections described above, without any extra commentary."
+    )
+
+    if diversity_tags and n_extra > 0:
+        tags = []
+        for i in range(n_extra):
+            tag = diversity_tags[i % len(diversity_tags)]
+            tags.append(f"VARIANT {i+1} strategy: {tag}")
+        prompt += "\n" + "\n".join(tags)
+
+    original_temp = llm_client.temperature
+    llm_client.temperature = max(0.3, temperature)
+    try:
+        response = llm_client.generate(prompt, max_tokens=max_tokens)
+    except Exception as e:
+        logger.warning("ACL2 repair+variants generation failed: %s", e)
+        llm_client.temperature = original_temp
+        return [f"(defthm {theorem_name}\n  {theorem_statement}\n  :hints ((\"Goal\" :induct t)))"] * num_variants
+    finally:
+        llm_client.temperature = original_temp
+
+    scripts = _parse_acl2_repair_variants_response(response, theorem_name, theorem_statement, num_variants)
+    while len(scripts) < num_variants:
+        scripts.append(
+            f"(defthm {theorem_name}\n"
+            f"  {theorem_statement}\n"
+            f"  :hints ((\"Goal\" :induct t)))"
+        )
+    return scripts[:num_variants]
+
+
+def _parse_acl2_repair_variants_response(
+    response: str,
+    theorem_name: str,
+    theorem_statement: str,
+    expected_total: int,
+) -> List[str]:
+    """
+    Parse an LLM response containing ``### REPAIR`` and ``### VARIANT N``
+    sections, each containing a complete ACL2 defthm form.  Returns a list
+    with the repair first, then the variants in order.  Missing sections
+    are filled with a skeleton defthm.
+    """
+    response = response.replace("\r\n", "\n").replace("\r", "\n")
+    pattern = re.compile(r"^###\s*(REPAIR|VARIANT\s+\d+)", re.MULTILINE)
+    parts = pattern.split(response)
+
+    repair_found = False
+    variant_scripts = {}
+
+    for i in range(1, len(parts), 2):
+        header = parts[i].strip()
+        content = parts[i + 1] if i + 1 < len(parts) else ""
+        script = extract_acl2_proof(content)
+        if not script or not script.startswith("(defthm"):
+            script = f"(defthm {theorem_name}\n  {theorem_statement}\n  :hints ((\"Goal\" :induct t)))"
+        if header == "REPAIR":
+            variant_scripts[-1] = script  # special key for repair
+            repair_found = True
+        else:
+            match = re.match(r"VARIANT\s+(\d+)", header)
+            if match:
+                num = int(match.group(1))
+                variant_scripts[num] = script
+
+    result = []
+    if repair_found and -1 in variant_scripts:
+        result.append(variant_scripts[-1])
+    else:
+        result.append(f"(defthm {theorem_name}\n  {theorem_statement}\n  :hints ((\"Goal\" :induct t)))")
+
+    for vnum in range(1, expected_total):
+        result.append(variant_scripts.get(vnum, f"(defthm {theorem_name}\n  {theorem_statement}\n  :hints ((\"Goal\" :induct t)))"))
+
+    return result

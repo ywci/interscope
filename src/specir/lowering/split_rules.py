@@ -175,7 +175,7 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
             break
 
     if split_idx == -1:
-        return None   # no ite → nothing to split
+        return None  # no ite → nothing to split
 
     # Ensure no *other* action contains an `ite`
     for j, act in enumerate(parsed_actions):
@@ -194,7 +194,6 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
 
     conditions, then_bodies, default_body = branches
 
-    # Build one rule per branch
     new_rules = []
     for idx, (branch_cond, branch_body) in enumerate(zip(conditions, then_bodies)):
         new_actions = [
@@ -216,7 +215,6 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
         )
         new_rules.append(new_rule)
 
-    # If there is a default (fall‑through) branch, emit it as well
     if default_body is not None:
         new_actions = [
             _serialise_action(act) for act in parsed_actions[:split_idx]

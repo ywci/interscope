@@ -197,6 +197,7 @@ case "${1:-}" in
         run_clean
         ;;
     --compile|--verify|--sim|--lift|--check|--query)
+        # Backward-compatible direct dispatch to the respective CLI module
         check_uv
         subcmd="${1#--}"
         shift
@@ -213,6 +214,8 @@ case "${1:-}" in
         exec env PYTHONPATH=src uv run python scripts/extract_mapping.py "$@"
         ;;
     *)
+        # All other commands (including new global options like --batch) are
+        # forwarded to the new unified CLI
         check_uv
         exec env PYTHONPATH=src uv run python -m specir.cli.main "$@"
         ;;

@@ -45,7 +45,7 @@ class PERFEvidence:
         proof_script: str,
         backend: str,
         stats: Optional[PERFStats] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None
     ) -> int:
         """
         Register a proof successfully found by PERF.
@@ -60,7 +60,6 @@ class PERFEvidence:
         Returns:
             The ID of the newly created evidence entry.
         """
-        # Normalize backend
         backend_norm = backend.lower().replace("ō", "o")
         if backend_norm.startswith("koi"):
             engine = "perf_koika"
@@ -73,36 +72,29 @@ class PERFEvidence:
             engine = "perf_unknown"
             evidence_type = "coq_theorem"
 
-        # Generate a reference value that includes the property name and a timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         ref_value = f"perf:{property_name}:{timestamp}"
 
-        # Build the evidence object
         evidence = create_evidence_ref(
             evidence_type=evidence_type,
-            ref_type="uri",  # We could also use local_id, but URI is more informative
+            ref_type="uri",
             ref_value=ref_value,
             engine=engine,
             status="proved",
-            property_name=property_name,
+            property_name=property_name
         )
 
-        # Add to registry
         evidence_id = add_evidence_to_registry(
             evidence=evidence,
             property_name=property_name,
-            db_path=None,  # uses default from config
+            db_path=None
         )
 
-        # Optionally, store the proof script itself as an artifact.
-        # We could also store it in a separate file and reference it, but
-        # the registry only stores references. For now, we just log.
         logger.info(
             "Registered PERF proof for '%s' (backend=%s, id=%d)",
             property_name, backend, evidence_id
         )
 
-        # If stats are provided, register them as well
         if stats:
             self.register_stats(stats, property_name=property_name)
 
@@ -113,7 +105,7 @@ class PERFEvidence:
         property_name: str,
         trace_path: Optional[Path] = None,
         engine: str = "BMC",
-        status: str = "counterexample",
+        status: str = "counterexample"
     ) -> int:
         """
         Register a counterexample trace found during PERF.
@@ -131,15 +123,12 @@ class PERFEvidence:
         Returns:
             The ID of the newly created evidence entry.
         """
-        # Use the registry's helper method for adding counterexamples
         evidence_id = self.registry.add_counterexample(
             property_name=property_name,
             engine=engine,
             trace_path=trace_path,
-            status=status,
+            status=status
         )
-        # Override engine to mark it as PERF-generated
-        # (add_counterexample uses the engine we pass, so it's already correct)
         logger.info(
             "Registered PERF counterexample for '%s' (engine=%s, id=%d)",
             property_name, engine, evidence_id
@@ -170,12 +159,7 @@ class PERFEvidence:
         if property_name:
             ref_value = f"{property_name}:{ref_value}"
 
-        # Convert stats to a JSON string for storage in the ref value?
-        # Actually, we can store the stats as a text blob in the ref value,
-        # but the evidence registry only has text fields. We'll store a
-        # serialized summary as the ref value (limited length).
         stats_summary = stats.to_dict()
-        # For brevity, store only key numbers in the ref string
         summary_str = (
             f"nodes={stats.total_nodes}, "
             f"depth={stats.max_depth}, "
@@ -191,13 +175,13 @@ class PERFEvidence:
             ref_value=ref_value,
             engine="perf_stats",
             status="completed",
-            property_name=property_name,
+            property_name=property_name
         )
 
         evidence_id = add_evidence_to_registry(
             evidence=evidence,
             property_name=property_name,
-            db_path=None,
+            db_path=None
         )
 
         logger.info(
@@ -209,7 +193,7 @@ class PERFEvidence:
     def get_perf_proofs(
         self,
         property_name: Optional[str] = None,
-        backend: Optional[str] = None,
+        backend: Optional[str] = None
     ) -> list:
         """
         Retrieve PERF-generated proofs from the evidence registry.
@@ -223,18 +207,16 @@ class PERFEvidence:
         """
         engine_filter = "perf_koika" if backend and backend.startswith("koi") else "perf_acl2"
         if backend is None:
-            engine_filter = None  # list all PERF engines
+            engine_filter = None
 
-        # If engine_filter is None, we need to list both
         if engine_filter is None:
-            # Get evidence from both engine types
             results = []
             for eng in ("perf_koika", "perf_acl2"):
                 results.extend(
                     self.registry.list_evidence(
                         evidence_type="coq_theorem" if eng == "perf_koika" else "acl2_theorem",
                         property_name=property_name,
-                        engine=eng,
+                        engine=eng
                     )
                 )
             return results
@@ -243,7 +225,7 @@ class PERFEvidence:
             return self.registry.list_evidence(
                 evidence_type=evidence_type,
                 property_name=property_name,
-                engine=engine_filter,
+                engine=engine_filter
             )
 
     def get_perf_counterexamples(
@@ -262,11 +244,7 @@ class PERFEvidence:
         return self.registry.list_evidence(
             evidence_type="counterexample_trace",
             property_name=property_name,
-            engine="BMC",  # We use BMC as engine, but could be PERF-specific
-            # We could also filter by engine starting with 'perf' but we don't
-            # set engine to 'perf' for counterexamples; we keep the MC engine.
-            # To distinguish, we could add a note in status or metadata.
-            # For now, we filter by status='counterexample' and type.
+            engine="BMC"
         )
 
     def get_latest_proof(self, property_name: str, backend: str) -> Optional[Dict[str, Any]]:
@@ -284,7 +262,7 @@ class PERFEvidence:
         entries = self.registry.list_evidence(
             property_name=property_name,
             engine=engine,
-            limit=1,
+            limit=1
         )
         return entries[0] if entries else None
 
@@ -302,10 +280,9 @@ class PERFEvidence:
             entries = self.registry.get_evidence_by_ref(run_id)
             return entries[0] if entries else None
         else:
-            # Get the most recent stats entry
             entries = self.registry.list_evidence(
                 evidence_type="simulation_trace",
                 engine="perf_stats",
-                limit=1,
+                limit=1
             )
             return entries[0] if entries else None

@@ -65,8 +65,8 @@ class SpecStateOp(Operation):
     op_name: str = "spec.state"
 
     state_name: str = ""
-    kind: str = ""                       # register, memory, wire
-    data_type: str = ""                  # "bits<8>", "int", "bool", etc.
+    kind: str = ""  # register, memory, wire
+    data_type: str = ""  # "bits<8>", "int", "bool", etc.
     initial: Optional[Any] = None
     attributes: List[str] = field(default_factory=list)
 
@@ -77,10 +77,10 @@ class SpecRuleOp(Operation):
     op_name: str = "spec.rule"
 
     rule_name: str = ""
-    condition: Optional[str] = None      # S‑expression string
-    actions: List[str] = field(default_factory=list)   # list of S‑expression strings
+    condition: Optional[str] = None  # S‑expression string
+    actions: List[str] = field(default_factory=list)  # list of S‑expression strings
     priority: Optional[int] = None
-    rule_attributes: List[str] = field(default_factory=list)   # atomic, speculative, commutative
+    rule_attributes: List[str] = field(default_factory=list)  # atomic, speculative, commutative
 
 
 @dataclass
@@ -89,8 +89,8 @@ class SpecPropertyOp(Operation):
     op_name: str = "spec.property"
 
     prop_name: str = ""
-    kind: str = "safety"                 # safety, liveness, invariant
-    expression: Dict[str, Any] = field(default_factory=dict)   # TemporalExpr as dict
+    kind: str = "safety"  # safety, liveness, invariant
+    expression: Dict[str, Any] = field(default_factory=dict)  # TemporalExpr as dict
     assumes: List[str] = field(default_factory=list)
     guarantees: List[str] = field(default_factory=list)
 
@@ -101,10 +101,10 @@ class SpecDirectiveOp(Operation):
     op_name: str = "spec.directive"
 
     directive_name: str = ""
-    kind: str = ""                       # assume, assert, cover
+    kind: str = ""  # assume, assert, cover
     expression: str = ""
     clock: Optional[str] = None
-    severity: str = "error"              # for assert directives
+    severity: str = "error"  # for assert directives
 
 
 @dataclass
@@ -112,7 +112,7 @@ class SpecScheduleOp(Operation):
     """Defines concurrency schedule."""
     op_name: str = "spec.schedule"
 
-    kind: str = "parallel"               # parallel, sequential, conflict_free
+    kind: str = "parallel"  # parallel, sequential, conflict_free
     rule_order: List[str] = field(default_factory=list)
     conflict_sets: List[List[str]] = field(default_factory=list)
 

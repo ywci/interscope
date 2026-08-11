@@ -38,7 +38,6 @@ def convert_ast_to_spec_module(ast_module) -> SpecModule:
         resets=_convert_resets(getattr(ast_module, 'resets', [])),
         inputs=[_convert_interface(i) for i in getattr(ast_module, 'inputs', [])],
         outputs=[_convert_interface(o) for o in getattr(ast_module, 'outputs', [])],
-        # Newly converted fields
         types=_convert_types(getattr(ast_module, 'types', [])),
         components=_convert_components(getattr(ast_module, 'components', [])),
         fairness=_convert_fairness(getattr(ast_module, 'fairness', []))
@@ -85,7 +84,7 @@ def convert_ast_to_spec_module(ast_module) -> SpecModule:
     for directive in getattr(ast_module, 'directives', []):
         spec_mod.directive_ops.append(SpecDirectiveOp(
             directive_name=directive.name,
-            kind=directive.type,          # AST uses "type" for assume/assert/cover
+            kind=directive.type,  # AST uses "type" for assume/assert/cover
             expression=directive.expression,
             clock=getattr(directive, 'clock', None),
             severity=getattr(directive, 'severity', 'error')

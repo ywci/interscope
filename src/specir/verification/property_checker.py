@@ -26,13 +26,13 @@ class PropertyCheckResult:
     holds: bool
     failing_cycle: Optional[int] = None
     detail: Optional[str] = None
-    vacuous: bool = False   # True if an assumption was violated -> property vacuously true
+    vacuous: bool = False  # True if an assumption was violated -> property vacuously true
 
 
 def _evaluate_operand(
     operand: Union[str, List],
     cycle: int,
-    trace: List[Dict[str, Any]],
+    trace: List[Dict[str, Any]]
 ) -> Any:
     """
     Evaluate a boolean operand (S‑expression) at a given cycle.
@@ -89,18 +89,16 @@ def _evaluate_operand(
             inputs=inputs,
             memories=memories,
             previous_state=prev_state,
-            next_state=next_state,
+            next_state=next_state
         )
         return result
     except ExprError:
-        # If evaluation fails (e.g., 'rose' at cycle 0 with no previous state),
-        # treat the operand as false so the property check can continue.
         return False
 
 
 def _check_always(
     operand: Union[str, List],
-    trace: List[Dict[str, Any]],
+    trace: List[Dict[str, Any]]
 ) -> PropertyCheckResult:
     """Check 'always operand' over the whole trace."""
     for i in range(len(trace)):
@@ -110,7 +108,7 @@ def _check_always(
                 name="",
                 holds=False,
                 failing_cycle=i,
-                detail=f"Operand evaluated to {val} at cycle {i}",
+                detail=f"Operand evaluated to {val} at cycle {i}"
             )
     return PropertyCheckResult(name="", holds=True)
 
@@ -118,7 +116,7 @@ def _check_always(
 def _check_eventually(
     operand: Union[str, List],
     bound: Optional[int],
-    trace: List[Dict[str, Any]],
+    trace: List[Dict[str, Any]]
 ) -> PropertyCheckResult:
     """Check 'eventually operand' with optional bound."""
     max_cycle = len(trace)
@@ -129,12 +127,12 @@ def _check_eventually(
             return PropertyCheckResult(
                 name="",
                 holds=False,
-                detail=f"Operand not satisfied within bound {bound}",
+                detail=f"Operand not satisfied within bound {bound}"
             )
     return PropertyCheckResult(
         name="",
         holds=False,
-        detail="Operand never satisfied",
+        detail="Operand never satisfied"
     )
 
 
@@ -147,7 +145,6 @@ def _check_until(
     """Check 'left until right' (overlapping: right may hold in the same cycle as left)."""
     max_cycle = len(trace)
     for i in range(max_cycle):
-        # Overlapping until: right can hold in the same cycle as left.
         if _evaluate_operand(right, i, trace):
             return PropertyCheckResult(name="", holds=True)
         if not _evaluate_operand(left, i, trace):
@@ -155,18 +152,18 @@ def _check_until(
                 name="",
                 holds=False,
                 failing_cycle=i,
-                detail="Left operand false before right became true",
+                detail="Left operand false before right became true"
             )
         if bound is not None and i >= bound:
             return PropertyCheckResult(
                 name="",
                 holds=False,
-                detail=f"Until not satisfied within bound {bound}",
+                detail=f"Until not satisfied within bound {bound}"
             )
     return PropertyCheckResult(
         name="",
         holds=False,
-        detail="Right operand never became true",
+        detail="Right operand never became true"
     )
 
 
@@ -212,7 +209,7 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
 
 def check_all_properties(
     properties: List[Property],
-    trace: List[Dict[str, Any]],
+    trace: List[Dict[str, Any]]
 ) -> List[PropertyCheckResult]:
     """
     Check all properties in a list against a trace.
@@ -233,7 +230,7 @@ def check_all_properties(
             result = PropertyCheckResult(
                 name=prop.name,
                 holds=False,
-                detail=str(e),
+                detail=str(e)
             )
         results.append(result)
     return results
@@ -275,14 +272,14 @@ def check_properties_from_spec_dialect(
                 operand=expr_dict.get("operand"),
                 left=expr_dict.get("left"),
                 right=expr_dict.get("right"),
-                bound=expr_dict.get("bound"),
+                bound=expr_dict.get("bound")
             )
             prop = Property(
                 name=prop_op.prop_name,
                 kind=prop_op.kind,
                 expression=temporal_expr,
                 assumes=prop_op.assumes,
-                guarantees=prop_op.guarantees,
+                guarantees=prop_op.guarantees
             )
             result = check_property(prop, trace)
         except Exception as e:
@@ -290,7 +287,7 @@ def check_properties_from_spec_dialect(
             result = PropertyCheckResult(
                 name=prop_op.prop_name,
                 holds=False,
-                detail=str(e),
+                detail=str(e)
             )
         results.append(result)
     return results

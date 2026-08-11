@@ -358,7 +358,6 @@ def convert(spec_module: spec_ir.SpecModule) -> acl2_ir.ACL2Module:
         hypotheses = " ".join(assumes_acl2) if assumes_acl2 else "t"
         statement = f"(implies (and {hypotheses}) {prop_acl2})"
 
-        # Hints: user‑provided hints take precedence; otherwise try auto‑hints
         metadata = _po_metadata(po)
         user_hints = metadata.get("acl2_hints", [])
         if isinstance(user_hints, list) and user_hints:

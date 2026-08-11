@@ -189,7 +189,6 @@ def query_evidence(args: argparse.Namespace) -> int:
         return 0
 
     elif args.command == "list":
-        # Backward-compatible listing
         entries = registry.list_evidence(
             evidence_type=args.type,
             property_name=args.property,

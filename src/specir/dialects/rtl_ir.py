@@ -32,7 +32,7 @@ class RTLModuleOp(Operation):
     """Top‑level RTL module."""
     name: str = "rtl.module"
     module_name: str = ""
-    ports: List[Dict[str, Any]] = field(default_factory=list)  # name, direction, width
+    ports: List[Dict[str, Any]] = field(default_factory=list)
     parameters: Dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
@@ -45,7 +45,7 @@ class RTLRegOp(Operation):
     name: str = "rtl.reg"
     reg_name: str = ""
     width: int = 1
-    initial: Optional[str] = None   # e.g., "0"
+    initial: Optional[str] = None
 
     def __str__(self) -> str:
         init_str = f" init={self.initial}" if self.initial else ""
@@ -78,8 +78,8 @@ class RTLAssignOp(Operation):
 class RTLAlwaysOp(Operation):
     """Always block (combinational or clocked)."""
     name: str = "rtl.always"
-    sensitivity: str = ""            # e.g., "@(posedge clk)" or "@(*)"
-    body: List[str] = field(default_factory=list)  # list of statements (strings)
+    sensitivity: str = ""  # e.g., "@(posedge clk)" or "@(*)"
+    body: List[str] = field(default_factory=list)
     clock: Optional[str] = None
     reset: Optional[str] = None
 
@@ -129,13 +129,12 @@ class MappingEntry:
       - expression: The original SpecIR expression (for combinational signals).
       - relevant_properties: List of property names this signal is relevant to.
     """
-    rtl_signal: str          # hierarchical path, e.g., "top.fifo.head"
-    specir_ref: str          # e.g., "module.state[name=head]"
-    kind: str                # register, rule_condition, memory, input, output, etc.
+    rtl_signal: str
+    specir_ref: str
+    kind: str  # register, rule_condition, memory, input, output, etc.
     width: Optional[int] = None
 
-    # PERF-specific fields for trace alignment
-    signal_group: str = "state"        # "control", "data", "state", "input", "output"
+    signal_group: str = "state"  # "control", "data", "state", "input", "output"
     is_relevant_for_proof: bool = True
     source_rule: Optional[str] = None
     expression: Optional[str] = None
@@ -148,9 +147,8 @@ class MappingEntry:
             "specir_ref": self.specir_ref,
             "kind": self.kind,
             "width": self.width,
-            # PERF fields
             "signal_group": self.signal_group,
-            "is_relevant_for_proof": self.is_relevant_for_proof,
+            "is_relevant_for_proof": self.is_relevant_for_proof
         }
         if self.source_rule is not None:
             result["source_rule"] = self.source_rule
@@ -172,7 +170,7 @@ class MappingEntry:
             is_relevant_for_proof=data.get("is_relevant_for_proof", True),
             source_rule=data.get("source_rule"),
             expression=data.get("expression"),
-            relevant_properties=data.get("relevant_properties", []),
+            relevant_properties=data.get("relevant_properties", [])
         )
 
 
@@ -208,7 +206,6 @@ class RTLMapping:
         Returns:
             List of mapping entries that are relevant to this obligation.
         """
-        # Extract property name
         if isinstance(obligation, dict):
             prop_name = obligation.get("property")
         else:
@@ -219,11 +216,6 @@ class RTLMapping:
 
         filtered = []
         for entry in self.entries:
-            # Include if:
-            # 1. The entry is explicitly marked as relevant
-            # 2. The entry's relevant_properties list contains the property
-            # 3. The specir_ref points to something related to the property
-            #    (e.g., the property's name appears in the ref)
             if not entry.is_relevant_for_proof:
                 continue
 
@@ -231,15 +223,10 @@ class RTLMapping:
                 filtered.append(entry)
                 continue
 
-            # Heuristic: if specir_ref contains the property name (e.g., rule condition)
             if prop_name in entry.specir_ref:
                 filtered.append(entry)
                 continue
 
-            # If no specific relevance, include by default (conservative)
-            # But we want to be selective, so we only include if it's a state or input
-            # that might be used in the property.
-            # For PERF trace_alignment, we want to include state and input signals.
             if entry.kind in ("register", "memory", "input", "output"):
                 filtered.append(entry)
 
@@ -259,8 +246,6 @@ class RTLMapping:
                     index[prop] = []
                 index[prop].append(entry.rtl_signal)
 
-            # Also add entries based on specir_ref heuristic
-            # (e.g., if specir_ref contains "property[name=...]")
             import re
             match = re.search(r"property\[name=([^\]]+)\]", entry.specir_ref)
             if match:

@@ -11,6 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+
 from specir.dialects import spec_ir
 from specir.lowering import koika_to_rtl
 from specir.lowering.split_rules import split_rules
@@ -71,7 +72,7 @@ def _generate_input_testbench(
     decls, drives = [], []
     for inp in inputs:
         name = inp.name
-        port_name = f"Inp_{name}"          # matches the injected ports
+        port_name = f"Inp_{name}"  # matches the injected ports
         resolved_type = _resolve_type(inp.data_type, params)
         w = _safe_width(resolved_type)
         if w <= 32:
@@ -185,7 +186,7 @@ def _collect_verilator_coverage(obj_dir: Path, top_module: str) -> Optional[floa
         return None
 
     try:
-        # Generate an annotated coverage report (text)
+        # Generate an annotated coverage report
         annotate_dir = obj_dir / "coverage_annotated"
         annotate_dir.mkdir(exist_ok=True)
         cmd = [
@@ -196,16 +197,13 @@ def _collect_verilator_coverage(obj_dir: Path, top_module: str) -> Optional[floa
         ]
         subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
 
-        # Read the summary file (if generated) or parse total percentage
         summary_file = annotate_dir / "coverage_summary.txt"
         if summary_file.exists():
             text = summary_file.read_text()
-            # Search for something like "Coverage: 85.2%"
             match = re.search(r"Coverage[:\s]+([0-9]+(?:\.[0-9]+)?)\s*%", text, re.IGNORECASE)
             if match:
                 return float(match.group(1))
         else:
-            # Fallback: parse the top-level annotated HTML? Not robust.
             pass
     except Exception as e:
         logger.warning("Failed to extract Verilator coverage: %s", e)
@@ -221,7 +219,7 @@ def simulate_design(
     verilator_path: Optional[str] = None,
     koika_path: Optional[str] = None,
     assert_lang: Optional[str] = None,
-    collect_coverage: bool = False,
+    collect_coverage: bool = False
 ) -> SimulationReport:
     """
     Simulate a design from a SpecModule, producing a VCD trace.
@@ -254,14 +252,12 @@ def simulate_design(
     if koika_path is None:
         koika_path = config.get("verification", {}).get("koika_path")
 
-    # Optional rule splitting
     if config.get("verification", {}).get("split_monolithic_rules", False):
         logger.info("Applying rule‑splitting pass (split_monolithic_rules = true).")
         spec_module = split_rules(spec_module)
 
     design_name = spec_module.name
 
-    # Resolve parameters for type widths
     params: Dict[str, int] = {}
     for name, param_info in spec_module.parameters.items():
         if not isinstance(param_info, dict):
@@ -310,7 +306,6 @@ def simulate_design(
     vcd_file = output_dir / "traces" / f"{design_name}.vcd"
     vcd_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build extra Verilator args
     extra_args = ["-Wno-fatal", "--assert"]
     if collect_coverage:
         extra_args.append("--coverage")
@@ -335,8 +330,6 @@ def simulate_design(
     # 5. Collect coverage if requested
     coverage_pct = None
     if collect_coverage:
-        # obj_dir contains the build directory (obj_dir/obj_dir/Vtop)
-        # The actual Verilator obj_dir is obj_dir / "obj_dir"
         build_dir_cov = obj_dir / "obj_dir"
         if build_dir_cov.exists():
             coverage_pct = _collect_verilator_coverage(build_dir_cov, design_name)

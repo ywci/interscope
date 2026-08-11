@@ -206,7 +206,7 @@ def convert(assert_module: assert_ir.AssertModule) -> str:
     for p in assert_module.properties:
         if p.kind == "always" and p.operand:
             try:
-                _ovl_expr(p.operand)   # test conversion
+                _ovl_expr(p.operand)
                 supported_props.append(p)
             except ExprError:
                 unsupported_props.append(p)

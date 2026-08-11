@@ -37,8 +37,8 @@ class TraceClockOp(Operation):
     """Defines the clock for the trace."""
     op_name: str = "trace.clock"
     clock_name: str = ""
-    period: Optional[str] = None      # e.g., "10ns"
-    edge: str = "posedge"             # posedge, negedge
+    period: Optional[str] = None  # e.g., "10ns"
+    edge: str = "posedge"  # posedge, negedge
 
     def __str__(self) -> str:
         period_str = f" period={self.period}" if self.period else ""
@@ -73,7 +73,7 @@ class TraceValueOp(Operation):
     """Value of a signal in a specific cycle."""
     op_name: str = "trace.value"
     signal_name: str = ""
-    value: Any = None                 # int, bool, string for bit vectors
+    value: Any = None  # int, bool, string for bit vectors
 
     def __str__(self) -> str:
         return f"trace.value @{self.signal_name} = {self.value}"
@@ -93,15 +93,14 @@ class TraceAnnotationOp(Operation):
     """
     op_name: str = "trace.annotation"
     signal_name: str = ""
-    specir_ref: str = ""              # e.g., "module.state[name=head]"
-    kind: str = "register"            # register, memory, rule_condition, etc.
+    specir_ref: str = ""
+    kind: str = "register"  # register, memory, rule_condition, etc.
 
-    # PERF-specific fields
     property_name: Optional[str] = None
     property_holds: Optional[bool] = None
     failing_cycle: Optional[int] = None
     details: Optional[str] = None
-    signal_group: str = "state"       # "control", "data", "state", "input", "output"
+    signal_group: str = "state"  # "control", "data", "state", "input", "output"
 
     def __str__(self) -> str:
         base = f"trace.annotation @{self.signal_name} -> {self.specir_ref} ({self.kind})"
@@ -182,8 +181,6 @@ class TraceModule:
     signals: List[TraceSignalOp] = field(default_factory=list)
     annotations: List[TraceAnnotationOp] = field(default_factory=list)
     cycles: List[TraceCycleData] = field(default_factory=list)
-
-    # PERF-specific fields
     property_evaluations: List[TracePropertyEvaluation] = field(default_factory=list)
     signal_groups: Dict[str, List[str]] = field(default_factory=dict)
 
@@ -223,7 +220,7 @@ class TraceModule:
     def extract_failing_trace(
         self,
         property_name: str,
-        window: int = 5,
+        window: int = 5
     ) -> Dict[str, Any]:
         """
         Extract a window of cycles around a failure for PERF reflection.
@@ -259,7 +256,6 @@ class TraceModule:
 
         failing_cycle = eval_result.failing_cycle
         if failing_cycle is None:
-            # No specific cycle recorded; use the last cycle
             failing_cycle = len(self.cycles) - 1 if self.cycles else 0
 
         start = max(0, failing_cycle - window)
@@ -272,10 +268,9 @@ class TraceModule:
                 cycle_data = {}
             window_data.append({
                 "cycle": i,
-                "values": cycle_data,
+                "values": cycle_data
             })
 
-        # Get all signal names available in this window
         signals_available = set()
         for wd in window_data:
             signals_available.update(wd["values"].keys())
@@ -304,7 +299,6 @@ class TraceModule:
         if group in self.signal_groups:
             return self.signal_groups[group]
 
-        # Build from annotations
         group_signals = [
             ann.signal_name for ann in self.annotations
             if ann.signal_group == group
@@ -320,7 +314,6 @@ class TraceModule:
             Dictionary mapping group name to list of signal names.
         """
         if not self.signal_groups:
-            # Build from annotations
             groups: Dict[str, List[str]] = {}
             for ann in self.annotations:
                 group = ann.signal_group
@@ -412,7 +405,6 @@ class TraceModule:
         result = self.extract_failing_trace(property_name, window=window_size)
 
         if relevant_signals:
-            # Filter the window values to only include relevant signals
             keep_set = set(relevant_signals)
             filtered_window = []
             for wd in result.get("window", []):
@@ -435,7 +427,7 @@ class TraceModule:
             lines.append(f"  {ann}")
         for cycle in self.cycles:
             lines.append(f"  trace.cycle {cycle.cycle}")
-            for sig, val in list(cycle.values.items())[:10]:  # show first 10
+            for sig, val in list(cycle.values.items())[:10]:
                 lines.append(f"    trace.value @{sig} = {val}")
             if len(cycle.values) > 10:
                 lines.append(f"    ... and {len(cycle.values) - 10} more signals")

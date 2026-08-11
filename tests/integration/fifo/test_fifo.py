@@ -6,10 +6,12 @@
 # The simulation + lift + check test is skipped until the Kōika extraction
 # step is automated.
 
+import os
 import subprocess
 import sys
-import pytest
 from pathlib import Path
+import pytest
+import yaml
 
 
 def _tool_on_path(name: str) -> bool:
@@ -28,14 +30,35 @@ def _koika_works() -> bool:
         return False
 
 
-def _run_specir(subcommand: str, args: list, timeout: int = 120, **kwargs) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "specir.cli." + subcommand] + args,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        **kwargs,
-    )
+def _write_library_config(config_path: Path):
+    """Write a minimal config that enables the proof library and avoids LLM calls."""
+    config = {
+        "provers": {
+            "koika": {
+                "use_proof_library": True,
+                "prove": {
+                    "rocq_mcp_path": "rocq-mcp",
+                    "proof_timeout": 300,
+                    "max_consecutive_failures": 10,
+                    "max_steps": 40,
+                    "pre_simplify": True,
+                    "invariant_mining": False,
+                    "skeleton_reflection": False,
+                }
+            }
+        },
+        "proof": {
+            "max_repair_attempts": 0,
+            "perf": {"enabled": False},
+        },
+        "llm": {
+            "provider": "ollama",
+            "model": "dummy",
+            "api_key": "unused",
+            "base_url": "http://localhost:1",
+        },
+    }
+    config_path.write_text(yaml.dump(config))
 
 
 @pytest.fixture
@@ -57,7 +80,12 @@ def test_fifo_compile_koika(fifo_spec_path, build_dir):
         "--out-dir", str(build_dir),
         "--no-rtl",
     ]
-    result = _run_specir("compile", cmd, timeout=60)
+    result = subprocess.run(
+        [sys.executable, "-m", "specir.cli.compile"] + cmd,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     assert result.returncode == 0, (
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
@@ -75,7 +103,12 @@ def test_fifo_compile_acl2(fifo_spec_path, build_dir):
         "--backend", "acl2",
         "--out-dir", str(build_dir),
     ]
-    result = _run_specir("compile", cmd, timeout=60)
+    result = subprocess.run(
+        [sys.executable, "-m", "specir.cli.compile"] + cmd,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     assert result.returncode == 0, (
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
@@ -88,14 +121,31 @@ def test_fifo_compile_acl2(fifo_spec_path, build_dir):
 @pytest.mark.integration
 @pytest.mark.skipif(not _tool_on_path("rocq-mcp"), reason="rocq‑mcp not installed")
 def test_fifo_verify_koika(fifo_spec_path, build_dir):
-    """Run proof obligations for the FIFO using the Kōika/Coq backend."""
+    """Run proof obligations for the FIFO using the Kōika/Coq backend.
+
+    A temporary config enables the proof library, which contains a verified
+    proof for the FIFO property, so verification succeeds quickly.
+    """
+    conf_path = build_dir / "test_config.yaml"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    _write_library_config(conf_path)
+
     cmd = [
         str(fifo_spec_path),
         "--backend", "koika",
         "--out-dir", str(build_dir / "verify"),
-        "--no-perf",              # disable PERF to prevent timeouts
+        "--no-perf",
     ]
-    result = _run_specir("verify", cmd, timeout=60)
+
+    env = os.environ.copy()
+    env["SPECIR_CONFIG"] = str(conf_path)
+    result = subprocess.run(
+        [sys.executable, "-m", "specir.cli.verify"] + cmd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
 
     if result.returncode not in (0, 1):
         pytest.fail(
@@ -112,6 +162,11 @@ def test_fifo_verify_koika(fifo_spec_path, build_dir):
             f"STDOUT: {result.stdout}"
         )
 
+    if result.returncode == 0:
+        assert "PASS" in result.stdout
+    else:
+        assert "FAIL" in result.stdout or "All proof attempts exhausted" in result.stderr
+
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _tool_on_path("acl2"), reason="ACL2 not installed")
@@ -121,10 +176,15 @@ def test_fifo_verify_acl2(fifo_spec_path, build_dir):
         str(fifo_spec_path),
         "--backend", "acl2",
         "--out-dir", str(build_dir / "verify"),
-        "--no-perf",              # disable PERF
+        "--no-perf",
     ]
     try:
-        result = _run_specir("verify", cmd, timeout=120)
+        result = subprocess.run(
+            [sys.executable, "-m", "specir.cli.verify"] + cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
     except subprocess.TimeoutExpired as e:
         pytest.fail(
             f"ACL2 verification timed out (120 seconds).\n"

@@ -8,6 +8,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
+
 from specir.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -345,12 +346,11 @@ def simulate(
         vcd_path = output_dir / "sim.vcd"
     vcd_path = Path(vcd_path)
 
-    # Build extra args
     ver_args = extra_verilator_args if extra_verilator_args is not None else []
     if coverage:
         ver_args.append("--coverage")
         logger.info("Verilator coverage collection enabled.")
-    # Ensure default arguments are present unless explicitly overridden
+
     default_args = ["-Wno-fatal", "--assert"]
     for arg in default_args:
         if arg not in ver_args:

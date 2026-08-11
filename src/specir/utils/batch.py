@@ -112,7 +112,7 @@ def run_batch(
                 "[%d/%d] Processing %s",
                 idx + 1,
                 len(file_list),
-                file_path.name,
+                file_path.name
             )
 
         start = time.time()
@@ -138,7 +138,7 @@ def run_batch(
                 idx + 1,
                 len(file_list),
                 file_path.name,
-                error,
+                error
             )
         except Exception as e:
             error = str(e)
@@ -147,7 +147,7 @@ def run_batch(
                 idx + 1,
                 len(file_list),
                 file_path.name,
-                error,
+                error
             )
 
         duration = time.time() - start
@@ -157,7 +157,7 @@ def run_batch(
                 "success": success,
                 "result": result,
                 "error": error,
-                "duration": duration,
+                "duration": duration
             }
         )
 

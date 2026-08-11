@@ -24,9 +24,25 @@ def build_coq_proof_prompt(
     context: Optional[str] = None,
     tactic_hints: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
-    previous_attempts: Optional[List[Dict[str, str]]] = None
+    previous_attempts: Optional[List[Dict[str, str]]] = None,
+    structural_hints: Optional[str] = None,
+    strategy_hint: Optional[str] = None,
 ) -> str:
-    """Build a prompt for an LLM to generate a complete Coq proof script."""
+    """Build a prompt for an LLM to generate a complete Coq proof script.
+
+    Args:
+        theorem_name: Name of the theorem.
+        theorem_statement: The Coq statement.
+        context: Optional Coq definitions and lemmas.
+        tactic_hints: Suggested tactics.
+        assumptions: Additional assumptions.
+        previous_attempts: List of dicts with 'script' and 'error' for repair.
+        structural_hints: Optional string describing structural findings.
+        strategy_hint: Optional string describing a specific proof strategy.
+
+    Returns:
+        A prompt string.
+    """
     hints_str = ", ".join(tactic_hints) if tactic_hints else "induction, simpl, auto, rewrite, inversion"
     assumes_str = "\n".join(f"Assumption: {a}" for a in assumptions) if assumptions else ""
     context_str = context if context else ""
@@ -44,6 +60,10 @@ def build_coq_proof_prompt(
         parts.append(f"Available definitions and lemmas:\n{context_str}\n")
     if assumes_str:
         parts.append(f"Assumptions:\n{assumes_str}\n")
+    if structural_hints:
+        parts.append(f"**Structural analysis of the goal:**\n{structural_hints}\n")
+    if strategy_hint:
+        parts.append(f"**Proof strategy to use:** {strategy_hint}\n")
     parts.append(f"Suggested tactics: {hints_str}")
     parts.append("")
     parts.append(
@@ -74,16 +94,33 @@ def generate_coq_proof(
     tactic_hints: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
     previous_attempts: Optional[List[Dict[str, str]]] = None,
-    max_tokens: int = 2048
+    max_tokens: int = 2048,
+    structural_hints: Optional[str] = None,
 ) -> str:
-    """Generate a Coq proof script using an LLM."""
+    """Generate a Coq proof script using an LLM.
+
+    Args:
+        llm_client: LLM client.
+        theorem_name: Name of the theorem.
+        theorem_statement: Coq statement.
+        context: Optional definitions and lemmas.
+        tactic_hints: Optional tactic suggestions.
+        assumptions: Optional assumptions.
+        previous_attempts: Previous failures for repair.
+        max_tokens: Maximum tokens for the response.
+        structural_hints: Optional structural analysis string.
+
+    Returns:
+        Raw LLM response.
+    """
     prompt = build_coq_proof_prompt(
         theorem_name=theorem_name,
         theorem_statement=theorem_statement,
         context=context,
         tactic_hints=tactic_hints,
         assumptions=assumptions,
-        previous_attempts=previous_attempts
+        previous_attempts=previous_attempts,
+        structural_hints=structural_hints,
     )
     logger.debug("One‑shot proof prompt (%d chars):\n%s", len(prompt), prompt)
 
@@ -134,10 +171,10 @@ def build_interactive_step_prompt(
     recent_errors: List[str],
     base_case_hint: str = "simpl; auto with *; try lia; try nia.",
     step_case_hint: str = "invert the step hypothesis, substitute, simpl, then try to apply the induction hypothesis or use available lemmas; finish with auto/lia/nia.",
-    available_lemmas: Optional[List[str]] = None
+    available_lemmas: Optional[List[str]] = None,
+    structural_hints: Optional[str] = None,
 ) -> str:
-    """
-    Build a prompt for the next tactic in an interactive Coq proof.
+    """Build a prompt for the next tactic in an interactive Coq proof.
 
     Args:
         theorem_name: Name of the theorem being proved.
@@ -148,6 +185,10 @@ def build_interactive_step_prompt(
         base_case_hint: A short description / tactic for the base case of an induction.
         step_case_hint: A short description / tactic for the step case.
         available_lemmas: Optional list of lemma names that are already proved and may be used.
+        structural_hints: Optional structural analysis notes.
+
+    Returns:
+        Prompt string.
     """
     goals_str = "\n".join(goals) if goals else "No goals"
     hints_str = ", ".join(tactic_hints) if tactic_hints else (
@@ -185,6 +226,10 @@ def build_interactive_step_prompt(
             f"{', '.join(available_lemmas)}\n"
         )
 
+    structural_str = ""
+    if structural_hints:
+        structural_str = f"\n**Structural notes:** {structural_hints}\n"
+
     return (
         f"You are an expert in Coq and hardware verification.\n\n"
         f"Theorem: {theorem_name}\n\n"
@@ -195,6 +240,7 @@ def build_interactive_step_prompt(
         f"Recently applied tactics:\n```\n{history_str}\n```\n"
         f"{error_str}"
         f"{lemmas_str}"
+        f"{structural_str}"
         f"Suggested approach: {hints_str}\n\n"
         "**CRITICAL RULES:**\n"
         "- Look at the goal above. It shows ALL hypotheses and the conclusion.\n"
@@ -312,7 +358,7 @@ def build_slice_alignment_prompt(
     theorem_statement: str,
     context: str
 ) -> str:
-    """Specialised prompt for slice‑low‑2 alignment invariants (not used by generic pipeline)."""
+    """Specialised prompt for slice‑low‑2 alignment invariants."""
     return (
         "You are an expert in Coq and hardware verification.\n"
         f"The theorem `{theorem_name}` states an alignment invariant:\n"
@@ -343,11 +389,16 @@ def build_skeleton_reflection_prompt(
     theorem_statement: str,
     context: str,
     goals: List[str],
-    available_lemmas: List[str]
+    available_lemmas: List[str],
+    structural_hints: Optional[str] = None,
 ) -> str:
     """Prompt for LLM‑driven generation of a tailored proof skeleton."""
     goals_str = "\n".join(goals) if goals else "No goals"
     lemmas_str = ", ".join(available_lemmas) if available_lemmas else "none"
+
+    structural_part = ""
+    if structural_hints:
+        structural_part = f"\n**Structural insights:** {structural_hints}\n"
 
     return (
         "You are an expert in Coq and hardware verification.\n\n"
@@ -357,7 +408,8 @@ def build_skeleton_reflection_prompt(
         "rewriting) have already been tried and failed.  We need a custom proof "
         "script that handles the specific structure of this design.\n\n"
         f"**Current goal** (after `intros`):\n```\n{goals_str}\n```\n\n"
-        f"**Available lemmas**: {lemmas_str}\n\n"
+        f"**Available lemmas**: {lemmas_str}\n"
+        f"{structural_part}"
         f"**Environment** (the Coq code above the theorem):\n```coq\n{context}\n```\n\n"
         "Please provide a complete Coq proof script starting with `Proof.` and ending "
         "with `Qed.` (use `Admitted.` only if absolutely impossible).  The script should:\n"
@@ -379,67 +431,66 @@ def generate_coq_proof_variants(
     assumptions: Optional[List[str]] = None,
     temperature: float = 0.4,
     max_tokens: int = 2048,
+    previous_attempts: Optional[List[Dict[str, str]]] = None,
+    structural_hints: Optional[str] = None,
+    diversity_tags: Optional[List[str]] = None,
+    repair_mode: bool = False,
 ) -> List[str]:
     """
     Generate multiple divergent proof attempts for PERF.
 
-    This function produces `num_variants` different proof scripts by
-    varying the LLM generation temperature and/or adding divergence hints.
-    Each variant is a complete proof script (from Proof. to Qed. or Admitted.).
+    If *repair_mode* is True, the LLM is asked to produce **one repaired
+    script** (addressing the error in *previous_attempts*) and the
+    remaining divergent scripts in a single response.  The returned list
+    always starts with the repaired script and then the requested number
+    of variants; the total length is *num_variants*.
 
-    Args:
-        llm_client: The LLM client.
-        theorem_name: Name of the theorem.
-        theorem_statement: The theorem statement (Coq).
-        num_variants: Number of variants to generate (N in PERF).
-        context: Optional Coq context (definitions, lemmas).
-        tactic_hints: Optional list of suggested tactics.
-        assumptions: Optional list of assumptions.
-        temperature: LLM temperature for generation (higher = more divergence).
-        max_tokens: Maximum tokens per generation.
-
-    Returns:
-        List of proof scripts (strings), one per variant.
+    All other parameters are unchanged.
     """
+    if repair_mode and not previous_attempts:
+        # Without a previous error, fall back to normal generation
+        repair_mode = False
+
+    if repair_mode:
+        return _generate_with_repair(
+            llm_client, theorem_name, theorem_statement, num_variants,
+            context, tactic_hints, assumptions, temperature, max_tokens,
+            previous_attempts, structural_hints, diversity_tags,
+        )
+
+    # Original behaviour (non‑repair)
     variants = []
-    # Save original temperature
     original_temp = llm_client.temperature
-    # Use a slightly higher temperature for divergence
     gen_temp = temperature if temperature > 0 else original_temp
 
-    # Build a base prompt
     base_prompt = build_coq_proof_prompt(
         theorem_name=theorem_name,
         theorem_statement=theorem_statement,
         context=context,
         tactic_hints=tactic_hints,
         assumptions=assumptions,
-        previous_attempts=None,
+        previous_attempts=previous_attempts,
+        structural_hints=structural_hints,
     )
 
     for i in range(num_variants):
-        # Add a slight variation to the prompt to encourage divergence
+        prompt = base_prompt
+        if diversity_tags and i < len(diversity_tags):
+            prompt += f"\n\n**Strategy hint for this variant:** {diversity_tags[i]}"
         if i > 0:
-            prompt = base_prompt + (
+            prompt += (
                 f"\n\nTry a fundamentally different proof approach than previous attempts. "
                 f"Use different tactics or a different induction scheme. "
                 f"This is variant {i+1} of {num_variants}."
             )
-            # Randomly adjust temperature for each variant to increase diversity
-            llm_client.temperature = max(0.1, gen_temp + (i - num_variants/2) * 0.05)
-        else:
-            prompt = base_prompt
-            llm_client.temperature = gen_temp
+        llm_client.temperature = max(0.1, gen_temp + (i - num_variants/2) * 0.05) if i > 0 else gen_temp
 
         try:
             response = llm_client.generate(prompt, max_tokens=max_tokens)
             script = extract_proof_script(response)
-            # Only accept scripts that contain a complete proof
             if script and "Proof." in script and ("Qed." in script or "Admitted." in script):
                 variants.append(script)
             else:
-                # Fallback: try with a very generic prompt
-                logger.warning("Variant %d did not produce a valid proof script; retrying with default prompt.", i)
                 fallback = build_coq_proof_prompt(
                     theorem_name=theorem_name,
                     theorem_statement=theorem_statement,
@@ -447,6 +498,8 @@ def generate_coq_proof_variants(
                     tactic_hints=["induction", "simpl", "auto"],
                     assumptions=assumptions,
                 )
+                if diversity_tags and i < len(diversity_tags):
+                    fallback += f"\n\n**Strategy hint:** {diversity_tags[i]}"
                 response2 = llm_client.generate(fallback, max_tokens=max_tokens)
                 script2 = extract_proof_script(response2)
                 if script2 and "Proof." in script2:
@@ -457,12 +510,136 @@ def generate_coq_proof_variants(
             logger.warning("Variant %d generation failed: %s", i, e)
             variants.append("Proof. Admitted.")
 
-    # Restore original temperature
     llm_client.temperature = original_temp
-
-    # Ensure we have exactly num_variants (pad if needed)
     while len(variants) < num_variants:
         variants.append("Proof. Admitted.")
-
-    logger.debug("Generated %d proof variants for theorem '%s'", len(variants), theorem_name)
     return variants[:num_variants]
+
+
+def _generate_with_repair(
+    llm_client: LLMClient,
+    theorem_name: str,
+    theorem_statement: str,
+    num_variants: int,
+    context: Optional[str],
+    tactic_hints: Optional[List[str]],
+    assumptions: Optional[List[str]],
+    temperature: float,
+    max_tokens: int,
+    previous_attempts: Optional[List[Dict[str, str]]],
+    structural_hints: Optional[str],
+    diversity_tags: Optional[List[str]],
+) -> List[str]:
+    """Build a single prompt that asks for one repair + (num_variants-1) divergent scripts,
+    then parse the response."""
+    # Base prompt with error feedback
+    prompt = build_coq_proof_prompt(
+        theorem_name=theorem_name,
+        theorem_statement=theorem_statement,
+        context=context,
+        tactic_hints=tactic_hints,
+        assumptions=assumptions,
+        previous_attempts=previous_attempts,   # already includes the error
+        structural_hints=structural_hints,
+    )
+
+    # Append instructions for repair + variants
+    n_extra = max(1, num_variants - 1)
+    prompt += (
+        "\n\n"
+        "Your response must contain **one repaired proof** that fixes the error, "
+        f"followed by **{n_extra} additional, meaningfully different proof attempts**.\n\n"
+        "Format your reply exactly like this:\n\n"
+        "### REPAIR\n"
+        "Proof.\n"
+        "...\n"
+        "Qed.\n\n"
+        f"### VARIANT 1\n"
+        "Proof.\n"
+        "...\n"
+        "Qed.\n\n"
+        f"... up to VARIANT {n_extra}\n\n"
+        "Return ONLY the sections described above, without any extra commentary."
+    )
+
+    # Add diversity tags for the variants (not the repair)
+    if diversity_tags and n_extra > 0:
+        tags = []
+        for i in range(n_extra):
+            tag = diversity_tags[i % len(diversity_tags)]
+            tags.append(f"VARIANT {i+1} strategy: {tag}")
+        prompt += "\n" + "\n".join(tags)
+
+    # Generate with slightly elevated temperature
+    original_temp = llm_client.temperature
+    llm_client.temperature = max(0.3, temperature)
+    try:
+        response = llm_client.generate(prompt, max_tokens=max_tokens)
+    except Exception as e:
+        logger.warning("Repair+variants generation failed: %s", e)
+        llm_client.temperature = original_temp
+        # Fallback: return placeholder scripts
+        return ["Proof. Admitted."] * num_variants
+    finally:
+        llm_client.temperature = original_temp
+
+    # Parse the response into repair + variants
+    scripts = _parse_repair_variants_response(response, num_variants)
+    # Pad if necessary
+    while len(scripts) < num_variants:
+        scripts.append("Proof. Admitted.")
+    return scripts[:num_variants]
+
+
+def _parse_repair_variants_response(response: str, expected_total: int) -> List[str]:
+    """
+    Parse an LLM response that contains sections marked with
+    ``### REPAIR`` and ``### VARIANT N``.  Returns a list of scripts;
+    the first element is the repair, followed by the variants in order.
+    Missing sections are filled with ``Proof. Admitted.``.
+    """
+    # Normalize line endings
+    response = response.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Split on section headers
+    pattern = re.compile(r"^###\s*(REPAIR|VARIANT\s+\d+)", re.MULTILINE)
+    parts = pattern.split(response)
+
+    # parts alternates: text before first match, then header, content, header, content, ...
+    repair_found = False
+    variant_scripts = {}
+
+    # The first element (parts[0]) is text before any header – ignore.
+    for i in range(1, len(parts), 2):
+        header = parts[i].strip()
+        content = parts[i + 1] if i + 1 < len(parts) else ""
+        script = _extract_coq_block(content)
+        if header == "REPAIR":
+            # Insert repair at the front later
+            variant_scripts[-1] = script   # special key for repair
+            repair_found = True
+        else:
+            match = re.match(r"VARIANT\s+(\d+)", header)
+            if match:
+                num = int(match.group(1))
+                variant_scripts[num] = script
+
+    # Build final list: repair first, then variants in order
+    result = []
+    if repair_found and -1 in variant_scripts:
+        result.append(variant_scripts[-1])
+    else:
+        result.append("Proof. Admitted.")  # dummy repair
+
+    for vnum in range(1, expected_total):
+        result.append(variant_scripts.get(vnum, "Proof. Admitted."))
+
+    return result
+
+
+def _extract_coq_block(text: str) -> str:
+    """Extract a complete Coq proof script from a section's text."""
+    text = text.strip()
+    if "Proof." in text:
+        return extract_proof_script(text)
+    return text if text else "Proof. Admitted."

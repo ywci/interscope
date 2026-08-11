@@ -96,7 +96,6 @@ module:
       expression:
         kind: always
         operand: (and (ge (read count) 0) (le (read count) 8))
-    # --- ACL2‑friendly test properties (register‑only) ---
     - name: write_ptr_self
       kind: safety
       expression:

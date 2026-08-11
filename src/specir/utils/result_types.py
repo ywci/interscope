@@ -15,15 +15,14 @@ class Status(Enum):
     TIMEOUT = "TIMEOUT"
     ERROR = "ERROR"
 
-
 @dataclass
 class BackendResult:
     """Result of compiling a single design to one backend."""
-    backend: str                          # e.g. "koika", "acl2", "sva", "vhdl", "verilog_ovl", "rtl"
+    backend: str  # e.g. "koika", "acl2", "sva", "vhdl", "verilog_ovl", "rtl"
     success: bool
     error_message: Optional[str] = None
-    duration: Optional[float] = None       # seconds
-    output_file: Optional[str] = None      # path to generated file
+    duration: Optional[float] = None  # seconds
+    output_file: Optional[str] = None  # path to generated file
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:

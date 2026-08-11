@@ -46,6 +46,12 @@ class TestPERFConfig:
         assert config.primary_dimension == "subgoal_reduction"
         assert config.trace_alignment_weight == 0.6
         assert config.use_proof_library is False
+        # New fields from the enhancement
+        assert config.temperature_decay == 0.0
+        assert config.temperature_min == 0.1
+        assert config.early_stop_patience == 0
+        assert config.early_stop_min_improvement == 0.01
+        assert config.use_template_generator is False
 
     def test_validation_beam_size(self):
         with pytest.raises(ValueError, match="beam_size must be >= 1"):
@@ -191,7 +197,6 @@ class TestPERFConfig:
             "proof": {"perf": {"enabled": True}},
             "provers": {"koika": {"use_proof_library": False}},
         }
-        # Should not raise
         validate_perf_against_config(config)
 
         config = {
@@ -213,6 +218,7 @@ class TestPERFStats:
         stats.record_success(2)
         stats.record_tokens(100, 50)
         stats.record_depth_stats(1, 10, 3, 5)
+        stats.record_progress(0.9, 0.01)
         stats.finish()
 
         d = stats.to_dict()
@@ -229,6 +235,16 @@ class TestPERFStats:
         assert d["depth_stats"][0]["nodes"] == 10
         assert d["start_time"] is not None
         assert d["end_time"] is not None
+        assert d["best_primary_score"] == 0.9
+        assert d["consecutive_no_improvement"] == 0
+
+    def test_progress_no_improvement(self):
+        stats = PERFStats()
+        stats.record_progress(0.5, 0.01)
+        stats.record_progress(0.51, 0.01)
+        assert stats.consecutive_no_improvement == 0
+        stats.record_progress(0.51, 0.01)
+        assert stats.consecutive_no_improvement == 1
 
     def test_summary(self):
         stats = PERFStats()
@@ -258,6 +274,8 @@ class TestPERFStats:
         assert stats.successful_depth is None
         assert stats.node_details == []
         assert stats.total_tokens == {"prompt": 0, "completion": 0}
+        assert stats.best_primary_score == 0.0
+        assert stats.consecutive_no_improvement == 0
 
 
 class TestPERFScorer:
@@ -492,6 +510,7 @@ class TestPERFTraversal:
     def test_traverse_initial_success(self, mock_scorer, mock_parallel):
         traversal = PERFTraversal(self.config, self.llm, self.context)
         traversal._get_initial_script = MagicMock(return_value="Proof. Qed.")
+        traversal._validate_initial_script = MagicMock(return_value=True)
         traversal._evaluate_node = MagicMock(return_value={"success": True})
         script, stats = traversal.traverse()
         assert script == "Proof. Qed."
@@ -502,6 +521,7 @@ class TestPERFTraversal:
     def test_traverse_no_children(self, mock_scorer, mock_parallel):
         traversal = PERFTraversal(self.config, self.llm, self.context)
         traversal._get_initial_script = MagicMock(return_value="Proof. Qed.")
+        traversal._validate_initial_script = MagicMock(return_value=True)
         traversal._evaluate_node = MagicMock(return_value={"success": False})
         traversal._generate_children = MagicMock(return_value=[])
         script, stats = traversal.traverse()
@@ -521,6 +541,7 @@ class TestPERFTraversal:
 
         traversal = PERFTraversal(self.config, self.llm, self.context)
         traversal._get_initial_script = MagicMock(return_value="Proof. Admitted.")
+        traversal._validate_initial_script = MagicMock(return_value=True)
         traversal._evaluate_node = MagicMock(return_value={"success": False})
 
         child_node = PERFNode(script="Proof. Qed.", depth=1)
@@ -551,16 +572,20 @@ class TestPERFTraversal:
 
         traversal = PERFTraversal(self.config, self.llm, self.context)
         traversal._get_initial_script = MagicMock(return_value="Proof. Admitted.")
+        traversal._validate_initial_script = MagicMock(return_value=True)
         traversal._evaluate_node = MagicMock(return_value={"success": False})
 
         def gen_children(parents, depth):
-            return [PERFNode(script="Proof. Admitted.", depth=parents[0].depth + 1)]
+            child = PERFNode(script="Proof. Admitted.", depth=parents[0].depth + 1)
+            child.verification_result = {"success": False, "error": "Some Coq error"}
+            return [child]
 
         traversal._generate_children = gen_children
         traversal._verify_children = lambda cs: cs
 
-        script, stats = traversal.traverse()
+        traversal._repair_children = lambda children, depth: children
 
+        script, stats = traversal.traverse()
         assert script is None
         assert stats.max_depth == 2
 
@@ -580,6 +605,7 @@ class TestPERFTraversal:
         traversal._get_initial_script = MagicMock(
             return_value="(defthm prop_correct ...)"
         )
+        traversal._validate_initial_script = MagicMock(return_value=True)
         traversal._evaluate_node = MagicMock(return_value={"success": True})
         script, stats = traversal.traverse()
         assert script == "(defthm prop_correct ...)"

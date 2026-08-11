@@ -70,7 +70,6 @@ def _timed_backend_compile(backend_name: str, func, *args, **kwargs) -> BackendR
     start = time.time()
     try:
         result = func(*args, **kwargs)
-        # func returns 0 for success, non-zero for failure
         success = result == 0
         duration = time.time() - start
         return BackendResult(
@@ -161,10 +160,8 @@ def compile_spec(args: argparse.Namespace) -> int:
         report.results.extend(results)
 
         if args.simulate and args.backend == "koika" and not args.no_rtl:
-            # Simulation after RTL is optional; not included in compilation report
             _run_simulation(spec_module, out_dir, args, config)
 
-        # Output the report
         if args.output_format == "json":
             print(json.dumps(report.to_dict(), indent=2))
         else:
@@ -213,7 +210,6 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
 
     results = []
 
-    # Coq generation
     logger.info("Lowering spec → Kōika verification model...")
     start = time.time()
     try:
@@ -240,7 +236,6 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
         ))
         return results  # No RTL if Coq failed
 
-    # RTL generation
     if not args.no_rtl:
         logger.info("Lowering SpecIR → RTL (Kōika synthesis)...")
         start = time.time()
@@ -271,7 +266,6 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
 
 
 def _compile_acl2(spec_module, out_dir, args) -> List[BackendResult]:
-    """Compile to ACL2."""
     from specir.lowering.spec_to_acl2 import convert as spec_to_acl2_convert
 
     logger.info("Lowering spec → acl2...")
@@ -320,7 +314,6 @@ def _compile_assert(spec_module, out_dir, args) -> List[BackendResult]:
             error_message=str(e)
         )]
 
-    # Build signal width map
     signal_widths: Dict[str, int] = {}
     for state_op in spec_module.state_ops:
         w = _extract_width(state_op.data_type)

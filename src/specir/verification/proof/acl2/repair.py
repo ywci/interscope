@@ -1,17 +1,26 @@
 # src/specir/verification/proof/acl2/repair.py
 #
-# Iterative repair of ACL2 proofs using LLM.
-# Supports both full proof script repair and hint-only repair,
-# with optional validation using the ACL2 subprocess client.
+# Iterative repair of ACL2 proofs and function definitions using an LLM.
+#
+# This module provides standalone repair loops that can be used by the
+# ACL2Prover or directly from PERF evaluation.  The functions assume
+# the caller provides an already‑connected ``ACL2Client``.  Checkpoint
+# management is optional – when enabled, the client’s checkpoint /
+# restore facilities are used to isolate each repair attempt, preventing
+# re‑definition errors and keeping the session clean.
+#
+# All public functions return a ``ProofResult`` for consistency with
+# the rest of the InterScope verification pipeline.
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from specir.backends.llm_client import LLMClient
 from specir.backends.acl2_client import ACL2Client, ACL2ClientError
 from specir.verification.proof.acl2.proof_gen import (
     build_acl2_hint_prompt,
     parse_hints_from_response
 )
+from specir.verification.proof.proof import ProofResult
 from specir.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -25,51 +34,94 @@ def repair_acl2_hints(
     acl2_client: ACL2Client,
     previous_hints: Optional[List[str]] = None,
     context: Optional[str] = None,
-    max_attempts: int = 3
-) -> Tuple[bool, str, Optional[List[str]]]:
+    max_attempts: int = 3,
+    use_checkpoints: bool = True
+) -> ProofResult:
     """
     Repair the hints for a failed ACL2 theorem.
 
+    The function repeatedly asks an LLM for a new set of ``:hints`` and
+    tries them via ``acl2_client.defthm``.  By default it uses ACL2
+    checkpoints to isolate each attempt, so that a failed attempt does
+    not pollute the session.
+
     Args:
         theorem_name: Name of the theorem.
-        statement: ACL2 formula.
-        error_message: The error output from ACL2.
-        llm_client: LLM client for hint generation.
-        acl2_client: Connected ACL2 client (used to validate new hints).
-        previous_hints: Hints that were previously attempted.
-        context: Additional ACL2 definitions or environment info.
-        max_attempts: Maximum repair attempts.
+        statement: The ACL2 formula (the body of the ``defthm``).
+        error_message: The error output from the previous failure.
+        llm_client: LLM client used for hint generation.
+        acl2_client: **Connected** ACL2 client.  The session state will
+            be modified unless *use_checkpoints* is False.
+        previous_hints: Hints that were previously attempted (may be
+            passed as context to the LLM).
+        context: Additional ACL2 definitions or environment information.
+        max_attempts: Maximum number of repair attempts (default 3).
+        use_checkpoints: If True (default), save a checkpoint before the
+            first attempt and restore it before each subsequent attempt.
+            This keeps the session clean and prevents re‑definition errors.
 
     Returns:
-        Tuple of (success, proof_script, final_hints).
-        * success: Whether a valid proof was obtained.
-        * proof_script: The complete defthm form if success, else empty string.
-        * final_hints: The hints that succeeded, or None if failed.
+        ``ProofResult`` with ``success=True`` and the proof script on
+        success, or ``success=False`` with an error message.
     """
     prompt = _build_hint_repair_prompt(
         statement, error_message, previous_hints, context
     )
+
+    checkpoint_name = None
+    if use_checkpoints:
+        checkpoint_name = f"repair_{theorem_name}_{id(prompt)}"
+        acl2_client.save_checkpoint(checkpoint_name)
+
     for attempt in range(max_attempts):
-        logger.info(f"ACL2 hint repair attempt {attempt+1}/{max_attempts}")
+        # Restore checkpoint before every attempt after the first.
+        if use_checkpoints and attempt > 0:
+            acl2_client.restore_checkpoint(checkpoint_name)
+
+        logger.info("ACL2 hint repair attempt %d/%d", attempt + 1, max_attempts)
+
+        # 1. Generate new hints
         new_hints = _generate_hints_from_llm(llm_client, prompt)
         if not new_hints:
             logger.warning("LLM returned no usable hints")
-            prompt = _append_failure_to_prompt(prompt, None, "No valid hints generated.")
+            prompt = _append_failure_to_prompt(
+                prompt, None, "No valid hints generated."
+            )
             continue
 
-        # Test the new hints
-        result = acl2_client.defthm(theorem_name, statement, new_hints)
+        # 2. Try the new hints
+        try:
+            result = acl2_client.defthm(theorem_name, statement, new_hints)
+        except ACL2ClientError as e:
+            logger.error("defthm raised exception: %s", e)
+            new_error = f"ACL2 client error: {e}"
+            prompt = _append_failure_to_prompt(prompt, new_hints, new_error)
+            continue
+
         if result["success"]:
             proof_script = _build_defthm_string(theorem_name, statement, new_hints)
-            logger.info(f"Hint repair succeeded on attempt {attempt+1}")
-            return True, proof_script, new_hints
+            logger.info("Hint repair succeeded on attempt %d", attempt + 1)
+            return ProofResult(
+                success=True,
+                proof_script=proof_script,
+                backend="acl2",
+                iterations=attempt + 1,
+                metadata={"automation": "llm_repair", "hints": new_hints}
+            )
 
+        # 3. Failure – capture error and feed back to LLM
         new_error = result.get("output", "ACL2 proof failed")
-        logger.debug(f"Hint attempt failed: {new_error[:200]}")
+        logger.debug("Hint attempt failed: %s", new_error[:200])
         prompt = _append_failure_to_prompt(prompt, new_hints, new_error)
 
-    logger.warning("ACL2 hint repair failed after all attempts")
-    return False, "", None
+    logger.warning("ACL2 hint repair failed after %d attempts", max_attempts)
+    return ProofResult(
+        success=False,
+        error_message=f"Hint repair exhausted after {max_attempts} attempts",
+        backend="acl2",
+        iterations=max_attempts,
+        metadata={"automation": "llm_repair_exhausted"}
+    )
 
 
 def repair_acl2_defun(
@@ -80,49 +132,105 @@ def repair_acl2_defun(
     llm_client: LLMClient,
     acl2_client: ACL2Client,
     guard: Optional[str] = None,
-    max_attempts: int = 2
-) -> Tuple[bool, str]:
+    max_attempts: int = 2,
+    use_checkpoints: bool = True
+) -> ProofResult:
     """
-    Repair a failed ACL2 function definition (defun).
+    Repair a failed ACL2 function definition (``defun``).
+
+    The LLM is asked to provide a corrected function body.  Each attempt
+    is validated by submitting the complete ``defun`` to the ACL2 client.
 
     Args:
-        func_name: Function name.
-        args: List of argument names (each may be a plain symbol or a nested
-              list for destructuring).
-        body: Current (failing) function body.
-        error_message: ACL2 error message.
+        func_name: Name of the function.
+        args: List of argument names (symbols or nested destructuring lists).
+        body: The failing function body (as a string).
+        error_message: The error output from ACL2.
         llm_client: LLM client.
-        acl2_client: ACL2 client for validation.
+        acl2_client: **Connected** ACL2 client.
         guard: Optional guard expression.
-        max_attempts: Maximum repair attempts.
+        max_attempts: Maximum repair attempts (default 2).
+        use_checkpoints: If True, isolate attempts with checkpoints.
 
     Returns:
-        Tuple of (success, repaired_defun_string).
+        ``ProofResult`` with ``success=True`` and the repaired ``defun``
+        string in ``proof_script``, or ``success=False``.
     """
-    prompt = _build_defun_repair_prompt(func_name, args, body, guard, error_message)
+    prompt = _build_defun_repair_prompt(
+        func_name, args, body, guard, error_message
+    )
+
+    checkpoint_name = None
+    if use_checkpoints:
+        checkpoint_name = f"repair_defun_{func_name}_{id(prompt)}"
+        acl2_client.save_checkpoint(checkpoint_name)
+
     for attempt in range(max_attempts):
-        logger.info(f"ACL2 defun repair attempt {attempt+1}/{max_attempts}")
-        repaired_body = llm_client.generate(prompt).strip()
-        # Extract just the body if the response is a full defun form
-        repaired_body = _extract_defun_body(repaired_body)
-        if not repaired_body:
+        if use_checkpoints and attempt > 0:
+            acl2_client.restore_checkpoint(checkpoint_name)
+
+        logger.info(
+            "ACL2 defun repair attempt %d/%d for '%s'",
+            attempt + 1, max_attempts, func_name
+        )
+
+        # 1. Get repaired body from LLM
+        try:
+            raw_response = llm_client.generate(prompt).strip()
+        except Exception as e:
+            logger.error("LLM call failed during defun repair: %s", e)
+            prompt = _append_defun_failure_to_prompt(
+                prompt, "<LLM call failed>", str(e)
+            )
             continue
 
-        result = acl2_client.defun(func_name, args, repaired_body, guard)
+        repaired_body = _extract_defun_body(raw_response)
+        if repaired_body is None:
+            logger.warning("Could not extract a valid body from LLM response")
+            prompt = _append_defun_failure_to_prompt(
+                prompt, raw_response, "No valid body extracted."
+            )
+            continue
+
+        # 2. Validate with ACL2
+        try:
+            result = acl2_client.defun(func_name, args, repaired_body, guard)
+        except ACL2ClientError as e:
+            logger.error("defun validation raised exception: %s", e)
+            new_error = f"ACL2 client error: {e}"
+            prompt = _append_defun_failure_to_prompt(prompt, repaired_body, new_error)
+            continue
+
         if result["success"]:
-            return True, _build_defun_string(func_name, args, repaired_body, guard)
+            defun_string = _build_defun_string(func_name, args, repaired_body, guard)
+            logger.info("Defun repair succeeded on attempt %d", attempt + 1)
+            return ProofResult(
+                success=True,
+                proof_script=defun_string,
+                backend="acl2",
+                iterations=attempt + 1,
+                metadata={"automation": "llm_repair_defun"},
+            )
 
         new_error = result.get("output", "defun failed")
+        logger.debug("Defun attempt failed: %s", new_error[:200])
         prompt = _append_defun_failure_to_prompt(prompt, repaired_body, new_error)
 
-    return False, ""
+    logger.warning("ACL2 defun repair failed after %d attempts", max_attempts)
+    return ProofResult(
+        success=False,
+        error_message=f"Defun repair exhausted after {max_attempts} attempts",
+        backend="acl2",
+        iterations=max_attempts,
+        metadata={"automation": "llm_repair_exhausted"}
+    )
 
 
 def _build_hint_repair_prompt(
     statement: str,
     error_message: str,
     previous_hints: Optional[List[str]],
-    context: Optional[str]
+    context: Optional[str],
 ) -> str:
     """Build an LLM prompt to repair ACL2 hints (delegates to shared builder)."""
     return build_acl2_hint_prompt(
@@ -159,7 +267,7 @@ def _append_failure_to_prompt(
     tried_hints: Optional[List[str]],
     new_error: str
 ) -> str:
-    """Extend the prompt with information about a failed attempt."""
+    """Extend the prompt with information about a failed hint attempt."""
     hints_str = _format_hints(tried_hints) if tried_hints else "none"
     return (
         f"{prompt}\n\n"
@@ -187,16 +295,21 @@ def _generate_hints_from_llm(
     llm_client: LLMClient, prompt: str
 ) -> Optional[List[str]]:
     """Call the LLM and parse the response into a list of hint strings."""
-    response = llm_client.generate(prompt).strip()
+    try:
+        response = llm_client.generate(prompt).strip()
+    except Exception as e:
+        logger.error("LLM call for hints failed: %s", e)
+        return None
     return parse_hints_from_response(response)
 
 
 def _extract_defun_body(response: str) -> Optional[str]:
     """
     Extract the function body from an LLM response.
-    The response might be a full defun form or just the body.
-    Uses a simple token‑based approach that correctly handles nested
-    argument lists (e.g., ``(defun f ((x y) z) body)``).
+
+    The response might be a full ``(defun name (args...) body)`` form or
+    just the body itself.  The parser handles nested argument lists and
+    gracefully falls back to returning the whole response if parsing fails.
     """
     response = response.strip()
     # Remove markdown fences
@@ -205,49 +318,60 @@ def _extract_defun_body(response: str) -> Optional[str]:
         if len(lines) >= 3:
             response = "\n".join(lines[1:-1]).strip()
 
-    # If it looks like a full defun, extract the body.
-    if response.startswith("(defun"):
-        # Find the end of the argument list by tracking parenthesis depth.
-        # The structure is: (defun name (args ...) body)
-        # We need to skip past the function name and the argument list.
-        idx = len("(defun")  # skip "(defun"
-        # skip whitespace and function name (a single token)
-        while idx < len(response) and response[idx].isspace():
-            idx += 1
-        # skip the function name token
-        while idx < len(response) and not response[idx].isspace() and response[idx] != '(':
-            idx += 1
-        # now skip whitespace until the argument list '('
-        while idx < len(response) and response[idx] != '(':
-            idx += 1
-        if idx >= len(response) or response[idx] != '(':
-            return None  # malformed
-        # count depth for the argument list
-        depth = 1
-        arg_end = idx + 1
-        while arg_end < len(response) and depth > 0:
-            ch = response[arg_end]
-            if ch == '(':
-                depth += 1
-            elif ch == ')':
-                depth -= 1
-            arg_end += 1
-        # arg_end is one past the closing paren of the argument list
-        # The body starts after that, skipping whitespace
-        body_start = arg_end
-        while body_start < len(response) and response[body_start].isspace():
-            body_start += 1
-        if body_start >= len(response):
-            return None
-        # The body ends at the last character before the final closing paren
-        # of the defun, so trim trailing whitespace and the final ')'
-        body = response[body_start:].rstrip()
-        if body.endswith(')'):
-            body = body[:-1].rstrip()
-        return body if body else None
+    # If it does not look like a defun, treat the entire response as the body.
+    if not response.startswith("(defun"):
+        return response if response else None
 
-    # Otherwise assume the whole response is the body
-    return response if response else None
+    # skip "(defun"
+    idx = len("(defun")
+
+    # skip whitespace + function name
+    while idx < len(response) and response[idx].isspace():
+        idx += 1
+    while idx < len(response) and not response[idx].isspace() and response[idx] != '(':
+        idx += 1
+    # skip whitespace until the argument list '('
+    while idx < len(response) and response[idx] != '(':
+        idx += 1
+
+    if idx >= len(response) or response[idx] != '(':
+        logger.warning("Malformed defun: could not find argument list. Using whole response as fallback.")
+        return response
+
+    # Find the end of the argument list
+    depth = 1
+    arg_end = idx + 1
+    while arg_end < len(response) and depth > 0:
+        ch = response[arg_end]
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        arg_end += 1
+
+    if depth != 0:
+        logger.warning("Unbalanced parentheses in argument list. Using whole response as fallback.")
+        return response
+
+    # arg_end is one past the closing paren of the argument list.
+    body_start = arg_end
+    # skip whitespace
+    while body_start < len(response) and response[body_start].isspace():
+        body_start += 1
+
+    if body_start >= len(response):
+        logger.warning("Empty body after argument list. Using whole response.")
+        return response
+
+    # The body ends at the last character before the final ')', so strip it.
+    body = response[body_start:].rstrip()
+    if body.endswith(')'):
+        # Remove the final closing parenthesis of the defun
+        body = body[:-1].rstrip()
+    else:
+        logger.warning("defun missing closing parenthesis; returning extracted portion as body.")
+
+    return body if body else response  # if body empty, fallback to whole response
 
 
 def _format_hints(hints: List[str]) -> str:

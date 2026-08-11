@@ -3,6 +3,13 @@
 # Central CLI entry point for InterScope.
 # Supports batch processing of multiple .specir files, structured output,
 # and external configuration overriding.
+#
+# When run without --batch, behaviour is identical to the previous
+# per‑command entry points (compile, verify, sim, …).
+#
+# Examples:
+#   python -m specir.cli.main compile examples/fifo/fifo.specir
+#   python -m specir.cli.main --batch benchmarks/ --compile --output-format json --report-file results.json
 
 import argparse
 import json
@@ -58,6 +65,7 @@ def _parse_global_options(argv: Sequence[str]) -> argparse.Namespace:
         "--debug", action="store_true",
         help="Enable debug logging."
     )
+
     parser.add_argument("remaining", nargs=argparse.REMAINDER)
     args, _ = parser.parse_known_args(argv)
     return args

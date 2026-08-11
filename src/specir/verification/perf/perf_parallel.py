@@ -58,7 +58,7 @@ class PERFParallelEvaluator:
         self,
         max_workers: int = 4,
         timeout_per_node: int = 300,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize the parallel evaluator.
@@ -77,7 +77,7 @@ class PERFParallelEvaluator:
         self,
         nodes: List[PERFNode],
         evaluator_fn: Callable[[PERFNode], Dict[str, Any]],
-        timeout: Optional[float] = None,
+        timeout: Optional[float] = None
     ) -> List[PERFNode]:
         """
         Evaluate multiple nodes in parallel.
@@ -95,7 +95,6 @@ class PERFParallelEvaluator:
         if not nodes:
             return nodes
 
-        # If only one node, evaluate directly to avoid thread overhead
         if len(nodes) == 1:
             nodes[0].verification_result = self._evaluate_single(
                 nodes[0], evaluator_fn, timeout
@@ -105,26 +104,23 @@ class PERFParallelEvaluator:
         effective_timeout = timeout or self.timeout_per_node
         results = [None] * len(nodes)
 
-        # Use a thread pool to run evaluations concurrently
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=min(self.max_workers, len(nodes))
         ) as executor:
-            # Submit all tasks
             future_to_index = {
                 executor.submit(
                     self._evaluate_with_timeout,
                     node,
                     evaluator_fn,
-                    effective_timeout,
+                    effective_timeout
                 ): idx
                 for idx, node in enumerate(nodes)
             }
 
-            # Collect results as they complete
             for future in concurrent.futures.as_completed(future_to_index):
                 idx = future_to_index[future]
                 try:
-                    result = future.result(timeout=effective_timeout + 5)  # extra margin
+                    result = future.result(timeout=effective_timeout + 5)
                     nodes[idx].verification_result = result
                 except concurrent.futures.TimeoutError:
                     logger.warning(
@@ -133,13 +129,13 @@ class PERFParallelEvaluator:
                     )
                     nodes[idx].verification_result = {
                         "success": False,
-                        "error": f"Verification timed out after {effective_timeout}s",
+                        "error": f"Verification timed out after {effective_timeout}s"
                     }
                 except Exception as e:
                     logger.error("Node %d evaluation failed: %s", idx, e)
                     nodes[idx].verification_result = {
                         "success": False,
-                        "error": str(e),
+                        "error": str(e)
                     }
 
         return nodes
@@ -148,7 +144,7 @@ class PERFParallelEvaluator:
         self,
         node: PERFNode,
         evaluator_fn: Callable[[PERFNode], Dict[str, Any]],
-        timeout: Optional[float] = None,
+        timeout: Optional[float] = None
     ) -> Dict[str, Any]:
         """Evaluate a single node (no parallel overhead)."""
         try:
@@ -161,11 +157,9 @@ class PERFParallelEvaluator:
         self,
         node: PERFNode,
         evaluator_fn: Callable[[PERFNode], Dict[str, Any]],
-        timeout: float,
+        timeout: float
     ) -> Dict[str, Any]:
         """Wrapper to enforce a timeout on node evaluation."""
-        # Use a separate thread to enforce timeout (since the evaluator might
-        # not support timeout natively)
         result_container = {}
         exception_container = []
 
@@ -181,9 +175,6 @@ class PERFParallelEvaluator:
         thread.join(timeout=timeout)
 
         if thread.is_alive():
-            # Timeout occurred; we cannot easily kill the thread, but we can
-            # return a timeout error. The thread will continue in the background
-            # but we ignore it.
             logger.warning("Node evaluation timed out after %ds", timeout)
             return {"success": False, "error": f"Verification timed out after {timeout}s"}
 
@@ -192,15 +183,12 @@ class PERFParallelEvaluator:
 
         return result_container.get("result", {"success": False, "error": "Unknown error"})
 
-    # Helper methods to create per-thread prover instances
-    # These can be used by the evaluator_fn if needed.
-
     @staticmethod
     def create_rocq_client(
         coq_file: Path,
         workspace: Path,
         rocq_path: str = "rocq-mcp",
-        timeout: int = 300,
+        timeout: int = 300
     ) -> Any:
         """
         Create a RocqClient instance for use in a thread.
@@ -218,7 +206,7 @@ class PERFParallelEvaluator:
     def create_acl2_client(
         mcp_path: str = "acl2-mcp",
         timeout: int = 300,
-        init_commands: Optional[List[str]] = None,
+        init_commands: Optional[List[str]] = None
     ) -> Any:
         """
         Create an ACL2Client instance for use in a thread.
@@ -227,5 +215,5 @@ class PERFParallelEvaluator:
         return ACL2Client(
             mcp_path=mcp_path,
             timeout=timeout,
-            init_commands=init_commands or [],
+            init_commands=init_commands or []
         )

@@ -1,15 +1,15 @@
 # src/specir/utils/yosys_synth.py
 #
 # Yosys synthesis utility for extracting area, delay, and (optionally) power
-# metrics from Verilog RTL
+# metrics from Verilog RTL.
 
-import json
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
 from specir.utils.config_loader import get_config, get_project_root
 from specir.utils.logger import get_logger
 
@@ -55,7 +55,6 @@ def synthesize_rtl(
             netlist (Path or None): Path to the synthesised Verilog file.
             log (str): Full Yosys log.
     """
-    # Resolve Yosys executable
     config = get_config()
     yosys_path = shutil.which("yosys") or config.get("tools", {}).get("yosys")
     if not yosys_path:

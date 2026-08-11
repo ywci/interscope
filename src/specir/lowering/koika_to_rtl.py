@@ -111,7 +111,6 @@ def convert(
     # Normalize Clock and Reset naming conventions
     modified_verilog = raw_verilog_content.replace("CLK", "clk").replace("RST_N", "rst_n")
     
-    # --- Remove initial values from registers (to avoid CONTASSINIT errors) ---
     modified_verilog = re.sub(
         r"(reg\s*(?:\[[^\]]+\])?\s*\w+\s*(/\*.*?\*/)?)\s*=\s*[^;]+;",
         r"\1;",

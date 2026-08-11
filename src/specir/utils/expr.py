@@ -29,11 +29,9 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
     Raises:
         ExprError: On malformed expressions or empty input.
     """
-    # If already a list, return a shallow copy to avoid accidental mutation
     if isinstance(s, list):
         return s[:]
 
-    # If it is an atomic value (int, bool), return it directly
     if isinstance(s, (int, bool)):
         return s
 
@@ -45,7 +43,6 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
         raise ExprError("Empty expression string")
 
     if not s.startswith('('):
-        # Atom: try integer, else string
         try:
             return int(s)
         except ValueError:
@@ -55,7 +52,6 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
                 return False
             return s
 
-    # Tokenize: split on parentheses and whitespace, preserving parentheses as tokens
     tokens = []
     i = 0
     n = len(s)
@@ -74,7 +70,6 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
             while i < n and not s[i].isspace() and s[i] not in '()':
                 i += 1
             token = s[start:i]
-            # Attempt integer conversion
             try:
                 tokens.append(int(token))
             except ValueError:
@@ -85,7 +80,6 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
                 else:
                     tokens.append(token)
 
-    # Build nested lists using a stack
     stack = [[]]
     for tok in tokens:
         if tok == '(':
@@ -104,11 +98,10 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
     result = stack[0]
     if not result:
         raise ExprError("Empty expression")
-    # A list containing a single empty list is also an empty expression
+
     if isinstance(result, list) and len(result) == 1 and isinstance(result[0], list) and not result[0]:
         raise ExprError("Empty expression")
 
-    # Recursively check for nested empty sub-expressions
     def _check_empty(expr):
         if isinstance(expr, list):
             if not expr:
@@ -164,7 +157,6 @@ def _eval_internal(expr: Any,
     if isinstance(expr, int):
         return expr
     if isinstance(expr, str):
-        # Variable look-up: try state first, then inputs
         if expr in state:
             return state[expr]
         if inputs is not None and expr in inputs:

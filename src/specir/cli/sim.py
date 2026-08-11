@@ -9,7 +9,6 @@
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 from specir.parser.parser import parse_specir
@@ -96,9 +95,8 @@ def sim_spec(args: argparse.Namespace) -> int:
 
     logger.info(f"Simulating design '{design_name}' for {args.cycles or 'default'} cycles...")
 
-    start_time = time.time()
     try:
-        vcd_file = simulate_design(
+        report = simulate_design(
             spec_module=spec_module,
             output_dir=out_dir,
             cycles=args.cycles,
@@ -106,33 +104,21 @@ def sim_spec(args: argparse.Namespace) -> int:
             verilator_path=args.verilator_path,
             koika_path=args.koika_path
         )
-        duration = time.time() - start_time
-        logger.info(f"Simulation finished. VCD: {vcd_file}")
-
-        report = SimulationReport(
-            design_name=design_name,
-            success=True,
-            cycles=args.cycles,
-            vcd_path=str(vcd_file),
-            duration=duration,
-            metadata={"simulation_tool": "verilator"}
-        )
+        logger.info(f"Simulation finished. VCD: {report.vcd_path}")
 
         if args.output_format == "json":
             print(json.dumps(report.to_dict(), indent=2))
         else:
             _print_human_readable(report)
 
-        return 0
+        return 0 if report.success else 1
 
     except SimulationError as e:
-        duration = time.time() - start_time
         logger.error(f"Simulation failed: {e}")
         report = SimulationReport(
             design_name=design_name,
             success=False,
             error_message=str(e),
-            duration=duration,
         )
         if args.output_format == "json":
             print(json.dumps(report.to_dict(), indent=2))
@@ -140,13 +126,11 @@ def sim_spec(args: argparse.Namespace) -> int:
             _print_human_readable(report)
         return 1
     except Exception as e:
-        duration = time.time() - start_time
         logger.error(f"Unexpected error: {e}")
         report = SimulationReport(
             design_name=design_name,
             success=False,
             error_message=str(e),
-            duration=duration,
         )
         if args.output_format == "json":
             print(json.dumps(report.to_dict(), indent=2))

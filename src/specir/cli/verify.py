@@ -123,6 +123,21 @@ def _print_perf_stats(stats: PERFStats) -> None:
     print()
 
 
+def _print_summary(report: VerificationReport, show_proof: bool = False) -> None:
+    """Print a human‑readable verification summary, optionally including proof scripts."""
+    passed = sum(1 for o in report.obligations if o.status == Status.PASS)
+    failed = len(report.obligations) - passed
+    print(f"\n===== Verification Summary: {passed} passed, {failed} failed =====\n")
+    for obl in report.obligations:
+        status_label = "PASS" if obl.status == Status.PASS else "FAIL"
+        print(f"{status_label}: {obl.property} ({obl.backend})")
+        if obl.status != Status.PASS and obl.error_message:
+            print(f"   Error: {obl.error_message[:200]}")
+        if show_proof and obl.status == Status.PASS and obl.proof_script:
+            print(f"   Proof:\n{obl.proof_script}")
+    print(f"\n===== {'All properties hold' if failed == 0 else 'Some properties failed'} =====\n")
+
+
 def verify_spec(args: argparse.Namespace) -> int:
     """Execute the verify command."""
     log_level = "DEBUG" if args.debug else "INFO"
@@ -329,7 +344,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     continue
                 context["coq_file_path"] = backend_files["koika"]
                 context["theorem_name"] = f"{prop_name}_proved"
-            else:
+            else:  # acl2
                 if "acl2" not in backend_files:
                     logger.error("ACL2 file not generated; cannot prove.")
                     results.append(ProofObligationResult(
@@ -359,7 +374,7 @@ def verify_spec(args: argparse.Namespace) -> int:
 
             duration = time.time() - start_time
             status = Status.PASS if result.success else Status.FAIL
-            proof_script = result.proof_script if args.show_proof or args.debug else None
+            proof_script = result.proof_script if (args.show_proof or args.debug) else None
 
             if result.success:
                 logger.info(f"  PASS: {prop_name}")
@@ -372,7 +387,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                 status=status,
                 backend=canonical,
                 iterations=result.iterations,
-                proof_script=result.proof_script if result.success else None,
+                proof_script=proof_script,
                 error_message=result.error_message,
                 duration=duration,
                 details=result.metadata
@@ -510,7 +525,7 @@ def verify_spec(args: argparse.Namespace) -> int:
 
 
 def _finish_summary(results: List[ProofObligationResult], args: argparse.Namespace) -> int:
-    """Print summary and save report if requested."""
+    """Print summary, optionally showing proofs, and save report if requested."""
     report = VerificationReport(
         design_name="",
         backend="",
@@ -519,7 +534,6 @@ def _finish_summary(results: List[ProofObligationResult], args: argparse.Namespa
 
     if hasattr(args, 'input'):
         report.design_name = Path(args.input).stem
-
     if args.backend:
         report.backend = _canonical_backend(args.backend) or "mixed"
     else:
@@ -529,7 +543,7 @@ def _finish_summary(results: List[ProofObligationResult], args: argparse.Namespa
     if args.output_format == "json":
         print(json.dumps(report.to_dict(), indent=2))
     else:
-        _print_summary(report)
+        _print_summary(report, show_proof=args.show_proof)
 
     if args.report:
         with open(args.report, "w") as f:
@@ -595,19 +609,6 @@ def _safe_register_mc_evidence(spec_module, prop_name: str, mc_result: Dict[str,
         logger.info(f"Model‑checking evidence registered for {prop_name}")
     except Exception as e:
         logger.warning(f"Failed to register model‑checking evidence: {e}")
-
-
-def _print_summary(report: VerificationReport) -> None:
-    """Print a human‑readable verification summary."""
-    passed = sum(1 for o in report.obligations if o.status == Status.PASS)
-    failed = len(report.obligations) - passed
-    print(f"\n===== Verification Summary: {passed} passed, {failed} failed =====\n")
-    for obl in report.obligations:
-        status_label = "PASS" if obl.status == Status.PASS else "FAIL"
-        print(f"{status_label}: {obl.property} ({obl.backend})")
-        if obl.status != Status.PASS and obl.error_message:
-            print(f"   Error: {obl.error_message[:200]}")
-    print(f"\n===== {'All properties hold' if failed == 0 else 'Some properties failed'} =====\n")
 
 
 def _generate_acl2_from_module(acl2_mod) -> str:

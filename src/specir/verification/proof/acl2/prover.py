@@ -42,16 +42,13 @@ class ACL2Prover:
             config = get_config()
         self.config = config
 
-        # LLM client
         self.llm = get_llm_client_from_config(config)
 
-        # ACL2 client (MCP‑based) – lazily initialized
         self._acl2: Optional[ACL2Client] = None
         self._acl2_started = False
 
         self.max_repair = config.get("proof", {}).get("max_repair_attempts", 5)
 
-        # PERF statistics
         self._perf_stats = {
             "total_nodes": 0,
             "total_verifier_calls": 0,

@@ -54,7 +54,6 @@ def _load_schema(schema_path: Optional[Path] = None) -> Dict[str, Any]:
     if not isinstance(schema, dict):
         raise ValueError(f"Schema at {schema_path} must be a dictionary")
 
-    # Validate the schema against the Draft7 meta-schema
     try:
         Draft7Validator.check_schema(schema)
     except SchemaError as e:

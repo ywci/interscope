@@ -74,18 +74,14 @@ def _parse_evidence_list(raw: Any, default_type: str = "simulation_trace", defau
     if raw is None:
         return []
 
-    # Handle list
     if isinstance(raw, list):
         evidence_list = []
         for item in raw:
             if isinstance(item, str):
-                # Shorthand: just a string reference
                 ref = EvidenceRef(type="local_id", value=item)
                 evidence_list.append(Evidence(type=default_type, ref=ref, engine=default_engine))
             elif isinstance(item, dict):
-                # Could be an evidence ref dict or a full evidence dict
                 if "type" in item and "ref" in item and "engine" in item:
-                    # It's a full Evidence dict
                     evidence_list.append(Evidence(
                         type=item["type"],
                         ref=_parse_evidence_ref(item["ref"]),
@@ -93,7 +89,6 @@ def _parse_evidence_list(raw: Any, default_type: str = "simulation_trace", defau
                         status=item.get("status"),
                     ))
                 elif "type" in item and "value" in item:
-                    # It's a ref dict
                     ref = _parse_evidence_ref(item)
                     evidence_list.append(Evidence(type=default_type, ref=ref, engine=default_engine))
                 else:
@@ -102,23 +97,19 @@ def _parse_evidence_list(raw: Any, default_type: str = "simulation_trace", defau
                 raise SpecIRParseError(f"Invalid evidence entry type: {type(item)}")
         return evidence_list
 
-    # Single string shorthand
     if isinstance(raw, str):
         ref = EvidenceRef(type="local_id", value=raw)
         return [Evidence(type=default_type, ref=ref, engine=default_engine)]
 
-    # Single dict (either ref or full evidence)
     if isinstance(raw, dict):
         if "type" in raw and "ref" in raw and "engine" in raw:
-            # Full evidence
             return [Evidence(
                 type=raw["type"],
                 ref=_parse_evidence_ref(raw["ref"]),
                 engine=raw["engine"],
-                status=raw.get("status"),
+                status=raw.get("status")
             )]
         else:
-            # Assume it's a ref
             ref = _parse_evidence_ref(raw)
             return [Evidence(type=default_type, ref=ref, engine=default_engine)]
 
@@ -129,7 +120,7 @@ def _parse_parameter(data: Dict[str, Any]) -> Parameter:
     return Parameter(
         name=_require(data, "name", "parameter"),
         type=_require(data, "type", "parameter"),
-        default=data.get("default"),
+        default=data.get("default")
     )
 
 
@@ -137,7 +128,7 @@ def _parse_clock(data: Dict[str, Any]) -> Clock:
     return Clock(
         name=_require(data, "name", "clock"),
         edge=_require(data, "edge", "clock"),
-        period=data.get("period"),
+        period=data.get("period")
     )
 
 
@@ -145,8 +136,8 @@ def _parse_reset(data: Dict[str, Any]) -> Reset:
     return Reset(
         name=_require(data, "name", "reset"),
         polarity=_require(data, "polarity", "reset"),
-        async_reset=_require(data, "async", "reset"),   # YAML key is "async"
-        affects=_require(data, "affects", "reset"),
+        async_reset=_require(data, "async", "reset"),
+        affects=_require(data, "affects", "reset")
     )
 
 
@@ -155,7 +146,7 @@ def _parse_interface(data: Dict[str, Any]) -> Interface:
         name=_require(data, "name", "interface"),
         direction=_require(data, "direction", "interface"),
         type=_require(data, "type", "interface"),
-        protocol=data.get("protocol"),
+        protocol=data.get("protocol")
     )
 
 
@@ -165,7 +156,7 @@ def _parse_user_type(data: Dict[str, Any]) -> UserType:
         kind=_require(data, "kind", "type"),
         values=data.get("values"),
         fields=data.get("fields"),
-        encoding=data.get("encoding"),
+        encoding=data.get("encoding")
     )
 
 
@@ -176,7 +167,7 @@ def _parse_component(data: Dict[str, Any]) -> ComponentInstance:
         module=_require(data, "module", "component"),
         parameters=data.get("parameters", {}),
         port_map=data.get("port_map", {}),
-        evidence=evidence,
+        evidence=evidence
     )
 
 
@@ -188,7 +179,7 @@ def _parse_state(data: Dict[str, Any]) -> State:
         type=_require(data, "type", "state"),
         initial=data.get("initial"),
         attributes=data.get("attributes", []),
-        evidence=evidence,
+        evidence=evidence
     )
 
 
@@ -200,7 +191,7 @@ def _parse_rule(data: Dict[str, Any]) -> Rule:
         action=data.get("action", []),
         priority=data.get("priority"),
         attributes=data.get("attributes", []),
-        evidence=evidence,
+        evidence=evidence
     )
 
 
@@ -210,7 +201,7 @@ def _parse_directive(data: Dict[str, Any]) -> Directive:
         name=_require(data, "name", "directive"),
         expression=_require(data, "expression", "directive"),
         clock=data.get("clock"),
-        severity=data.get("severity"),
+        severity=data.get("severity")
     )
 
 
@@ -223,7 +214,7 @@ def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
         operand=data.get("operand"),
         left=data.get("left"),
         right=data.get("right"),
-        bound=data.get("bound"),
+        bound=data.get("bound")
     )
 
 
@@ -236,7 +227,7 @@ def _parse_property(data: Dict[str, Any]) -> Property:
         assumes=data.get("assumes", []),
         guarantees=data.get("guarantees", []),
         proof_status=data.get("proof_status", "unproved"),
-        evidence=evidence,
+        evidence=evidence
     )
 
 
@@ -244,7 +235,7 @@ def _parse_schedule(data: Dict[str, Any]) -> Schedule:
     return Schedule(
         kind=_require(data, "kind", "schedule"),
         rule_order=data.get("rule_order", []),
-        conflict_sets=data.get("conflict_sets", []),
+        conflict_sets=data.get("conflict_sets", [])
     )
 
 
@@ -252,7 +243,7 @@ def _parse_fairness(data: Dict[str, Any]) -> Fairness:
     return Fairness(
         name=_require(data, "name", "fairness"),
         type=_require(data, "type", "fairness"),
-        condition=_require(data, "condition", "fairness"),
+        condition=_require(data, "condition", "fairness")
     )
 
 
@@ -260,14 +251,14 @@ def _parse_proof_obligation_feedback(data: Dict[str, Any]) -> ProofObligationFee
     return ProofObligationFeedback(
         iteration=_require(data, "iteration", "feedback"),
         error=_require(data, "error", "feedback"),
-        resolution=_require(data, "resolution", "feedback"),
+        resolution=_require(data, "resolution", "feedback")
     )
 
 
 def _parse_metadata(data: Dict[str, Any]) -> Metadata:
     return Metadata(
         engine=data.get("engine"),
-        options=data.get("options", {}),
+        options=data.get("options", {})
     )
 
 
@@ -282,11 +273,9 @@ def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
     if "feedback" in data:
         feedback = [_parse_proof_obligation_feedback(fb) for fb in data["feedback"]]
 
-    # Get metadata and PERF overrides
     metadata = data.get("metadata", {})
     perf_data = metadata.get("perf", {})
 
-    # Parse PERF fields with type validation
     perf_beam_size = perf_data.get("beam_size")
     if perf_beam_size is not None:
         if not isinstance(perf_beam_size, int) or perf_beam_size < 1:
@@ -380,14 +369,13 @@ def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
         metadata=metadata,
         confidence=data.get("confidence"),
         feedback=feedback,
-        # PERF fields
         perf_beam_size=perf_beam_size,
         perf_branches=perf_branches,
         perf_depth_limit=perf_depth_limit,
         perf_primary_dimension=perf_primary_dimension,
         perf_dimensions=perf_dimensions,
         perf_generation_temperature=perf_generation_temperature,
-        perf_trace_alignment_weight=perf_trace_alignment_weight,
+        perf_trace_alignment_weight=perf_trace_alignment_weight
     )
 
 
@@ -410,7 +398,7 @@ def _parse_module(data: Dict[str, Any]) -> Module:
         fairness=[_parse_fairness(f) for f in data.get("fairness", [])],
         proof_obligations=[_parse_proof_obligation(po) for po in data.get("proof_obligations", [])],
         metadata=_parse_metadata(data["metadata"]) if "metadata" in data else None,
-        evidence=_parse_evidence_list(data.get("evidence"), default_type="simulation_trace", default_engine="unknown"),
+        evidence=_parse_evidence_list(data.get("evidence"), default_type="simulation_trace", default_engine="unknown")
     )
 
 
@@ -441,7 +429,6 @@ def parse_specir(source: Union[str, Path]) -> SpecIR:
     if not isinstance(raw, dict):
         raise SpecIRParseError(f"Root of {path} must be a mapping (dictionary)")
 
-    # Validate version
     version = raw.get("specir_version")
     if not version:
         raise SpecIRParseError("Missing 'specir_version' field")
@@ -459,7 +446,6 @@ def parse_specir(source: Union[str, Path]) -> SpecIR:
 
     module = _parse_module(module_data)
 
-    # Parse top-level optional metadata and evidence
     top_metadata = None
     if "metadata" in raw:
         top_metadata = _parse_metadata(raw["metadata"])
@@ -469,5 +455,5 @@ def parse_specir(source: Union[str, Path]) -> SpecIR:
         specir_version=version,
         module=module,
         metadata=top_metadata,
-        evidence=top_evidence,
+        evidence=top_evidence
     )

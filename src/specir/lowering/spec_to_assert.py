@@ -92,7 +92,7 @@ def convert(spec_module: spec_ir.SpecModule) -> assert_ir.AssertModule:
     properties = []
     covers = []
 
-    for directive in spec_module.directive_ops:      # SpecDirectiveOp
+    for directive in spec_module.directive_ops:       # SpecDirectiveOp
         kind = directive.kind                         # "assume", "assert", "cover"
         expr = directive.expression                   # raw S‑expression string
         label = directive.directive_name              # original name

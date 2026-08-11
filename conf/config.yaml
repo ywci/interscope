@@ -1,18 +1,19 @@
 llm:
-  provider: "ollama"
-  model: "qwen3.5:27b"
-  api_key: "not-needed"
-  base_url: "http://localhost:11434/v1"
+  provider: "ollama" # openai, anthropic, ollama, deepseek
+  model: "qwen3.5:27b" # model name (Ollama tag)
+  api_key: "not-needed" # set per provider requirements
+  base_url: "http://localhost:11434/v1" # OpenAI‑compatible endpoint
   temperature: 0.2
   max_tokens: 131072
-  timeout: 120
+  timeout: 120 # seconds per API call
   retries: 3
 
 provers:
   koika:
     enabled: true
-    lemma_mining: true
-    use_proof_library: false
+    lemma_mining: true # auto‑generate trivial invariants
+    use_mc_lemmas: true # inject model‑checked lemmas
+    use_proof_library: false # must be false when PERF is enabled
     prove:
       skill: "rocq-mcp"
       rocq_mcp_path: "rocq-mcp"
@@ -28,13 +29,13 @@ provers:
       - "split"
       - "lia"
       - "nia"
-      proof_timeout: 600
+      proof_timeout: 600 # seconds per theorem
       max_consecutive_failures: 10
       max_steps: 80
       pre_simplify: true
       invariant_mining: true
       skeleton_reflection: true
-      skeleton_step_tactics: []
+      skeleton_step_tactics: [] # extra tactics for the skeleton proof
 
   acl2:
     enabled: true
@@ -58,56 +59,61 @@ verification:
   bmc_max_depth: 100
   ic3_max_steps: 1000
   formal_timeout: 300
-  split_monolithic_rules: false
+  split_monolithic_rules: false # set to true to auto‑split on the 'split' attribute
   rule_split_attribute: "split"
 
 proof:
-  # Fallback: linear repair attempts (used when PERF is disabled)
-  max_repair_attempts: 5
+  max_repair_attempts: 5 # used when PERF is disabled
 
   # PERF: Proof tree Exploration with Reflective Feedback
-  #
-  # PERF transforms the proof search from a linear repair loop into a
-  # parallel tree traversal with Pareto pruning and LLM-guided reflection.
-  #
-  # When enabled, PERF automatically forces use_proof_library: false
-  # to prevent the cache from bypassing the traversal.
   perf:
-    enabled: true
+    enabled: true # master switch; false → use linear repair loop
 
-    beam_size: 3 # B: Number of proof strategies to keep
-    branches_per_node: 4 # N: Divergent repair attempts per failed proof
-    depth_limit: 3 # L: Maximum refinement iterations
+    beam_size: 3 # B – strategies kept per depth
+    branches_per_node: 4 # N – variants generated per parent
+    depth_limit: 3 # L – maximum refinement iterations
 
-    # Pareto dimensions for multi-objective scoring
-    # - subgoal_reduction: How many Coq subgoals are closed?
-    # - trace_alignment: How well does the proof handle the MC trace?
-    # - syntactic_purity: Tie-breaker: simpler, non-invasive repairs
     dimensions:
-    - "subgoal_reduction"
-    - "trace_alignment"
-    - "syntactic_purity"
-    # Tie-breaking: which dimension is used for beam selection
+    - "subgoal_reduction" # Coq subgoals closed relative to parent
+    - "trace_alignment" # how well the proof addresses MC trace
+    - "syntactic_purity" # favours simpler, less invasive repairs
     primary_dimension: "subgoal_reduction"
 
-    # Reflection scoring settings
-    scoring_tournament_size: 2 # Compare each candidate to K others
+    scoring_tournament_size: 2 # pairwise comparisons per node
+    generation_temperature: 0.4 # LLM temperature for child generation
+    always_verify_children: true # run Coq/MC on every generated child
+    max_workers: 4 # parallel evaluation threads
+    timeout_per_node: 300 # seconds per node verification
+    trace_alignment_weight: 0.6 # weight for trace_alignment dimension
 
-    # LLM generation settings
-    generation_temperature: 0.4 # Higher = more divergence between children
+    try_skeleton_first: true # fast skeleton proof before full beam search
 
-    # Verification settings
-    always_verify_children: true # Runs Coq/MC on every generated child
-    max_workers: 4 # Parallel evaluation threads
-    timeout_per_node: 300 # Seconds per node verification
+    # Temperature scheduling (reduce exploration over depths)
+    temperature_decay: 0.0 # factor (0.0 = no decay, 0.9 → reduce to 90% each depth)
+    temperature_min: 0.1 # floor for temperature decay
 
-    # Trace alignment weighting (0.0 - 1.0)
-    trace_alignment_weight: 0.6
+    # Early stopping
+    early_stop_patience: 0 # depths with no Pareto improvement before quitting (0 = off)
+    early_stop_min_improvement: 0.01 # relative improvement threshold to reset patience
 
-    # Fast‑path: attempt a built‑in skeleton proof (induction + inversion)
-    # before launching the full PERF beam search.  This can save time on
-    # simple proofs and reduce LLM usage.
-    try_skeleton_first: true
+    # Template generator (LLM‑free fallback)
+    use_template_generator: false # if True, add template‑based variants
+
+    # Tool health / fast‑failure diagnostics
+    max_tool_failures_before_fallback: 3 # consecutive "Unknown error" failures before switching to coqc (0 = never)
+    enable_fast_failure_diagnostics: true # run diagnostic pass after depth 2 with no progress
+    coqc_timeout: 300 # seconds for coqc fallback verifier
+
+    diversity_strategies:
+    - "induction on reachable + auto/lia"
+    - "induction on reachable + destruct on step cases"
+    - "case analysis on conditions (remember/destruct)"
+    - "use available lemmas with rewrite and auto"
+    - "apply inversion and substitution, then lia/nia"
+    - "use functional induction instead of structural induction"
+    - "forward reasoning: assert a helper lemma first"
+    unify_repair_and_generation: false # if true, combine repair prompt with variants
+    parallel_variant_generation: false # if true, use batch LLM calls for all parents
 
 lifting:
   vcd_parser: "builtin"

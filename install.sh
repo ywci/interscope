@@ -423,6 +423,13 @@ install_koika() {
 
     cd "$KOIKA_DIR"
 
+    for dir in examples tests; do
+        if [[ -f "$dir/dune" && ! -f "$dir/dune.inc" ]]; then
+            log_info "Creating empty $dir/dune.inc to allow the build to proceed."
+            touch "$dir/dune.inc"
+        fi
+    done
+
     log_info "Building Kōika OCaml targets..."
     if ! dune build ocaml/cuttlec.exe 2>&1 | tee /tmp/koika_build.log; then
         log_warning "Kōika OCaml target build failed. Dumping build log:"

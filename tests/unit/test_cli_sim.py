@@ -1,7 +1,7 @@
 # tests/unit/test_cli_sim.py
 #
 # Unit tests for the `specir sim` CLI subcommand.
-# Updated to include the `output_format` attribute in mock args.
+# Updated to include the `output_format` attribute and SimulationReport returns.
 
 import argparse
 import pytest
@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from specir.cli.sim import _setup_arg_parser, sim_spec
 from specir.verification.simulation import SimulationError
+from specir.utils.result_types import SimulationReport
 
 
 class TestArgumentParser:
@@ -67,7 +68,7 @@ class TestSimSpecExecution:
         args.cycles = None
         args.verilator_path = None
         args.koika_path = None
-        args.output_format = "text"      # new field
+        args.output_format = "text"
         args.debug = False
         return args
 
@@ -107,6 +108,13 @@ class TestSimSpecExecution:
     def test_successful_simulation(self, mock_args, tmp_path):
         vcd = tmp_path / "sim.vcd"
         vcd.write_text("dummy")
+        report = SimulationReport(
+            design_name="my_design",
+            success=True,
+            cycles=100,
+            vcd_path=str(vcd),
+            metadata={"simulation_tool": "verilator"}
+        )
         with patch("pathlib.Path.exists", return_value=True), \
              patch("specir.cli.sim.validate_specir_file"), \
              patch("specir.cli.sim.parse_specir") as mock_parse, \
@@ -118,7 +126,7 @@ class TestSimSpecExecution:
             mock_spec = MagicMock()
             mock_spec.name = "my_design"
             mock_convert.return_value = mock_spec
-            mock_sim.return_value = vcd
+            mock_sim.return_value = report
             ret = sim_spec(mock_args)
             assert ret == 0
 
