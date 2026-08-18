@@ -16,30 +16,23 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def _tool_on_path(name: str) -> bool:
-    """Return True if the executable is on PATH and can be launched."""
+    """Return True if the executable is on PATH (no execution required)."""
     import shutil
-    path = shutil.which(name)
-    if not path:
-        return False
-    try:
-        subprocess.run([path, "--help"], capture_output=True, timeout=5, check=False)
-        return True
-    except Exception:
-        return False
+    return shutil.which(name) is not None
 
 
 def _koika_works() -> bool:
-    """Return True if the Kōika compiler is installed and responds to --help."""
+    """Return True if the Kōika compiler is installed."""
     return _tool_on_path("koika")
 
 
 def _rocq_works() -> bool:
-    """Return True if rocq-mcp is on the path and can be launched."""
+    """Return True if rocq-mcp is on the PATH."""
     return _tool_on_path("rocq-mcp")
 
 
 def _acl2_works() -> bool:
-    """Return True if ACL2 is installed (checked via acl2-mcp)."""
+    """Return True if ACL2 is installed (checked via acl2-mcp or acl2)."""
     return _tool_on_path("acl2-mcp") or _tool_on_path("acl2")
 
 
@@ -131,7 +124,6 @@ def perf_config_path(tmp_path):
     a usable LLM setup, that is used.  Otherwise a minimal configuration
     is created that prefers DeepSeek if a key is available, then Ollama.
     """
-    import shutil
     config_path = tmp_path / "config_perf.yaml"
 
     real_conf = PROJECT_ROOT / "conf" / "config.yaml"
@@ -159,6 +151,8 @@ def perf_config_path(tmp_path):
                 config_data["proof"]["perf"]["dimensions"] = ["subgoal_reduction", "trace_alignment"]
                 config_data["proof"]["perf"]["scoring_tournament_size"] = 2
                 config_data["proof"]["perf"]["generation_temperature"] = 0.4
+                config_data["proof"]["perf"]["min_beam_size"] = 2
+                config_data["proof"]["perf"]["perf_light_repair_attempts"] = 2
                 with open(config_path, "w") as f:
                     yaml.dump(config_data, f, default_flow_style=False)
                 return config_path
@@ -192,6 +186,7 @@ def perf_config_path(tmp_path):
                         "max_steps": 80,
                         "pre_simplify": True,
                         "invariant_mining": True,
+                        "use_rocq_mcp": True,
                     }
                 },
                 "acl2": {
@@ -227,6 +222,8 @@ def perf_config_path(tmp_path):
                     "always_verify_children": True,
                     "max_workers": 2,
                     "timeout_per_node": 60,
+                    "min_beam_size": 2,
+                    "perf_light_repair_attempts": 2,
                 }
             },
             "logging": {"level": "INFO"},
@@ -236,6 +233,7 @@ def perf_config_path(tmp_path):
             yaml.dump(config_data, f, default_flow_style=False)
         return config_path
 
+    # Ollama fallback
     config_data = {
         "llm": {
             "provider": "ollama",
@@ -260,6 +258,7 @@ def perf_config_path(tmp_path):
                     "max_steps": 80,
                     "pre_simplify": True,
                     "invariant_mining": True,
+                    "use_rocq_mcp": True,
                 }
             },
             "acl2": {
@@ -295,6 +294,8 @@ def perf_config_path(tmp_path):
                 "always_verify_children": True,
                 "max_workers": 2,
                 "timeout_per_node": 60,
+                "min_beam_size": 2,
+                "perf_light_repair_attempts": 2,
             }
         },
         "logging": {"level": "INFO"},
@@ -446,6 +447,18 @@ def test_perf_stats_flag_alu(alu_spec_path, build_dir, perf_config_path):
     result = _run_specir("verify", cmd, timeout=180, env=env)
 
     output = result.stdout + result.stderr
-    assert "PERF Traversal Statistics" in output or "Total nodes generated" in output or "All proof attempts exhausted" in output, (
+    # The CLI now prints a "PERF Failure Diagnostics" block (from
+    # `perf_diagnostics.py`) when `--perf-stats` is used.  Accept any of
+    # these stable markers to ensure some PERF statistics are shown.
+    expected_markers = [
+        "PERF Failure Diagnostics",
+        "Top errors",
+        "Backtracking summary",
+        "Beam collapse events",
+        "PERF Traversal Statistics",
+        "Total nodes generated",
+        "All proof attempts exhausted",
+    ]
+    assert any(marker in output for marker in expected_markers), (
         f"PERF statistics not printed.\nOutput: {output}"
     )

@@ -32,8 +32,8 @@ class TestSBYScript:
         assert "mode bmc" in content
         assert "depth 42" in content
         assert "timeout 100" in content
-        assert "read -formal" in content
-        assert "read -sv" in content
+        assert "read_verilog -sv -formal" in content
+        assert "read_verilog -sv" in content
         assert "prep -top top" in content
         assert "smtbmc z3" in content
 

@@ -4,7 +4,6 @@
 # into the spec dialect (spec_ir.SpecModule).
 # All CLI modules and lowering passes should use this single entry point
 # to avoid duplicated or inconsistent conversion logic.
-# Revision: now converts types, components, and fairness; evidence is ignored.
 
 from typing import List, Dict, Any, Optional
 from specir.dialects.spec_ir import (

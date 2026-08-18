@@ -129,6 +129,23 @@ module:
                               (and (neq (slice (read a_reg) 7 7) (slice (read b_reg) 7 7))
                                    (eq (slice (read a_reg) 7 7) (slice (sub (read a_reg) (read b_reg)) 7 7)))))
 
+    # New challenging properties to test backtracking
+    - name: overflow_implies_result_neq_sum
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (and (read valid) (and (eq (read op_reg) 0) (read overflow_reg)))
+                          (neq (read result_reg)
+                               (add (read a_reg) (read b_reg))))
+
+    - name: sub_overflow_implies_result_neq_diff
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (and (read valid) (and (eq (read op_reg) 1) (read overflow_reg)))
+                          (neq (read result_reg)
+                               (sub (read a_reg) (read b_reg))))
+
     - name: result_reg_self
       kind: safety
       expression:
@@ -161,6 +178,16 @@ module:
           - "simpl"
           - "auto"
           - "lia"
+    # New proof obligations for the hard properties (Koika)
+    - property: overflow_implies_result_neq_sum
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: sub_overflow_implies_result_neq_diff
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    # Existing simple ACL2 and model-checking obligations (unchanged)
     - property: result_reg_self
       status: unproved
       engine: theorem_proving

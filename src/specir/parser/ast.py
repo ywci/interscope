@@ -2,9 +2,6 @@
 #
 # Abstract Syntax Tree (AST) dataclasses for SpecIR.
 # These classes represent the parsed structure of a .specir file.
-# Revised: fixed evidence types to match JSON Schema and annotator usage.
-# State.evidence and Rule.evidence are now single EvidenceRef (not lists).
-# Property.evidence is List[EvidenceRef]. Module.evidence is List[Evidence].
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union

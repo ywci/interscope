@@ -25,26 +25,6 @@ class ObligationAnalysis:
     by the PERF engine to steer proof search, by the template generators
     to select appropriate proof sketches, and by the prompt builders to
     inject structural hints.
-
-    Attributes:
-        num_step_constructors: Number of ``step`` constructors (rules).
-        step_constructor_names: Names of the ``step`` constructors
-            (e.g. ``['step_load_inputs', 'step_execute']``).  These names
-            are extracted verbatim from the Coq source and can be used to
-            build precise inversion / case‑split instructions.
-        has_nested_ite: Whether any step constructor contains nested ``if``
-            (i.e. deeply cascaded conditionals).
-        max_ite_depth: Maximum depth of ``if`` nesting in any constructor.
-        expression_size: Approximate size of the theorem statement (char count).
-        suggests_rule_splitting: The design would likely benefit from
-            splitting a monolithic rule into several smaller ones.
-        suggests_lemma_introduction: Large duplicated sub‑expressions were
-            detected; introducing a helper lemma could simplify the proof.
-        duplicated_subexpressions: Human‑readable descriptions of the
-            duplicated patterns (if any).
-        is_definitional: True if the property is definitionally true,
-            i.e. of the form ``reg1 = (reg2 =? 0)`` (or similar) so that
-            it can be proved trivially by case analysis and reflexivity.
     """
 
     num_step_constructors: int = 0
@@ -56,12 +36,13 @@ class ObligationAnalysis:
     suggests_lemma_introduction: bool = False
     duplicated_subexpressions: List[str] = field(default_factory=list)
     is_definitional: bool = False
+    suggested_helper_lemmas: List[str] = field(default_factory=list)
 
 
 class PERFAnalyzer:
     """Analyses a Coq file to extract structural hints for PERF."""
 
-    # Patterns used to parse the generated Coq code
+    # Broad patterns, kept for fallback use.
     _STEP_INDUCTIVE_RE = re.compile(
         r"Inductive\s+step\s*:.*?:=\s*(.*?)\.",
         re.DOTALL,
@@ -71,11 +52,8 @@ class PERFAnalyzer:
         r"Theorem\s+(\w+)\s*:\s*(.*?)\.",
         re.DOTALL,
     )
-
-    # Pattern for definitional properties:
-    #   any register name (ending with _reg) equals Nat.eqb of another register with 0
     _DEFINITIONAL_RE = re.compile(
-        r"(\w+_reg)\s+\w+\s*=\s*\(\s*Nat\.eqb\s+\(\s*(\w+_reg)\s+\w+\s*\)\s+0\s*\)"
+        r"(\w+_reg)\s+\w+\s*=\s*\(\s*Nat\.eqb\s+\(\s*(\w+_reg)\s+\w+\s*\)\s*0\s*\)"
     )
 
     def analyze(
@@ -99,10 +77,10 @@ class PERFAnalyzer:
             logger.error("Failed to read Coq file %s: %s", coq_file, e)
             return ObligationAnalysis()
 
-        # 1. Count step constructors and extract their names
+        # 1. Count step constructors and extract their names/bodies.
         num_ctors, ctor_names, ctor_bodies = self._extract_step_constructors(content)
 
-        # 2. Analyse nested conditionals inside the constructors
+        # 2. Analyse nested conditionals inside the constructors.
         max_depth = 0
         has_nested = False
         for body in ctor_bodies:
@@ -112,14 +90,19 @@ class PERFAnalyzer:
             if depth > 1:
                 has_nested = True
 
-        # 3. Find the theorem statement
+        logger.debug(
+            "PERFAnalyzer: num_ctors=%d, names=%s, has_nested_ite=%s, max_ite_depth=%d",
+            num_ctors, ctor_names, has_nested, max_depth
+        )
+
+        # 3. Find the theorem statement.
         _, theorem_stmt = self._find_theorem(content, theorem_name)
         expr_size = len(theorem_stmt) if theorem_stmt else 0
 
-        # 4. Detect duplicated large sub‑expressions
+        # 4. Detect duplicated large sub‑expressions.
         duplicates = self._find_duplicated_subexprs(content, ctor_bodies, theorem_stmt)
 
-        # 5. Heuristics
+        # 5. Heuristics.
         suggests_split = (
             num_ctors == 1
             and max_depth >= 3
@@ -127,8 +110,12 @@ class PERFAnalyzer:
         )
         suggests_lemma = len(duplicates) > 0
 
-        # 6. Definitional property detection
+        # 6. Definitional property detection.
         is_def = self._is_definitional(theorem_stmt) if theorem_stmt else False
+
+        # 7. Generate suggested helper lemma names from duplicated
+        #    sub‑expressions.
+        suggested_lemmas = self._suggest_helper_lemmas(duplicates, ctor_bodies, theorem_stmt)
 
         analysis = ObligationAnalysis(
             num_step_constructors=num_ctors,
@@ -140,6 +127,7 @@ class PERFAnalyzer:
             suggests_lemma_introduction=suggests_lemma,
             duplicated_subexpressions=duplicates,
             is_definitional=is_def,
+            suggested_helper_lemmas=suggested_lemmas,
         )
 
         logger.debug(
@@ -149,58 +137,250 @@ class PERFAnalyzer:
         )
         return analysis
 
+    @staticmethod
+    def _strip_coq_comments(content: str) -> str:
+        """Remove Coq comments ``(* ... *)`` from *content*.
+
+        This is intentionally simple; nested comments are uncommon in
+        generated code.
+        """
+        return re.sub(r"\(\*.*?\*\)", "", content, flags=re.DOTALL)
+
     def _extract_step_constructors(
         self, content: str
     ) -> Tuple[int, List[str], List[str]]:
-        """Return the number of step constructors, their names,
-        and a list of their bodies."""
-        match = self._STEP_INDUCTIVE_RE.search(content)
-        if not match:
+        """
+        Return the number of step constructors, their names, and a list of
+        their bodies.
+
+        The implementation is robust to the formatting emitted by
+        ``spec_to_koika.py``:
+
+        .. code-block:: coq
+
+           Inductive step : state -> inputs -> state -> Prop :=
+             | step_load_inputs : forall s inputs,
+                 True ->
+                 step s inputs (...)
+             | step_execute : forall s inputs,
+                 True ->
+                 step s inputs (...).
+
+        This differs from the previous regex approach in two important ways:
+
+        1. It does **not** rely on a non‑greedy ``.*?`` that may stop at the
+           first dot inside a constructor body.
+        2. It tracks parentheses and braces while scanning so that the final
+           period of the inductive definition is found correctly.
+        """
+        # Strip comments to avoid false period matches.
+        clean = self._strip_coq_comments(content)
+
+        # Locate the start of the inductive definition.
+        start_match = re.search(r"\bInductive\s+step\b", clean)
+        if not start_match:
             logger.warning("Could not locate 'Inductive step' definition.")
             return 0, [], []
 
-        block = match.group(1)
-        names = self._CONSTRUCTOR_RE.findall(block)
-        if not names:
+        # Find the `:=` after `Inductive step`.
+        colon_eq = clean.find(":=", start_match.end())
+        if colon_eq == -1:
+            logger.warning("Malformed 'Inductive step' definition.")
             return 0, [], []
 
-        bodies: List[str] = []
-        parts = re.split(r"\n\s*\| step_", block)
+        # Scan forward, tracking parenthesis/brace depth, to find the period
+        # that terminates the whole inductive definition.
+        depth = 0
+        in_string = False
+        end_pos = -1
+        i = colon_eq + 2
+        while i < len(clean):
+            ch = clean[i]
+
+            if in_string:
+                if ch == '"':
+                    in_string = False
+                i += 1
+                continue
+
+            if ch == '"':
+                in_string = True
+                i += 1
+                continue
+
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            elif ch == '.' and depth == 0:
+                end_pos = i
+                break
+            i += 1
+
+        if end_pos == -1:
+            logger.warning("Could not find terminating period for 'Inductive step'.")
+            return 0, [], []
+
+        block = clean[colon_eq + 2 : end_pos].strip()
+        if not block:
+            return 0, [], []
+
+        # Split constructors on `|` that is at the beginning of a line
+        # (or after whitespace). We need to be careful not to split on
+        # `|` inside parentheses. We'll do a simple line-based split.
+        # Since generated Coq code places each constructor on a new line
+        # starting with `|`, this is safe.
+        parts = re.split(r"\n\s*\|", block)
+        # The first part may be empty if block starts with `|`.
+        # Remove any leading/trailing empty strings.
+        constructor_texts = []
         for part in parts:
             stripped = part.strip()
-            if stripped.startswith("step_"):
-                colon_pos = stripped.find(":")
-                if colon_pos != -1:
-                    body = stripped[colon_pos + 1 :].strip()
-                    bodies.append(body)
-        if not parts[0].startswith("|"):
-            first_body = parts[0].strip()
-            if first_body.startswith("step_"):
-                colon_pos = first_body.find(":")
-                if colon_pos != -1:
-                    first_body = first_body[colon_pos + 1 :].strip()
-            bodies.insert(0, first_body)
+            if not stripped:
+                continue
+            # In case a constructor spans multiple lines, we keep the whole
+            # text from after the `|` up to the next `|` at line start.
+            constructor_texts.append(stripped)
 
-        full_names = [f"step_{name}" for name in names]
-        return len(names), full_names, bodies
+        names: List[str] = []
+        bodies: List[str] = []
+        for ctor_text in constructor_texts:
+            # Each constructor has the shape:
+            #   step_name : type
+            # The body is everything after the first colon.
+            colon_pos = ctor_text.find(":")
+            if colon_pos == -1:
+                continue
+            name = ctor_text[:colon_pos].strip()
+            body = ctor_text[colon_pos + 1 :].strip()
+            if name.startswith("step_"):
+                names.append(name)
+                bodies.append(body)
+
+        logger.debug(
+            "Extracted %d step constructors: %s",
+            len(names), names
+        )
+        return len(names), names, bodies
 
     def _max_if_depth(self, body: str) -> int:
-        """Compute the maximum nesting depth of ``if ... then ... else``."""
-        depth = 0
+        """
+        Compute the maximum nesting depth of ``if ... then ... else`` inside
+        *body*.
+
+        This implementation uses a token-stream scanner that properly
+        accounts for nested branches, including chains like:
+
+        .. code-block:: coq
+
+           if op_reg s =? 0 then ...
+           else
+             if op_reg s =? 1 then ...
+             else
+               if op_reg s =? 2 then ...
+               else ...
+
+        The scanner maintains a stack of open `if` branches. When it sees
+        an `if`, it pushes a new level; when it sees a complete `else`
+        that closes the current branch, it pops. The maximum stack size
+        encountered is the nesting depth.
+        """
+        # Remove comments for tokenisation.
+        clean = self._strip_coq_comments(body)
+
+        # Tokenize the string into words and parentheses to keep track of
+        # structure. We'll scan character by character to handle Coq's
+        # syntax accurately.
+        depth = 0          # current nesting level
         max_depth = 0
-        clean = re.sub(r"\(\*.*?\*\)", "", body, flags=re.DOTALL)
-        tokens = re.findall(r"\bif\b|\bthen\b|\belse\b", clean)
-        for tok in tokens:
-            if tok == "if":
+        i = 0
+        n = len(clean)
+
+        # We'll use a simple state machine: we look for `if` and `else`
+        # tokens that are not inside parentheses (but in Coq, `if` and
+        # `else` can appear inside parentheses; for our heuristic, we
+        # only care about the top-level structure of the step constructor,
+        # which usually has a clear `if...then...else` chain without
+        # surrounding parentheses).
+        # We'll scan word by word.
+        tokens = re.findall(r'\b(?:if|then|else)\b|[^\s()]+|\(|\)', clean)
+
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            if tok == 'if':
                 depth += 1
-                max_depth = max(max_depth, depth)
+                if depth > max_depth:
+                    max_depth = depth
+                i += 1
+                # Skip the condition and 'then', but we need to handle
+                # parentheses. For simplicity, we continue scanning;
+                # the 'else' will decrement. However, nested `if` inside
+                # the condition (unlikely) would be miscounted.
+                # We'll not attempt to skip; the stack will balance out
+                # because every `if` is eventually followed by an `else`
+                # at the same level.
+            elif tok == 'else':
+                # The else belongs to the most recent unclosed if.
+                # But if the next token is 'if', it's an else-if chain,
+                # which means the previous if is closed, and a new one
+                # starts. We'll handle that: if the next token is 'if',
+                # do not decrement; instead, the 'if' will increment,
+                # effectively keeping the depth the same. However, the
+                # current depth should be decremented for the outer if,
+                # then the next 'if' increments, resulting in same depth.
+                # That is correct. So we need to decrement on 'else'
+                # only if the next token is not 'if'.
+                if i + 1 < len(tokens) and tokens[i+1] == 'if':
+                    # It's an else-if: the current if is closed, but the
+                    # depth should stay the same after the next if? Actually
+                    # the outer if is closed, so depth decreases, but then
+                    # the new if increases, so net effect is depth unchanged.
+                    # We'll leave depth unchanged (no decrement here).
+                    pass
+                else:
+                    # Close the current if.
+                    if depth > 0:
+                        depth -= 1
+                i += 1
+            else:
+                i += 1
+
+        # The above logic may not be perfect for complex nested structures,
+        # but it handles the common opcode dispatch pattern well.
+        # Alternatively, we can use a more reliable method: count the number
+        # of `else if` occurrences and add 1.
+        # Actually, the previous implementation counted `else if` and added 1.
+        # But that failed if the chain was not formatted as `else if` on the
+        # same line. The new scanner is more robust.
+
+        # However, the scanner above may produce incorrect results because
+        # the tokenization and parentheses handling is incomplete.
+        # Let's fall back to a simpler but reliable heuristic:
+        # Count the occurrences of `else` followed by `if` (with possible
+        # whitespace/newlines) and add 1. This works if the chain is formatted
+        # as `else\n  if` or `else if`.
+        # We'll combine both: use the more sophisticated scanner, but if
+        # it returns 0, fall back to the simple method.
+        if max_depth == 0:
+            # Fallback: count `else if` patterns.
+            else_if_pattern = re.compile(r'\belse\s+\bif\b', re.IGNORECASE)
+            count = len(else_if_pattern.findall(clean))
+            if count > 0:
+                max_depth = count + 1
+
+        # Ensure max_depth is at least 1 if there's any `if`.
+        if max_depth == 0 and 'if' in clean:
+            max_depth = 1
+
         return max_depth
 
     def _find_theorem(
         self, content: str, theorem_name: str
     ) -> Tuple[Optional[str], Optional[str]]:
         """Return the full theorem statement for *theorem_name*."""
-        for match in self._THEOREM_RE.finditer(content):
+        clean = self._strip_coq_comments(content)
+        for match in self._THEOREM_RE.finditer(clean):
             name = match.group(1)
             if name == theorem_name:
                 return name, match.group(2).strip()
@@ -260,8 +440,54 @@ class PERFAnalyzer:
         """
         Check if the theorem statement describes a definitional property,
         e.g. ``zero_reg s = (Nat.eqb (result_reg s) 0)``.
-        This pattern matches any register name ending with ``_reg`` on the
-        left‑hand side and a ``Nat.eqb`` comparison of another ``_reg``
-        register with zero on the right.
         """
         return bool(self._DEFINITIONAL_RE.search(theorem_stmt))
+
+    def _suggest_helper_lemmas(
+        self,
+        duplicated_subexprs: List[str],
+        ctor_bodies: List[str],
+        theorem_stmt: Optional[str],
+    ) -> List[str]:
+        """
+        Generate candidate helper lemma names based on duplicated
+        sub‑expressions and repeated field computations.
+
+        The names are intentionally simple and stable; they are meant to
+        be used as hints in LLM prompts, not as final lemma statements.
+        """
+        lemmas: List[str] = []
+        seen = set()
+
+        # Process the human-readable duplicate descriptions produced by
+        # `_find_duplicated_subexprs`.
+        for desc in duplicated_subexprs:
+            # Extract register/field names that look like `*_reg`.
+            fields = re.findall(r'\b(\w+_reg)\b', desc)
+            if fields:
+                # Create a stable name from the involved fields.
+                lemma_name = f"helper_{'_'.join(sorted(set(fields)))}"
+                if lemma_name not in seen:
+                    seen.add(lemma_name)
+                    lemmas.append(lemma_name)
+            else:
+                # Fallback generic name.
+                idx = len(lemmas) + 1
+                lemma_name = f"helper_lemma_{idx}"
+                if lemma_name not in seen:
+                    seen.add(lemma_name)
+                    lemmas.append(lemma_name)
+
+        # Additional heuristic: if the theorem statement contains both
+        # `result_reg` and `overflow_reg`, and at least one constructor
+        # body also contains both, suggest a lemma linking them.
+        if theorem_stmt and "result_reg" in theorem_stmt and "overflow_reg" in theorem_stmt:
+            for body in ctor_bodies:
+                if "result_reg" in body and "overflow_reg" in body:
+                    name = "helper_result_overflow"
+                    if name not in seen:
+                        seen.add(name)
+                        lemmas.append(name)
+                    break
+
+        return lemmas

@@ -1,6 +1,6 @@
 # InterScope – SpecIR: Specification Intermediate Representation for Hardware Verification
 
-InterScope is the reference implementation of **SpecIR** (Specification Intermediate Representation), a framework for multi‑engine hardware verification.  It bridges natural‑language design specifications with simulation, model checking, and theorem proving (Kōika/Coq and ACL2).
+InterScope is the reference implementation of **SpecIR** (Specification Intermediate Representation), a framework for multi‑engine hardware verification. It bridges natural‑language design specifications with simulation, model checking, and theorem proving (Kōika/Coq and ACL2).
 
 The project provides:
 
@@ -30,12 +30,12 @@ cd interscope
 
 Edit `conf/config.yaml` to set:
 
-- LLM provider (OpenAI, Anthropic, Ollama) and API keys.
+- LLM provider (OpenAI, Anthropic, Ollama, DeepSeek) and API keys.
 - Paths to external tools (auto‑detected by default).
 - Prover‑specific settings (tactic hints, proof timeout, repair attempts).
 - Model‑checking parameters (`bmc_max_depth`, `ic3_max_steps`, `formal_timeout`).
 - Simulation settings (cycles, Verilator path).
-- **PERF settings**: beam size, branching factor, depth limit, Pareto dimensions, etc. (see below).
+- **PERF settings**: beam size, branching factor, depth limit, Pareto dimensions, backtracking (including on‑demand triggers), reflection quality, repair persistence, and minimum beam size (see below).
 - **Synthesis settings** (optional) for RTL quality experiments.
 
 All paths are optional; the tool works with sensible defaults.
@@ -54,6 +54,7 @@ The main entry point is the `run.sh` wrapper. All commands are forwarded to the 
 | `--output-format json\|text` | Output results in structured JSON or human‑readable text (default: text). |
 | `--report-file <path>` | Save aggregated results to the specified file (JSON/CSV). |
 | `--config <file>` | Load additional configuration from an external YAML file (deep‑merged with defaults). |
+| `--debug` | Enable debug logging. |
 
 These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 
@@ -68,6 +69,13 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 | `./run.sh --check <trace.yaml>` | Check properties against an abstract trace. |
 | `./run.sh --query ...` | Query the evidence registry (SQLite) – now with `export`, `stats`, and `filter` sub‑commands. |
 
+For compatibility, the old `--command` style is still accepted. The newer unified CLI also accepts commands without leading dashes, e.g.:
+
+```bash
+./run.sh compile examples/fifo/fifo.specir
+./run.sh verify examples/fifo/fifo.specir --perf
+```
+
 **Additional flags**  
 
 - `--show-proof` : When verifying, print the complete proof script for each successful obligation.  
@@ -75,7 +83,16 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 - `--assert-lang sva|vhdl|verilog_ovl` (for `--compile` with `--backend assert`): choose the target assertion language.  
 - `--cycles N` : Override the simulation cycle count.  
 - `--coverage` (sim) : Enable Verilator coverage collection and report coverage percentage.  
-- `--synthesize` (compile/sim) : After RTL generation, run Yosys synthesis and report area/delay/power (optional, requires Yosys).
+- `--synthesize` (compile/sim) : After RTL generation, run Yosys synthesis and report area/delay/power (optional, requires Yosys).  
+- `--perf` : Enable PERF for this verification run.  
+- `--no-perf` : Disable PERF even if configured globally.  
+- `--perf-stats` : Print detailed PERF traversal statistics (nodes, depths, pruning, token usage, reflection quality).  
+- `--no-pareto` : Disable Pareto pruning (ablation).  
+- `--no-trace-alignment` : Disable the trace‑alignment dimension (ablation).  
+- `--no-reflection` : Disable reflection feedback (ablation).  
+- `--dry-run` : Parse and validate only; do not execute provers.
+
+Flags `--perf`, `--no-perf`, `--perf-stats`, `--no-pareto`, `--no-trace-alignment`, `--no-reflection`, and `--dry-run` are only meaningful with `--verify`.
 
 ### Choosing a Verification Backend
 
@@ -89,7 +106,7 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 
 ## PERF: Proof tree Exploration with Reflective Feedback
 
-**PERF** is a **test‑time proof search** engine that extends the linear repair loop with a **tree‑based beam search**.  When a proof attempt fails, PERF:
+**PERF** is a **test‑time proof search** engine that extends the linear repair loop with a **tree‑based beam search**. When a proof attempt fails, PERF:
 
 1. Generates **multiple divergent repair attempts** from the failing script (using the LLM).  
 2. **Verifies each attempt** in parallel (with optional tool‑grounding).  
@@ -101,6 +118,14 @@ PERF is particularly effective when:
 - The proof is hard and requires exploring several alternative strategies.
 - A **counterexample trace** from model checking is available – PERF uses it to guide the search (`trace_alignment` dimension).
 - You want to reduce the number of manual repair iterations.
+
+**Recent improvements:**
+
+- PERF can build a **destruct‑chain skeleton** as the root node when the obligation has a deeply nested `ite` (e.g., opcode dispatch chains). This gives the search a strong, structurally informed starting point.
+- After PERF exhausts, the most promising candidate from the search is **automatically handed to the linear prover** for a final focused repair pass, instead of being discarded.
+- A `min_beam_size` parameter prevents the beam from collapsing to a single node, preserving diversity.
+- Light repair attempts per unique error signature are now configurable (`perf_light_repair_attempts`), making PERF’s repair more persistent and closer to the linear prover’s behaviour.
+- Backtracking and reflection quality are now explicitly configurable (see below).
 
 Before launching the full beam search, PERF attempts a fast **interactive skeleton proof** (structural induction + inversion) when `try_skeleton_first` is enabled (the default). This often succeeds immediately on simple safety properties. During the beam search, PERF also injects the actual Coq/ACL2 definitions into the LLM prompts, enabling more accurate proof generation.
 
@@ -114,7 +139,7 @@ PERF can be enabled globally in `conf/config.yaml` under the `proof.perf` block,
 
 To disable PERF even if the config says otherwise, use `--no-perf`.
 
-**Important**: PERF **disables the proof library cache** (`use_proof_library: false`).  If both are enabled, the system raises a `ConfigurationError` to prevent silent bypass.  You can either set `use_proof_library: false` in `config.yaml` or let the CLI override it.
+**Important**: PERF **disables the proof library cache** (`use_proof_library: false`). If both are enabled, the system raises a `ConfigurationError` to prevent silent bypass. You can either set `use_proof_library: false` in `config.yaml` or let the CLI override it.
 
 ### PERF Configuration Parameters
 
@@ -132,22 +157,84 @@ To disable PERF even if the config says otherwise, use `--no-perf`.
 | `max_workers` | Parallel threads for node evaluation | `4` |
 | `timeout_per_node` | Seconds per node verification | `300` |
 | `trace_alignment_weight` | Weight for the MC trace dimension | `0.6` |
+| `min_beam_size` | Minimum nodes to keep in the beam to prevent collapse | `2` |
+| `perf_light_repair_attempts` | Light repair attempts per unique error signature | `2` |
 
-You can override any of these via **environment variables** (e.g., `PERF_BEAM_SIZE=5`) or **per‑obligation metadata** in the `.specir` file.
+**Backtracking settings**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `backtracking.enabled` | Enable stagnation‑based backtracking | `false` |
+| `backtracking.stagnation_depth` | Consecutive non‑improving depths before backtrack | `2` |
+| `backtracking.max_restarts` | Maximum number of backtrack operations | `3` |
+| `backtracking.max_backtrack_depth` | How many depths to go back | `2` |
+| `backtracking.restore_beam_size` | Beam size after backtracking | `3` |
+| `backtracking.avoid_repeated_branches` | Exclude previously selected nodes when restoring | `true` |
+
+**On‑demand backtracking triggers**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `backtracking.on_demand.enabled` | Master switch for on‑demand backtracking | `false` |
+| `backtracking.on_demand.force_every` | Trigger a backtrack every N depths (0 = off) | `0` |
+| `backtracking.on_demand.time_limit` | Trigger a backtrack after N seconds (0 = off) | `0.0` |
+| `backtracking.on_demand.max_same_error` | Trigger a backtrack after repeated identical errors | `5` |
+| `backtracking.on_demand.skip_forced_regeneration` | Avoid forced regeneration for on‑demand backtracks | `true` |
+
+> Note: `backtracking.on_demand.enabled` is the master switch. The individual `force_every`, `time_limit`, and `max_same_error` triggers are ignored unless `enabled` is `true`.  
+> For designs where the same error repeats often, increasing `max_same_error` (e.g., to `15`) in `config.yaml` reduces trigger frequency.
+
+**Reflection quality assessment**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `reflection_quality_window` | Depths to wait before evaluating reflection quality | `2` |
+| `min_reflection_quality` | Minimum reflection quality to accept a backtrack | `0.2` |
+| `max_reflection_retries` | Retry limit for alternative backtrack depths | `2` |
+
+You can override any of these via **environment variables** (see below) or **per‑obligation metadata** in the `.specir` file.
+
+### Environment Variables
+
+The following environment variables can be used to override PERF settings without editing the configuration file:
+
+```bash
+PERF_ENABLED=true|false
+PERF_BEAM_SIZE=5
+PERF_BRANCHES=6
+PERF_DEPTH=4
+PERF_DIMENSIONS="a,b,c"
+PERF_PRIMARY_DIMENSION="a"
+PERF_TEMPERATURE=0.5
+PERF_MAX_WORKERS=8
+PERF_TIMEOUT_NODE=600
+PERF_TOURNAMENT_SIZE=3
+PERF_ALWAYS_VERIFY=false
+PERF_ON_DEMAND_BACKTRACK=true|false
+PERF_REFLECTION_QUALITY_WINDOW=3
+PERF_MIN_REFLECTION_QUALITY=0.15
+PERF_MAX_REFLECTION_RETRIES=2
+```
+
+Example:
+
+```bash
+PERF_BEAM_SIZE=5 PERF_DEPTH=3 ./run.sh --verify examples/fifo/fifo.specir --perf
+```
 
 ### PERF Statistics
 
-To see detailed traversal statistics (nodes explored, depths reached, pruning, token usage), pass `--perf-stats`:
+To see detailed traversal statistics (nodes explored, depths reached, pruning, token usage, reflection quality), pass `--perf-stats`:
 
 ```bash
 ./run.sh --verify examples/fifo/fifo.specir --perf --perf-stats
 ```
 
-The output will include a summary table with all key metrics.
+The output will include a summary table with all key metrics, including backtrack counts, diversity usage, reflection quality history, and per‑depth breakdown.
 
 ### Integration with Model Checking
 
-When PERF is used on an obligation that also has a model‑checking counterpart (or when a counterexample trace is available), the `trace_alignment` dimension is automatically activated.  PERF uses the trace to:
+When PERF is used on an obligation that also has a model‑checking counterpart (or when a counterexample trace is available), the `trace_alignment` dimension is automatically activated. PERF uses the trace to:
 
 - **Score** proof scripts that explicitly address the failing scenario (higher score).  
 - **Guide** the LLM to generate repairs that target the root cause of the violation.
@@ -158,7 +245,7 @@ This closes the loop between bounded model checking (fast but incomplete) and th
 
 ## Batch Processing and Structured Output
 
-For running experiments over multiple designs, InterScope now supports batch mode and structured JSON output.
+For running experiments over multiple designs, InterScope supports batch mode and structured JSON output.
 
 ```bash
 # Batch compile all designs in a directory, output JSON
@@ -250,11 +337,13 @@ cd examples/fifo
 
 The generated assertion files are placed in `build/<design>/assertions/`.
 
+The SVA backend emits **Yosys‑compatible procedural assertions** and uses **non‑ANSI style port declarations** to avoid syntax errors in SymbiYosys.
+
 ---
 
 ## Customising the Proof Library
 
-You can add your own lemma proofs without modifying the core package.  Simply edit **`src/lib/koika/assist.py`** and add a new entry to the `PROOF_LIBRARY` dictionary:
+You can add your own lemma proofs without modifying the core package. Simply edit **`src/lib/koika/assist.py`** and add a new entry to the `PROOF_LIBRARY` dictionary:
 
 ```python
 PROOF_LIBRARY = {
@@ -265,7 +354,7 @@ Qed.""",
 }
 ```
 
-The existing entries are **complete Coq proofs** (not skeletons) and are applied automatically when a theorem name matches.  The prover will automatically pick up new entries the next time it runs.  This makes it easy to maintain a personal library of proven properties for your own designs.
+The existing entries are **complete Coq proofs** (not skeletons) and are applied automatically when a theorem name matches. The prover will automatically pick up new entries the next time it runs. This makes it easy to maintain a personal library of proven properties for your own designs.
 
 ---
 

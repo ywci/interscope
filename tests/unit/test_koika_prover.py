@@ -36,6 +36,7 @@ def mock_config():
                     "invariant_mining": True,
                     "skeleton_reflection": True,
                     "skeleton_step_tactics": [],
+                    "use_rocq_mcp": True,
                 }
             }
         },

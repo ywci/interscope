@@ -1,7 +1,8 @@
 # tests/unit/test_proof_skill.py
 #
 # Complete unit tests for LLMProofSkill: ACL2, Koika, and model-checking paths.
-# Updated to mock prove_theorem return values as ProofResult dataclasses.
+# Updated to reflect the final method signatures after adding `initial_script`
+# support to KoikaProver and ACL2Prover.
 
 import unittest
 from unittest.mock import MagicMock, patch
@@ -52,14 +53,14 @@ class TestProofSkillACL2(unittest.TestCase):
         context = {"acl2_file_path": "/path/file.lisp", "theorem_name": "test"}
         with patch.object(self.skill, "_prove_acl2") as mock_prove:
             self.skill.prove(obligation, context)
-            mock_prove.assert_called_once_with(obligation, context)
+            mock_prove.assert_called_once_with(obligation, context, initial_script=None)
 
     def test_prove_dispatches_to_koika(self):
         obligation = {"backend": "koika"}
         context = {"coq_file_path": "/path/file.v"}
         with patch.object(self.skill, "_prove_koika") as mock_prove:
             self.skill.prove(obligation, context)
-            mock_prove.assert_called_once_with(obligation, context)
+            mock_prove.assert_called_once_with(obligation, context, initial_script=None)
 
     def test_prove_dispatches_to_model_check(self):
         obligation = {"engine": "model_checking"}
@@ -75,12 +76,28 @@ class TestProofSkillACL2(unittest.TestCase):
         self.assertIn("Unsupported backend", result.error_message)
 
     def test_prove_acl2_success(self):
-        obligation = {"property": "no_overflow", "metadata": {"acl2_hints": ["((" "Goal" ":induct t))"]}}
-        context = {"acl2_file_path": "/path/file.lisp", "theorem_name": "no_overflow_correct", "theorem_statement": "(implies (full st) (not (enqueue st)))"}
-        self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="(defthm no_overflow_correct ...)")
+        obligation = {
+            "property": "no_overflow",
+            "metadata": {"acl2_hints": ["((Goal:induct t))"]},
+        }
+        context = {
+            "acl2_file_path": "/path/file.lisp",
+            "theorem_name": "no_overflow_correct",
+            "theorem_statement": "(implies (full st) (not (enqueue st)))",
+        }
+        self.mock_prover.prove_theorem.return_value = ProofResult(
+            success=True, proof_script="(defthm no_overflow_correct ...)"
+        )
         result = self.skill._prove_acl2(obligation, context)
         self.assertTrue(result.success)
         self.assertEqual(result.proof_script, "(defthm no_overflow_correct ...)")
+        # Verify call with exact hints and initial_script=None
+        self.mock_prover.prove_theorem.assert_called_once_with(
+            theorem_name="no_overflow_correct",
+            statement="(implies (full st) (not (enqueue st)))",
+            hints=["((Goal:induct t))"],
+            initial_script=None,
+        )
 
     def test_prove_acl2_without_statement(self):
         obligation = {"property": "no_overflow"}
@@ -88,6 +105,13 @@ class TestProofSkillACL2(unittest.TestCase):
         self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="...")
         result = self.skill._prove_acl2(obligation, context)
         self.assertTrue(result.success)
+        # Verify call with statement=None, hints=None, initial_script=None
+        self.mock_prover.prove_theorem.assert_called_once_with(
+            theorem_name="no_overflow_correct",
+            statement=None,
+            hints=None,
+            initial_script=None,
+        )
 
     def test_prove_acl2_missing_file_path(self):
         obligation = {"property": "no_overflow"}
@@ -106,7 +130,9 @@ class TestProofSkillACL2(unittest.TestCase):
     def test_prove_acl2_prover_failure(self):
         obligation = {"property": "no_overflow"}
         context = {"acl2_file_path": "/path/file.lisp", "theorem_name": "no_overflow_correct"}
-        self.mock_prover.prove_theorem.return_value = ProofResult(success=False, error_message="induction error")
+        self.mock_prover.prove_theorem.return_value = ProofResult(
+            success=False, error_message="induction error"
+        )
         result = self.skill._prove_acl2(obligation, context)
         self.assertFalse(result.success)
         self.assertIn("induction error", result.error_message)
@@ -143,10 +169,19 @@ class TestProofSkillKoika(unittest.TestCase):
     def test_prove_koika_success(self):
         obligation = {"property": "my_prop"}
         context = {"coq_file_path": "/path/file.v", "theorem_name": "my_prop_proved"}
-        self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="Proof. trivial. Qed.")
+        self.mock_prover.prove_theorem.return_value = ProofResult(
+            success=True, proof_script="Proof. trivial. Qed."
+        )
         result = self.skill._prove_koika(obligation, context)
         self.assertTrue(result.success)
         self.assertEqual(result.metadata["backend"], "koika")
+        # Verify call with initial_script=None
+        self.mock_prover.prove_theorem.assert_called_once_with(
+            coq_file=Path("/path/file.v"),
+            theorem_name="my_prop_proved",
+            tactic_hints=None,
+            initial_script=None,
+        )
 
     def test_prove_koika_missing_coq_file(self):
         obligation = {"property": "my_prop"}
@@ -190,7 +225,11 @@ class TestModelCheckProver(unittest.TestCase):
 
     def test_failure(self):
         prover = ModelCheckProver()
-        self.mock_run.return_value = {"success": False, "status": "disproved", "counterexample_trace": Path("/trace.vcd")}
+        self.mock_run.return_value = {
+            "success": False,
+            "status": "disproved",
+            "counterexample_trace": Path("/trace.vcd"),
+        }
         result = prover.prove(Path("/rtl.v"), Path("/assert.sv"), "top")
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "disproved")
@@ -217,7 +256,11 @@ class TestProofSkillModelCheck(unittest.TestCase):
 
     def test_prove_model_check_success(self):
         obligation = {"engine": "model_checking", "property": "test_prop"}
-        context = {"rtl_file_path": "/rtl/test.v", "assertions_file_path": "/assert/test.sv", "top_module": "top"}
+        context = {
+            "rtl_file_path": "/rtl/test.v",
+            "assertions_file_path": "/assert/test.sv",
+            "top_module": "top",
+        }
         with patch.object(ModelCheckProver, "prove") as mock_mc:
             mock_mc.return_value = {"success": True, "status": "proved"}
             result = self.skill._prove_model_check(obligation, context)
@@ -228,7 +271,11 @@ class TestProofSkillModelCheck(unittest.TestCase):
         obligation = {"engine": "model_checking", "property": "test_prop"}
         context = {"rtl_file_path": "/rtl/test.v", "assertions_file_path": "/assert/test.sv"}
         with patch.object(ModelCheckProver, "prove") as mock_mc:
-            mock_mc.return_value = {"success": False, "status": "disproved", "error": "assertion violated"}
+            mock_mc.return_value = {
+                "success": False,
+                "status": "disproved",
+                "error": "assertion violated",
+            }
             result = self.skill._prove_model_check(obligation, context)
             self.assertFalse(result.success)
             self.assertIn("assertion violated", result.error_message)

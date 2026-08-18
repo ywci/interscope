@@ -148,11 +148,7 @@ class SpecModule:
     property_ops: List[SpecPropertyOp] = field(default_factory=list)
     directive_ops: List[SpecDirectiveOp] = field(default_factory=list)
     schedule_op: Optional[SpecScheduleOp] = None
-
-    # Currently kept as raw dicts; a dedicated `ProofObligation` dataclass
-    # may be introduced in a future revision to improve type safety.
     proof_obligations: List[Dict[str, Any]] = field(default_factory=list)
-
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:

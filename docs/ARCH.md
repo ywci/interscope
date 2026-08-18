@@ -1,4 +1,6 @@
-```text
+# Project Structure
+
+```
 interscope/
 ├── conf/                              # Configuration directory
 │   ├── config.yaml                    # Main configuration (LLM keys, prover settings, PERF, etc.)
@@ -17,7 +19,8 @@ interscope/
 │       │   ├── sim.py                 # Simulate a design, returns SimulationReport, optional coverage
 │       │   ├── lift.py                # `specir lift`: VCD → abstract trace YAML
 │       │   ├── check.py               # `specir check`: check properties against an abstract trace
-│       │   └── query.py               # Query evidence registry; added export, stats, filter sub‑commands
+│       │   ├── query.py               # Query evidence registry; added export, stats, filter sub‑commands
+│       │   └── validate_config.py     # Validate config.yaml for conflicts (PERF vs. use_proof_library)
 │       ├── parser/                    # YAML → Abstract Syntax Tree (AST)
 │       │   ├── ast.py                 # Dataclasses for all SpecIR constructs; PERF fields on ProofObligation
 │       │   ├── parser.py              # Loads YAML, builds AST, reports syntax errors; parses PERF overrides
@@ -50,27 +53,39 @@ interscope/
 │       │   ├── proof/                 # Theorem proving support
 │       │   │   ├── proof.py           # Abstract ProofResult with iterations, duration, backend, metadata
 │       │   │   ├── proof_skill.py     # LLM‑driven proof orchestrator; dispatches to Koika/ACL2/MC, PERF integration
+│       │   │   ├── prelude_templates.py  # Standard prelude templates for each proof backend
+│       │   │   ├── structural_validator.py # Structural validation of Coq proof scripts
+│       │   │   ├── tactic_modernizer.py   # Tactic modernisation for Coq proof scripts
+│       │   │   ├── domain_tactics.py      # Domain‑specific proof patterns and lemma hints (single‑brace templates)
+│       │   │   ├── proof_pattern_cache.py # Persistent cache for successful proofs and reusable tactic patterns
 │       │   │   ├── koika/             # Kōika/Coq proof backend
-│       │   │   │   ├── prover.py      # Interactive prover (rocq‑mcp + LLM); returns ProofResult
+│       │   │   │   ├── prover.py      # Interactive prover (rocq‑mcp + LLM); returns ProofResult; built‑in proofs use single braces
 │       │   │   │   ├── proof_gen.py   # LLM prompts for Coq proofs, tactic extraction, PERF multi‑variant generation
-│       │   │   │   └── repair.py      # One‑shot repair of failed Coq proofs using LLM
+│       │   │   │   ├── repair.py      # One‑shot repair of failed Coq proofs using LLM
+│       │   │   │   ├── auto_patcher.py    # Deterministic patching of common Coq errors (deprecated notations, boolean discriminate, orphan bullets)
+│       │   │   │   └── template_gen.py    # Template‑based Coq proof variant generator; emits single‑brace proofs only
 │       │   │   └── acl2/              # ACL2 proof backend
 │       │   │       ├── prover.py      # High‑level ACL2 prover with checkpoint/repair; returns ProofResult
 │       │   │       ├── proof_gen.py   # ACL2 proof generation prompts, PERF variant generation
-│       │   │       └── repair.py      # Iterative repair of ACL2 hints/defuns
+│       │   │       ├── repair.py      # Iterative repair of ACL2 hints/defuns
+│       │   │       └── template_gen.py    # Template‑based ACL2 proof variant generator
 │       │   └── perf/                  # PERF: Proof tree Exploration with Reflective Feedback
 │       │       ├── perf_config.py     # Configuration dataclass, validation, loading from global/obligation metadata
 │       │       ├── perf_evidence.py   # PERF‑specific evidence management (proofs, counterexamples, statistics)
 │       │       ├── perf_parallel.py   # Thread‑pool evaluator for parallel candidate verification
 │       │       ├── perf_scorer.py     # Multi‑dimensional scoring via tournament‑style LLM comparisons and Pareto optimality
 │       │       ├── perf_stats.py      # Statistics collection and reporting (nodes, depths, tokens)
-│       │       └── perf_traversal.py  # Core beam‑search engine with Pareto pruning and reflective feedback
+│       │       ├── perf_analyzer.py   # Structural analysis of a Coq proof obligation for PERF
+│       │       ├── perf_traversal.py  # Core beam‑search engine with Pareto pruning and reflective feedback
+│       │       ├── error_history.py   # Dedicated PERF error‑history tracker for failure deduplication
+│       │       └── perf_diagnostics.py # Human‑readable PERF failure diagnostics generation
 │       ├── backends/                  # Low‑level wrappers for external tools
 │       │   ├── koika_compiler.py      # Kōika compiler wrapper (cuttlec) for existing .ml files
 │       │   ├── acl2_client.py         # ACL2 MCP client (background event loop, synchronous API)
 │       │   ├── verilator_sim.py       # Verilator build & run; optional coverage collection flag
 │       │   ├── llm_client.py          # Multi‑provider LLM client (OpenAI, Anthropic, Ollama, DeepSeek) with batch/structured
-│       │   └── rocq_client.py         # rocq‑mcp MCP client (JSON‑RPC, Coq sessions, workspace resolution)
+│       │   └── rocq_client.py         # rocq‑mcp MCP client (JSON‑RPC, Coq sessions, workspace resolution,
+│       │                              # automatic -R workspace/Test load path, coqc fallback)
 │       ├── evidence/                  # Evidence registry (proven theorems, counterexamples, traces, invariants)
 │       │   ├── registry.py            # SQLite‑backed registry; new fields (design_name, iterations, llm_used),
 │       │   │                          # export/stats/query methods
@@ -87,10 +102,11 @@ interscope/
 │           └── yosys_synth.py         # Yosys synthesis wrapper for area, delay, cell count extraction (RQ5)
 ├── tests/                             # Unit and integration tests (pytest)
 │   ├── unit/                          # Unit tests (fast, isolated)
-│   │   └── ... (existing test files)  # e.g., test_ast.py, test_parser.py, test_dialects.py, etc.
 │   └── integration/                   # End‑to‑end tests (require installed backends)
-│       └── ... (existing test dirs)   # e.g., fifo/, alu/, counter/
-└── scripts/                           # Development utilities
-    ├── vcd_to_trace.py                # VCD → trace dialect debug script; PERF extensions for trace filtering
-    └── extract_mapping.py             # Extract SpecIR mapping from Verilog annotations; PERF‑specific fields
+├── scripts/                           # Development utilities
+│   ├── vcd_to_trace.py                # VCD → trace dialect debug script; PERF extensions for trace filtering
+│   └── extract_mapping.py             # Extract SpecIR mapping from Verilog annotations; PERF‑specific fields
+├── run.sh                             # Main entry point wrapper script
+├── install.sh                         # Installation script
+└── README.md                          # Project documentation
 ```

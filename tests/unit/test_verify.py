@@ -74,6 +74,7 @@ class TestVerifyTheoremProving:
         return_value={
             "directories": {"build": "build"},
             "provers": {"koika": {"prove": {}}},
+            "proof": {"perf": {"enabled": False}},  # ensure PERF config exists
         }
     )
     def test_koika_proof_passes(
@@ -128,7 +129,8 @@ class TestVerifyTheoremProving:
         "specir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
-            "provers": {"koika": {"prove": {}}}
+            "provers": {"koika": {"prove": {}}},
+            "proof": {"perf": {"enabled": False}},
         }
     )
     def test_koika_proof_fails(
@@ -179,6 +181,7 @@ class TestVerifyTheoremProving:
         return_value={
             "directories": {"build": "build"},
             "provers": {"koika": {"prove": {}}},
+            "proof": {"perf": {"enabled": False}},
         },
     )
     def test_backend_filtering(
@@ -233,6 +236,7 @@ class TestVerifyModelChecking:
         return_value={
             "directories": {"build": "build"},
             "verification": {"bmc_max_depth": 100},
+            "proof": {"perf": {"enabled": False}},
         }
     )
     def test_mc_passes(
@@ -299,7 +303,8 @@ class TestVerifyModelChecking:
         "specir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
-            "verification": {"bmc_max_depth": 100}
+            "verification": {"bmc_max_depth": 100},
+            "proof": {"perf": {"enabled": False}},
         }
     )
     def test_mc_counterexample(
@@ -416,6 +421,7 @@ class TestVerifyModelChecking:
         return_value={
             "directories": {"build": "build"},
             "verification": {"bmc_max_depth": 100},
+            "proof": {"perf": {"enabled": False}},
         },
     )
     def test_mixed_theorem_and_mc(

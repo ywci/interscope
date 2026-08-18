@@ -4,15 +4,15 @@ llm:
   api_key: "not-needed" # set per provider requirements
   base_url: "http://localhost:11434/v1" # OpenAI‑compatible endpoint
   temperature: 0.2
-  max_tokens: 131072
-  timeout: 120 # seconds per API call
+  max_tokens: 8192 # output token limit (not context length)
+  timeout: 300 # seconds per API call
   retries: 3
 
 provers:
   koika:
     enabled: true
     lemma_mining: true # auto‑generate trivial invariants
-    use_mc_lemmas: true # inject model‑checked lemmas
+    use_mc_lemmas: false # model checking currently disabled for Koika
     use_proof_library: false # must be false when PERF is enabled
     prove:
       skill: "rocq-mcp"
@@ -35,7 +35,13 @@ provers:
       pre_simplify: true
       invariant_mining: true
       skeleton_reflection: true
-      skeleton_step_tactics: [] # extra tactics for the skeleton proof
+      skeleton_step_tactics: []
+      use_rocq_mcp: false
+      structural_validation: true # enable structural pre‑filter
+      tactic_modernization: true # automatically modernize deprecated tactics
+      inject_prelude: true # inject standard prelude into every Coq file
+      use_stronger_llm: false # use stronger LLM fallback when normal attempts fail
+      max_stronger_attempts: 3 # number of additional full‑proof attempts
 
   acl2:
     enabled: true
@@ -59,11 +65,36 @@ verification:
   bmc_max_depth: 100
   ic3_max_steps: 1000
   formal_timeout: 300
-  split_monolithic_rules: false # set to true to auto‑split on the 'split' attribute
+  split_monolithic_rules: true # enable rule splitting to break deep ite chains
   rule_split_attribute: "split"
 
 proof:
   max_repair_attempts: 5 # used when PERF is disabled
+
+  structural_validation:
+    enabled: true
+    check_bullets: true
+    check_imports: true
+    check_deprecated_tactics: true
+    auto_repair: false
+
+  tactic_modernization:
+    enabled: true
+    replace_deprecated: true
+    convert_discriminate_to_inversion: false
+    use_lia_for_arithmetic: true
+
+  fallback:
+    use_stronger_llm: true
+    max_stronger_attempts: 3
+    use_rocq_mcp: true
+    use_interactive: true
+
+  llm_strong:
+    provider: "openai"
+    model: "gpt-4o"
+    temperature: 0.1
+    max_tokens: 8192
 
   # PERF: Proof tree Exploration with Reflective Feedback
   perf:
@@ -74,35 +105,39 @@ proof:
     depth_limit: 3 # L – maximum refinement iterations
 
     dimensions:
-    - "subgoal_reduction" # Coq subgoals closed relative to parent
-    - "trace_alignment" # how well the proof addresses MC trace
-    - "syntactic_purity" # favours simpler, less invasive repairs
+    - "subgoal_reduction"
+    - "trace_alignment"
+    - "syntactic_purity"
     primary_dimension: "subgoal_reduction"
 
-    scoring_tournament_size: 2 # pairwise comparisons per node
-    generation_temperature: 0.4 # LLM temperature for child generation
-    always_verify_children: true # run Coq/MC on every generated child
-    max_workers: 4 # parallel evaluation threads
-    timeout_per_node: 300 # seconds per node verification
-    trace_alignment_weight: 0.6 # weight for trace_alignment dimension
+    scoring_tournament_size: 2
+    generation_temperature: 0.4
+    always_verify_children: true
+    max_workers: 4
+    timeout_per_node: 300
+    trace_alignment_weight: 0.6
 
     try_skeleton_first: true # fast skeleton proof before full beam search
 
-    # Temperature scheduling (reduce exploration over depths)
-    temperature_decay: 0.0 # factor (0.0 = no decay, 0.9 → reduce to 90% each depth)
-    temperature_min: 0.1 # floor for temperature decay
+    # Temperature scheduling
+    temperature_decay: 0.0
+    temperature_min: 0.1
 
     # Early stopping
-    early_stop_patience: 0 # depths with no Pareto improvement before quitting (0 = off)
-    early_stop_min_improvement: 0.01 # relative improvement threshold to reset patience
+    early_stop_patience: 0
+    early_stop_min_improvement: 0.01
 
     # Template generator (LLM‑free fallback)
-    use_template_generator: false # if True, add template‑based variants
+    use_template_generator: false
 
     # Tool health / fast‑failure diagnostics
-    max_tool_failures_before_fallback: 3 # consecutive "Unknown error" failures before switching to coqc (0 = never)
-    enable_fast_failure_diagnostics: true # run diagnostic pass after depth 2 with no progress
+    max_tool_failures_before_fallback: 3
+    enable_fast_failure_diagnostics: true
     coqc_timeout: 300 # seconds for coqc fallback verifier
+
+    # Beam robustness and repair persistence
+    min_beam_size: 2
+    perf_light_repair_attempts: 2
 
     diversity_strategies:
     - "induction on reachable + auto/lia"
@@ -112,8 +147,74 @@ proof:
     - "apply inversion and substitution, then lia/nia"
     - "use functional induction instead of structural induction"
     - "forward reasoning: assert a helper lemma first"
-    unify_repair_and_generation: false # if true, combine repair prompt with variants
-    parallel_variant_generation: false # if true, use batch LLM calls for all parents
+    unify_repair_and_generation: false
+    parallel_variant_generation: false
+
+    error_history:
+      enabled: true
+      max_entries: 200
+
+    adaptive_branching:
+      enabled: true
+      min_branches_for_hard_obligations: 6
+      max_branches_for_hard_obligations: 12
+
+    mc_guided_prompt_enabled: false
+
+    proof_pattern_cache_path: "build/perf_proof_patterns.json"
+
+    backtracking:
+      enabled: true
+      stagnation_depth: 2
+      max_restarts: 3
+      max_backtrack_depth: 1
+      restore_beam_size: 3
+      avoid_repeated_branches: true
+      store_all_scored_children: true
+      diversity_dimensions:
+      - "novelty"
+      - "structural_difference"
+      diversity_weight: 0.3
+      alternate_primary_dimension: "syntactic_purity"
+      scoring_noise_std: 0.05
+      experience_penalty: true
+
+      # Forced regeneration after backtrack – disabled to save LLM calls
+      force_regeneration: false
+      regeneration_temperature_boost: 0.2
+
+      # Explicit destruct template injection (recommended for designs with nested ite)
+      use_destruct_template: true
+
+      regeneration_strategy_hint: |
+        **Base case (initial state):** simpl; intros Hvalid; discriminate Hvalid.
+        **Step case (induction step):** induction Hreach; inversion H; subst; simpl.
+        **Destruct on the operation condition before applying the induction hypothesis.**
+        Use: destruct (op_reg s =? 0) eqn:Hop0; [ | destruct (op_reg s =? 1) eqn:Hop1; [ | ... ]].
+        Each branch must rewrite the state fields according to the selected operation before using the IH.
+        - If the goal becomes a tautology (e.g., x = x), use reflexivity.
+        - Do NOT use reflexivity on hypotheses like 'false = true'; use discriminate instead.
+        - After inversion on the step hypothesis, rewrite the state projections before applying the induction hypothesis.
+
+      # On‑demand backtracking triggers
+      on_demand:
+        enabled: true
+        force_every: 0
+        time_limit: 0
+        max_same_error: 15
+        skip_forced_regeneration: true
+
+    reflection_quality_window: 2
+    min_reflection_quality: 0.2
+    max_reflection_retries: 2
+    reflection_quality_weights:
+      primary_delta: 0.4
+      error_shift: 0.2
+      subgoal_reduction: 0.25
+      diversity: 0.15
+
+    backtrack_force_strategy_switch: true
+    backtrack_diversity_boost_after_stagnation: 0.2
 
 lifting:
   vcd_parser: "builtin"
@@ -137,3 +238,9 @@ directories:
   temp: "build/temp"
   verify: "build/verify"
   tools: "tools"
+
+# Optional synthesis settings for RTL quality experiments
+synthesis:
+  library: null # path to Liberty file for technology mapping
+  flatten: true
+  timeout: 300 # seconds for Yosys

@@ -28,6 +28,7 @@ from specir.utils.config_loader import load_config, get_project_root, _validate_
 from specir.verification.proof.proof_skill import LLMProofSkill, ProofResult
 from specir.verification.perf.perf_config import PERFConfig, validate_perf_against_config
 from specir.verification.perf.perf_stats import PERFStats
+from specir.verification.perf.perf_diagnostics import print_diagnostics  # NEW
 from specir.utils.result_types import (
     VerificationReport,
     ProofObligationResult,
@@ -84,7 +85,7 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-perf", action="store_true",
                         help="Disable PERF (fall back to greedy repair)")
     parser.add_argument("--perf-stats", action="store_true",
-                        help="Print PERF traversal statistics (nodes, depth, tokens)")
+                        help="Print PERF traversal statistics (nodes, depth, tokens, diagnostics)")
     parser.add_argument("--no-pareto", action="store_true",
                         help="Disable Pareto pruning (for ablation experiments)")
     parser.add_argument("--no-trace-alignment", action="store_true",
@@ -111,15 +112,12 @@ def _extract_width(data_type: str) -> Optional[int]:
 
 
 def _print_perf_stats(stats: PERFStats) -> None:
-    """Pretty-print PERF traversal statistics."""
+    """Pretty‑print PERF traversal statistics using the diagnostics module."""
     if stats is None:
         return
     print()
-    print("=" * 60)
-    print("PERF Traversal Statistics")
-    print("=" * 60)
-    print(stats.summary())
-    print("=" * 60)
+    # Use the new diagnostics module for a richer report.
+    print_diagnostics(stats)
     print()
 
 
@@ -243,6 +241,7 @@ def verify_spec(args: argparse.Namespace) -> int:
         logger.warning("No proof obligations found in the specification.")
         return 0
 
+    # Filter obligations by backend if specified
     if args.backend:
         target_backend = _canonical_backend(args.backend)
         filtered = []
@@ -268,6 +267,83 @@ def verify_spec(args: argparse.Namespace) -> int:
             mc_obligations.append(po)
         else:
             theorem_obligations.append(po)
+
+    rtl_dir = None
+    assertions_dir = None
+    rtl_file = None
+    assertions_file = None
+    koika_needs_mc_prep = False
+
+    use_mc_lemmas = config.get("provers", {}).get("koika", {}).get("use_mc_lemmas", False)
+    if use_mc_lemmas:
+        # Check if any theorem obligation uses Koika backend
+        for po in theorem_obligations:
+            backend = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "")
+            if _canonical_backend(backend) == "koika":
+                koika_needs_mc_prep = True
+                break
+
+    if koika_needs_mc_prep:
+        logger.info("Preparing RTL and SVA for MC lemma injection.")
+        rtl_dir = out_dir / "mc_prep" / "rtl"
+        assertions_dir = out_dir / "mc_prep" / "assertions"
+        rtl_dir.mkdir(parents=True, exist_ok=True)
+        assertions_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Generate RTL via Koika
+            rtl_container = koika_to_rtl_convert(spec_module, rtl_dir)
+            rtl_file = rtl_dir / f"{design_name}.v"
+            if not rtl_file.exists():
+                nested = rtl_dir / f"{design_name}.v" / f"{design_name}.v"
+                if nested.exists():
+                    rtl_file = nested
+                else:
+                    # search
+                    for candidate in sorted(rtl_dir.rglob("*.v")):
+                        rtl_file = candidate
+                        break
+            if not rtl_file or not rtl_file.exists():
+                logger.error("Could not locate generated Verilog file for MC prep.")
+                koika_needs_mc_prep = False
+        except Exception as e:
+            logger.error("RTL generation for MC prep failed: %s", e)
+            koika_needs_mc_prep = False
+
+        if koika_needs_mc_prep and rtl_file and rtl_file.exists():
+            try:
+                # Generate SVA assertions
+                assert_mod = spec_to_assert_convert(spec_module)
+                signal_widths: Dict[str, int] = {}
+                for state_op in spec_module.state_ops:
+                    w = _extract_width(state_op.data_type)
+                    if w is not None:
+                        signal_widths[state_op.state_name] = w
+                for inp in spec_module.inputs:
+                    w = _extract_width(inp.data_type)
+                    if w is not None:
+                        signal_widths[inp.name] = w
+                for outp in spec_module.outputs:
+                    w = _extract_width(outp.data_type)
+                    if w is not None:
+                        signal_widths[outp.name] = w
+                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths)
+                assertions_file = assertions_dir / f"{design_name}_assertions.sv"
+                assertions_file.write_text(sva_code, encoding="utf-8")
+            except Exception as e:
+                logger.error("Assertion generation for MC prep failed: %s", e)
+                koika_needs_mc_prep = False
+                assertions_file = None
+
+    # Build context for proof skill
+    context: Dict[str, Any] = {
+        "spec_module": spec_module,
+        "config": config,
+    }
+    if koika_needs_mc_prep and rtl_file and assertions_file:
+        context["rtl_file_path"] = str(rtl_file)
+        context["assertions_file_path"] = str(assertions_file)
+        logger.info("Provided RTL and assertions paths for automatic MC lemma injection.")
 
     results: List[ProofObligationResult] = []
 
@@ -328,10 +404,9 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.info(f"Proving '{prop_name}' with backend {canonical}")
 
             start_time = time.time()
-            context: Dict[str, Any] = {
-                "spec_module": spec_module,
-                "config": config,
-            }
+            po_context = dict(context)  # copy
+            po_context["obligation"] = po
+
             if canonical == "koika":
                 if "koika" not in backend_files:
                     logger.error("Coq file not generated; cannot prove.")
@@ -342,8 +417,8 @@ def verify_spec(args: argparse.Namespace) -> int:
                         error_message="Coq file missing"
                     ))
                     continue
-                context["coq_file_path"] = backend_files["koika"]
-                context["theorem_name"] = f"{prop_name}_proved"
+                po_context["coq_file_path"] = backend_files["koika"]
+                po_context["theorem_name"] = f"{prop_name}_proved"
             else:  # acl2
                 if "acl2" not in backend_files:
                     logger.error("ACL2 file not generated; cannot prove.")
@@ -354,13 +429,13 @@ def verify_spec(args: argparse.Namespace) -> int:
                         error_message="ACL2 file missing"
                     ))
                     continue
-                context["acl2_file_path"] = backend_files["acl2"]
-                context["theorem_name"] = f"{prop_name}_correct"
+                po_context["acl2_file_path"] = backend_files["acl2"]
+                po_context["theorem_name"] = f"{prop_name}_correct"
                 statement = _extract_acl2_statement(acl2_mod, prop_name)
-                context["theorem_statement"] = statement
+                po_context["theorem_statement"] = statement
 
             try:
-                result: ProofResult = proof_skill.prove(po, context)
+                result: ProofResult = proof_skill.prove(po, po_context)
             except Exception as e:
                 logger.error(f"Proof attempt for '{prop_name}' failed with exception: {e}")
                 results.append(ProofObligationResult(
@@ -403,82 +478,89 @@ def verify_spec(args: argparse.Namespace) -> int:
         mc_dir = out_dir / "model_check"
         mc_dir.mkdir(exist_ok=True)
 
-        rtl_dir = mc_dir / "rtl"
-        rtl_dir.mkdir(exist_ok=True)
-        try:
-            rtl_container = koika_to_rtl_convert(spec_module, rtl_dir)
-        except Exception as e:
-            logger.error(f"RTL generation for model checking failed: {e}")
-            for po in mc_obligations:
-                prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
-                results.append(ProofObligationResult(
-                    property=prop,
-                    status=Status.ERROR,
-                    backend="model_checking",
-                    error_message=str(e)
-                ))
-            return _finish_summary(results, args)
-
-        rtl_file = rtl_dir / f"{design_name}.v"
-        if not rtl_file.exists():
-            alt = rtl_dir / f"{design_name}.v" / f"{design_name}.v"
-            if alt.exists():
-                rtl_file = alt
-            else:
-                logger.error("Could not locate generated Verilog file for model checking.")
+        # Use the already generated RTL/assertions if available, otherwise generate now
+        if not rtl_file:
+            rtl_dir = mc_dir / "rtl"
+            rtl_dir.mkdir(exist_ok=True)
+            try:
+                rtl_container = koika_to_rtl_convert(spec_module, rtl_dir)
+                rtl_file = rtl_dir / f"{design_name}.v"
+                if not rtl_file.exists():
+                    nested = rtl_dir / f"{design_name}.v" / f"{design_name}.v"
+                    if nested.exists():
+                        rtl_file = nested
+                    else:
+                        for candidate in sorted(rtl_dir.rglob("*.v")):
+                            rtl_file = candidate
+                            break
+            except Exception as e:
+                logger.error(f"RTL generation for model checking failed: {e}")
                 for po in mc_obligations:
                     prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
                     results.append(ProofObligationResult(
                         property=prop,
                         status=Status.ERROR,
                         backend="model_checking",
-                        error_message="Verilog file not found"
+                        error_message=str(e)
                     ))
                 return _finish_summary(results, args)
 
-        assertions_dir = mc_dir / "assertions"
-        assertions_dir.mkdir(exist_ok=True)
-        try:
-            assert_mod = spec_to_assert_convert(spec_module)
-            mc_prop_names = {
-                po.get("property") if isinstance(po, dict) else getattr(po, "property", None)
-                for po in mc_obligations
-            }
-            assert_mod.always_checks = [
-                c for c in assert_mod.always_checks
-                if getattr(c, 'label', None) in mc_prop_names
-            ]
-            assert_mod.properties = [
-                p for p in assert_mod.properties
-                if getattr(p, 'label', None) in mc_prop_names
-            ]
-            signal_widths: Dict[str, int] = {}
-            for state_op in spec_module.state_ops:
-                w = _extract_width(state_op.data_type)
-                if w is not None:
-                    signal_widths[state_op.state_name] = w
-            for inp in spec_module.inputs:
-                w = _extract_width(inp.data_type)
-                if w is not None:
-                    signal_widths[inp.name] = w
-            for outp in spec_module.outputs:
-                w = _extract_width(outp.data_type)
-                if w is not None:
-                    signal_widths[outp.name] = w
-            sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths)
-            assertions_file = assertions_dir / f"{design_name}_assertions.sv"
-            assertions_file.write_text(sva_code, encoding="utf-8")
-        except Exception as e:
-            logger.error(f"Assertion generation failed: {e}")
+        if not rtl_file or not rtl_file.exists():
+            logger.error("Could not locate generated Verilog file for model checking.")
             for po in mc_obligations:
                 prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
                 results.append(ProofObligationResult(
                     property=prop,
                     status=Status.ERROR,
                     backend="model_checking",
-                    error_message=str(e)
+                    error_message="Verilog file not found"
                 ))
             return _finish_summary(results, args)
+
+        if not assertions_file:
+            assertions_dir = mc_dir / "assertions"
+            assertions_dir.mkdir(exist_ok=True)
+            try:
+                assert_mod = spec_to_assert_convert(spec_module)
+                mc_prop_names = {
+                    po.get("property") if isinstance(po, dict) else getattr(po, "property", None)
+                    for po in mc_obligations
+                }
+                assert_mod.always_checks = [
+                    c for c in assert_mod.always_checks
+                    if getattr(c, 'label', None) in mc_prop_names
+                ]
+                assert_mod.properties = [
+                    p for p in assert_mod.properties
+                    if getattr(p, 'label', None) in mc_prop_names
+                ]
+                signal_widths: Dict[str, int] = {}
+                for state_op in spec_module.state_ops:
+                    w = _extract_width(state_op.data_type)
+                    if w is not None:
+                        signal_widths[state_op.state_name] = w
+                for inp in spec_module.inputs:
+                    w = _extract_width(inp.data_type)
+                    if w is not None:
+                        signal_widths[inp.name] = w
+                for outp in spec_module.outputs:
+                    w = _extract_width(outp.data_type)
+                    if w is not None:
+                        signal_widths[outp.name] = w
+                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths)
+                assertions_file = assertions_dir / f"{design_name}_assertions.sv"
+                assertions_file.write_text(sva_code, encoding="utf-8")
+            except Exception as e:
+                logger.error(f"Assertion generation failed: {e}")
+                for po in mc_obligations:
+                    prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
+                    results.append(ProofObligationResult(
+                        property=prop,
+                        status=Status.ERROR,
+                        backend="model_checking",
+                        error_message=str(e)
+                    ))
+                return _finish_summary(results, args)
 
         try:
             mc_result = run_model_check(

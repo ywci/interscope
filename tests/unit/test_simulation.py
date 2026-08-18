@@ -1,6 +1,6 @@
 # tests/unit/test_simulation.py
 #
-# Unit tests for the high-level simulation orchestrator (revised).
+# Unit tests for the high-level simulation orchestrator.
 # Verifies that simulate_design calls the consolidated
 # koika_to_rtl synthesis pass, the Verilator backend, and
 # optionally generates assertion files.

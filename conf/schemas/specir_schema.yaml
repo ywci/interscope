@@ -115,7 +115,7 @@ properties:
             priority: { type: integer }
             attributes:
               type: array
-              items: { enum: [ atomic, speculative, commutative ] }
+              items: { enum: [ atomic, speculative, commutative, split ] }
             evidence: { $ref: "#/definitions/evidence_ref" }
       directives:
         type: array
@@ -201,7 +201,7 @@ properties:
           properties:
             property: { type: string }
             status: { enum: [ unproved, proved, disproved, inconclusive ] }
-            engine: { enum: [ theorem_proving, model_checking, simulation ] }
+            engine: { enum: [ theorem_proving, model_checking, simulation, perf ] }
             backend:
               enum: [ koika, kōika, acl2 ]
             artifact:
@@ -213,6 +213,37 @@ properties:
             guarantees: { type: array, items: { type: [ string, array ] } }
             metadata:
               type: object
+              properties:
+                perf:
+                  type: object
+                  properties:
+                    # Common PERF fields
+                    enabled: { type: boolean }
+                    beam_size: { type: integer, minimum: 1 }
+                    branches_per_node: { type: integer, minimum: 1 }
+                    depth_limit: { type: integer, minimum: 1 }
+                    dimensions:
+                      type: array
+                      items: { type: string }
+                    primary_dimension: { type: string }
+                    generation_temperature: { type: number, minimum: 0.0, maximum: 1.0 }
+                    trace_alignment_weight: { type: number, minimum: 0.0, maximum: 1.0 }
+                    # NEW fields
+                    error_history_enabled: { type: boolean }
+                    error_history_max_entries: { type: integer, minimum: 1 }
+                    adaptive_branching:
+                      oneOf:
+                      - type: boolean
+                      - type: object
+                        properties:
+                          enabled: { type: boolean }
+                          min_branches_for_hard_obligations: { type: integer, minimum: 1 }
+                          max_branches_for_hard_obligations: { type: integer, minimum: 1 }
+                        additionalProperties: false
+                    mc_guided_prompt_enabled: { type: boolean }
+                    proof_pattern_cache_path: { type: string }
+                    # Allow additional future PERF fields
+                  additionalProperties: true
               additionalProperties: true
             confidence: { type: number, minimum: 0, maximum: 1 }
             feedback:

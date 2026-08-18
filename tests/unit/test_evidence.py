@@ -7,7 +7,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from specir.evidence.registry import EvidenceRegistry
 from specir.evidence.annotator import (
     create_evidence_ref,
@@ -124,67 +124,73 @@ class TestAnnotator:
         assert ev.engine == "koika"
         assert ev.status == "proved"
 
-    def test_annotate_module(self, registry):
+    def test_annotate_module(self):
         mod = Module(name="test")
         ev = Evidence(
             type="simulation_trace",
             ref=EvidenceRef(type="uri", value="file://sim.vcd"),
             engine="sim",
         )
-        annotate_module(mod, ev, property_name="prop")
+        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+            annotate_module(mod, ev, property_name="prop")
         assert len(mod.evidence) == 1
         assert mod.evidence[0].type == "simulation_trace"
 
-    def test_annotate_state(self, registry):
+    def test_annotate_state(self):
         st = State(name="x", kind="register", type="bool")
         ev = Evidence(
             type="inductive_invariant",
             ref=EvidenceRef(type="local_id", value="inv_x"),
             engine="IC3"
         )
-        annotate_state(st, ev)
+        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+            annotate_state(st, ev)
         assert st.evidence is not None
         assert st.evidence.value == "inv_x"
 
-    def test_annotate_rule(self, registry):
+    def test_annotate_rule(self):
         r = Rule(name="r1")
         ev = Evidence(
             type="coq_theorem",
             ref=EvidenceRef(type="uri", value="file://proof.v"),
             engine="koika"
         )
-        annotate_rule(r, ev)
+        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+            annotate_rule(r, ev)
         assert r.evidence.value == "file://proof.v"
 
-    def test_annotate_property(self, registry):
+    def test_annotate_property(self):
         p = Property(name="prop1", kind="safety", expression=None)
         ev = Evidence(
             type="counterexample_trace",
             ref=EvidenceRef(type="uri", value="file://ce.vcd"),
             engine="BMC"
         )
-        annotate_property(p, ev, property_name="prop1")
+        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+            annotate_property(p, ev, property_name="prop1")
         assert len(p.evidence) == 1
         assert p.evidence[0].value == "file://ce.vcd"
 
-    def test_annotate_component(self, registry):
+    def test_annotate_component(self):
         comp = ComponentInstance(name="u0", module="sub")
         ev = Evidence(
             type="simulation_trace",
             ref=EvidenceRef(type="uri", value="file://trace.vcd"),
             engine="sim"
         )
-        annotate_component(comp, ev)
+        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+            annotate_component(comp, ev)
         assert comp.evidence.value == "file://trace.vcd"
 
-    def test_annotate_proof_obligation(self, registry):
+    def test_annotate_proof_obligation(self):
         po = ProofObligation(property="p", status="unproved", engine="theorem_proving")
         ev = Evidence(
             type="coq_theorem",
             ref=EvidenceRef(type="uri", value="file://proof.v"),
             engine="koika"
         )
-        annotate_proof_obligation(po, ev)
+        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+            annotate_proof_obligation(po, ev)
         assert po.artifact["type"] == "coq_theorem"
         assert po.artifact["ref"] == "file://proof.v"
 

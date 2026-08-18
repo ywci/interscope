@@ -78,6 +78,14 @@ def run_model_check(
 
     work_dir = Path(tempfile.mkdtemp(prefix="specir_mc_"))
     try:
+        prevalidate = mc_config.get("prevalidate", False)
+        if prevalidate:
+            if not _prevalidate_files(rtl_path, assertions_path, top_module):
+                logger.warning(
+                    "Yosys pre‑validation failed. Continuing with SymbiYosys anyway; "
+                    "sby will provide more detailed error output."
+                )
+
         sby_file = work_dir / "design.sby"
         _write_sby_file(
             sby_file,
@@ -159,6 +167,52 @@ def run_model_check(
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def _prevalidate_files(rtl_path: Path, assertions_path: Path, top_module: str) -> bool:
+    """
+    Run Yosys in a read‑only mode to check that the RTL and assertion
+    files can be parsed without syntax errors.
+
+    Args:
+        rtl_path:        Path to the RTL Verilog file.
+        assertions_path: Path to the assertions file.
+        top_module:      Name of the top‑level module.
+
+    Returns:
+        True if both files parse cleanly, False otherwise.
+    """
+    yosys = shutil.which("yosys")
+    if not yosys:
+        logger.debug("Yosys not found; skipping pre‑validation.")
+        return False
+
+    # Create a temporary script for Yosys.
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.ys', delete=False) as f:
+        f.write(f"read_verilog -sv {rtl_path}\n")
+        f.write(f"read_verilog -sv -formal {assertions_path}\n")
+        f.write(f"hierarchy -top {top_module}\n")
+        f.write("proc\n")   # Light processing to catch obvious issues.
+        script_path = Path(f.name)
+
+    try:
+        result = subprocess.run(
+            [yosys, "-s", str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.info("Yosys pre‑validation succeeded.")
+            return True
+        else:
+            logger.warning("Yosys pre‑validation failed:\n%s", result.stderr[:1000])
+            return False
+    except Exception as e:
+        logger.debug("Yosys pre‑validation exception: %s", e)
+        return False
+    finally:
+        script_path.unlink(missing_ok=True)
+
+
 def _write_sby_file(
     sby_path: Path,
     rtl_path: Path,
@@ -168,7 +222,19 @@ def _write_sby_file(
     depth: int,
     timeout: int
 ) -> None:
-    """Write a SymbiYosys .sby script for the given design."""
+    """
+    Write a SymbiYosys .sby script for the given design.
+
+    The script uses explicit ``read_verilog`` commands:
+
+    - ``read_verilog -sv <rtl>``       : Read the RTL design.
+    - ``read_verilog -sv -formal <assertions>``
+                                       : Read the SVA assertions in formal mode.
+    - ``prep -top <top_module>``       : Prepare the design for verification.
+
+    This ordering and the ``-formal`` flag are important for correct
+    handling of SystemVerilog Assertions by Yosys/SymbiYosys.
+    """
     mode = "bmc" if engine == "bmc" else "prove"
     options = f"mode {mode}\ndepth {depth}\ntimeout {timeout}"
 
@@ -179,8 +245,8 @@ def _write_sby_file(
 smtbmc z3
 
 [script]
-read -formal {assertions_path}
-read -sv {rtl_path}
+read_verilog -sv {rtl_path}
+read_verilog -sv -formal {assertions_path}
 prep -top {top_module}
 
 [files]

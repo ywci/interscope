@@ -1,14 +1,13 @@
 # src/specir/backends/llm_client.py
 #
-# Low-level LLM client supporting OpenAI, Anthropic, local (Ollama), and DeepSeek.
-# Provides a uniform interface for proof generation and hint repair.
-# Enhanced with debug logging for prompts and responses to track proof progress.
+# Low‑level LLM client supporting OpenAI, Anthropic, Ollama, and DeepSeek.
 
 import os
 import time
 import json
 import logging
 import concurrent.futures
+import threading
 from typing import Any, Dict, List, Optional, Union, Callable
 from specir.utils.logger import get_logger
 
@@ -16,6 +15,7 @@ logger = get_logger(__name__)
 
 try:
     from openai import OpenAI
+    import httpx
     HAS_OPENAI = True
 except ImportError:
     HAS_OPENAI = False
@@ -64,6 +64,7 @@ class LLMClient:
         self.timeout = timeout
         self.retries = retries
 
+        # DeepSeek is OpenAI‑compatible
         if self.provider == "deepseek":
             self.provider = "openai"
             if api_base is None:
@@ -71,6 +72,7 @@ class LLMClient:
             if api_key is None:
                 api_key = os.environ.get("DEEPSEEK_API_KEY")
 
+        # Obtain API key from environment if not provided
         if api_key is None:
             env_var = f"{self.provider.upper()}_API_KEY"
             api_key = os.environ.get(env_var)
@@ -84,9 +86,16 @@ class LLMClient:
                 raise ImportError(
                     "OpenAI client library required. Install with: pip install openai"
                 )
+            # Use a httpx.Timeout object with distinct connect/read/write/pool timeouts
+            client_timeout = httpx.Timeout(
+                connect=10.0,
+                read=self.timeout,
+                write=10.0,
+                pool=10.0
+            )
             client_kwargs: Dict[str, Any] = {
                 "api_key": self.api_key or "not-needed",
-                "timeout": self.timeout
+                "timeout": client_timeout,
             }
             if self.api_base:
                 client_kwargs["base_url"] = self.api_base
@@ -102,7 +111,10 @@ class LLMClient:
                     "Anthropic API key is required. "
                     "Set ANTHROPIC_API_KEY environment variable."
                 )
-            self._client = anthropic.Anthropic(api_key=self.api_key)
+            self._client = anthropic.Anthropic(
+                api_key=self.api_key,
+                timeout=self.timeout,
+            )
 
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
@@ -110,12 +122,38 @@ class LLMClient:
         self._total_prompt_tokens = 0
         self._total_completion_tokens = 0
 
+    def _call_with_timeout(self, func, timeout: float, *args, **kwargs) -> Any:
+        """
+        Execute *func* in a daemon thread and abort if it exceeds *timeout* seconds.
+        Returns the return value of *func* on success, raises LLMClientError on timeout.
+        """
+        result_container = {}
+        exception_container = []
+
+        def target():
+            try:
+                result_container["value"] = func(*args, **kwargs)
+            except Exception as e:
+                exception_container.append(e)
+
+        thread = threading.Thread(target=target, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout)
+
+        if thread.is_alive():
+            raise LLMClientError(f"LLM call timed out after {timeout}s")
+
+        if exception_container:
+            raise exception_container[0]
+
+        return result_container.get("value")
+
     def generate(
         self,
         prompt: Optional[str] = None,
         messages: Optional[List[Dict[str, str]]] = None,
         system: Optional[str] = None,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> str:
         """
         Generate a completion.
@@ -161,22 +199,32 @@ class LLMClient:
 
     def _call_openai(self, messages: List[Dict[str, str]], max_tokens: Optional[int] = None) -> str:
         """Use the OpenAI (or compatible) chat completions endpoint."""
+        effective_timeout = self.timeout + 30   # give a little extra over the HTTP timeout
         for attempt in range(self.retries):
             try:
-                response = self._client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=max_tokens or self.max_tokens
+                # Wrap the actual API call in a thread to enforce a hard deadline
+                return self._call_with_timeout(
+                    self._openai_request, effective_timeout, messages, max_tokens
                 )
-
-                if hasattr(response, "usage") and response.usage:
-                    self._total_prompt_tokens += response.usage.prompt_tokens
-                    self._total_completion_tokens += response.usage.completion_tokens
-                return response.choices[0].message.content
+            except LLMClientError as e:
+                # Explicit timeout – no retry, re‑raise
+                raise
             except Exception as e:
                 if not self._should_retry(attempt, "OpenAI", e):
                     raise LLMClientError(f"OpenAI API call failed: {e}") from e
+
+    def _openai_request(self, messages: List[Dict[str, str]], max_tokens: Optional[int]) -> str:
+        """The actual OpenAI API call – may be called in a thread."""
+        response = self._client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=self.temperature,
+            max_tokens=max_tokens or self.max_tokens,
+        )
+        if hasattr(response, "usage") and response.usage:
+            self._total_prompt_tokens += response.usage.prompt_tokens
+            self._total_completion_tokens += response.usage.completion_tokens
+        return response.choices[0].message.content
 
     def _call_anthropic(self, messages: List[Dict[str, str]], max_tokens: Optional[int] = None) -> str:
         """Use the Anthropic Messages API."""
@@ -188,22 +236,34 @@ class LLMClient:
             else:
                 user_messages.append(msg)
 
+        effective_timeout = self.timeout + 30
         for attempt in range(self.retries):
             try:
-                response = self._client.messages.create(
-                    model=self.model,
-                    max_tokens=max_tokens or self.max_tokens,
-                    temperature=self.temperature,
-                    system=system_content,
-                    messages=user_messages
+                return self._call_with_timeout(
+                    self._anthropic_request, effective_timeout,
+                    system_content, user_messages, max_tokens
                 )
-                if hasattr(response, "usage"):
-                    self._total_prompt_tokens += response.usage.input_tokens
-                    self._total_completion_tokens += response.usage.output_tokens
-                return response.content[0].text
+            except LLMClientError:
+                raise
             except Exception as e:
                 if not self._should_retry(attempt, "Anthropic", e):
                     raise LLMClientError(f"Anthropic API call failed: {e}") from e
+
+    def _anthropic_request(self, system_content: Optional[str],
+                           user_messages: List[Dict[str, str]],
+                           max_tokens: Optional[int]) -> str:
+        """The actual Anthropic API call."""
+        response = self._client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens or self.max_tokens,
+            temperature=self.temperature,
+            system=system_content,
+            messages=user_messages,
+        )
+        if hasattr(response, "usage"):
+            self._total_prompt_tokens += response.usage.input_tokens
+            self._total_completion_tokens += response.usage.output_tokens
+        return response.content[0].text
 
     def _should_retry(self, attempt: int, provider_name: str, error: Exception) -> bool:
         """Return True if we should retry, False to raise."""
@@ -301,11 +361,9 @@ class LLMClient:
                     response_format=response_format,
                 )
                 content = response.choices[0].message.content
-                # If the response is already JSON, parse it.
                 try:
                     return json.loads(content)
                 except json.JSONDecodeError:
-                    # Sometimes the API returns the JSON inside a code block.
                     cleaned = content.strip()
                     if cleaned.startswith("```json"):
                         cleaned = cleaned[7:]
@@ -316,7 +374,6 @@ class LLMClient:
                     except json.JSONDecodeError as e:
                         raise LLMClientError(f"Failed to parse structured response: {e}\nResponse: {content}")
             except AttributeError:
-                # Some local endpoints may not support response_format.
                 logger.debug("response_format not supported by provider; falling back to free generation and parsing.")
                 content = self.generate(prompt=prompt, system=system, max_tokens=max_tokens)
                 return self._parse_structured_response(content, response_format)
@@ -331,20 +388,16 @@ class LLMClient:
         Tries to extract JSON from the content.
         """
         cleaned = content.strip()
-        # Remove markdown fences
         if cleaned.startswith("```json"):
             cleaned = cleaned[7:]
         if cleaned.endswith("```"):
             cleaned = cleaned[:-3]
         cleaned = cleaned.strip()
 
-        # Try to find a JSON object in the text
         try:
-            # If it looks like a complete JSON object, parse it.
             if cleaned.startswith("{") and cleaned.endswith("}"):
                 return json.loads(cleaned)
             else:
-                # Search for a JSON object with regex.
                 import re
                 match = re.search(r'\{.*\}', cleaned, re.DOTALL)
                 if match:
@@ -363,6 +416,7 @@ class LLMClient:
             "prompt_tokens": self._total_prompt_tokens,
             "completion_tokens": self._total_completion_tokens
         }
+
 
 def get_llm_client_from_config(config: Dict[str, Any]) -> LLMClient:
     """Create an LLMClient from the global configuration dictionary."""

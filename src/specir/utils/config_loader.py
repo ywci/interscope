@@ -78,20 +78,24 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     Apply PERF environment variable overrides to the configuration.
 
     Supported environment variables:
-      PERF_ENABLED           (true/false)
-      PERF_BEAM_SIZE         (int)
-      PERF_BRANCHES          (int, branches_per_node)
-      PERF_DEPTH             (int, depth_limit)
-      PERF_DIMENSIONS        (comma-separated list)
-      PERF_PRIMARY_DIMENSION (str)
-      PERF_TEMPERATURE       (float, generation_temperature)
-      PERF_MAX_WORKERS       (int)
-      PERF_TIMEOUT_NODE      (int, timeout_per_node)
-      PERF_TOURNAMENT_SIZE   (int, scoring_tournament_size)
-      PERF_ALWAYS_VERIFY     (true/false, always_verify_children)
-      PERF_MAX_TOOL_FAILURES (int, max_tool_failures_before_fallback)
-      PERF_FAST_FAILURE_DIAGNOSTICS (true/false, enable_fast_failure_diagnostics)
-      PERF_COQC_TIMEOUT      (int, coqc_timeout)
+      PERF_ENABLED                         (true/false)
+      PERF_BEAM_SIZE                       (int)
+      PERF_BRANCHES                        (int, branches_per_node)
+      PERF_DEPTH                           (int, depth_limit)
+      PERF_DIMENSIONS                      (comma-separated list)
+      PERF_PRIMARY_DIMENSION               (str)
+      PERF_TEMPERATURE                     (float, generation_temperature)
+      PERF_MAX_WORKERS                     (int)
+      PERF_TIMEOUT_NODE                    (int, timeout_per_node)
+      PERF_TOURNAMENT_SIZE                 (int, scoring_tournament_size)
+      PERF_ALWAYS_VERIFY                   (true/false, always_verify_children)
+      PERF_MAX_TOOL_FAILURES               (int, max_tool_failures_before_fallback)
+      PERF_FAST_FAILURE_DIAGNOSTICS        (true/false, enable_fast_failure_diagnostics)
+      PERF_COQC_TIMEOUT                    (int, coqc_timeout)
+      PERF_ON_DEMAND_BACKTRACK             (true/false, on_demand.enabled)
+      PERF_REFLECTION_QUALITY_WINDOW       (int, reflection_quality_window)
+      PERF_MIN_REFLECTION_QUALITY          (float, min_reflection_quality)
+      PERF_MAX_REFLECTION_RETRIES          (int, max_reflection_retries)
     """
     perf_cfg = config.setdefault("proof", {}).setdefault("perf", {})
 
@@ -166,6 +170,29 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     if "PERF_COQC_TIMEOUT" in os.environ:
         try:
             perf_cfg["coqc_timeout"] = int(os.environ["PERF_COQC_TIMEOUT"])
+        except ValueError:
+            pass
+
+    if "PERF_ON_DEMAND_BACKTRACK" in os.environ:
+        val = os.environ["PERF_ON_DEMAND_BACKTRACK"].lower()
+        on_demand_cfg = perf_cfg.setdefault("backtracking", {}).setdefault("on_demand", {})
+        on_demand_cfg["enabled"] = val in ("true", "1", "yes")
+
+    if "PERF_REFLECTION_QUALITY_WINDOW" in os.environ:
+        try:
+            perf_cfg["reflection_quality_window"] = int(os.environ["PERF_REFLECTION_QUALITY_WINDOW"])
+        except ValueError:
+            pass
+
+    if "PERF_MIN_REFLECTION_QUALITY" in os.environ:
+        try:
+            perf_cfg["min_reflection_quality"] = float(os.environ["PERF_MIN_REFLECTION_QUALITY"])
+        except ValueError:
+            pass
+
+    if "PERF_MAX_REFLECTION_RETRIES" in os.environ:
+        try:
+            perf_cfg["max_reflection_retries"] = int(os.environ["PERF_MAX_REFLECTION_RETRIES"])
         except ValueError:
             pass
 
@@ -294,6 +321,8 @@ def load_config(
             prove_cfg.setdefault("invariant_mining", True)
             prove_cfg.setdefault("skeleton_reflection", True)
             prove_cfg.setdefault("skeleton_step_tactics", [])
+            # New default for rocq-mcp master switch
+            prove_cfg.setdefault("use_rocq_mcp", True)
 
         elif prover == "acl2":
             prove_cfg = config["provers"]["acl2"]["prove"]
@@ -339,7 +368,14 @@ def load_config(
         "use_template_generator": False,
         "max_tool_failures_before_fallback": 3,
         "enable_fast_failure_diagnostics": True,
-        "coqc_timeout": 300
+        "coqc_timeout": 300,
+        # Reflection quality parameters
+        "reflection_quality_window": 2,
+        "min_reflection_quality": 0.2,
+        "max_reflection_retries": 2,
+        # Beam robustness and repair persistence
+        "min_beam_size": 2,
+        "perf_light_repair_attempts": 2,
     }
     config["proof"].setdefault("perf", {})
     for key, default in perf_defaults.items():

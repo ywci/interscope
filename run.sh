@@ -20,6 +20,10 @@ log_error()   { echo "${RED}${BOLD}[ERROR]${RESET} $*" >&2; exit 1; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
+    export PATH="$SCRIPT_DIR/.venv/bin:$PATH"
+fi
+
 if [[ -n "${PERF_BEAM_SIZE:-}" ]]; then
     export PERF_BEAM_SIZE
     log_info "PERF_BEAM_SIZE overridden to ${PERF_BEAM_SIZE}"
@@ -97,21 +101,21 @@ run_all_tests() {
 run_clean() {
     log_info "Cleaning generated files..."
 
-    find . -type f -name '*.pyc' -delete
+    find . -type f -name '*.pyc' -delete || true
     find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
     find . -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
 
-    find . -type f -name '_CoqProject' -delete
-    find . -type f -name '*.vo' -delete
-    find . -type f -name '*.vos' -delete
-    find . -type f -name '*.vok' -delete
-    find . -type f -name '*.glob' -delete
-    find . -type f -name '*.aux' -delete
-    find . -type f -name 'test.v' -delete
-    find . -type f -name 'test.ml' -delete
-    find . -type f -name 'test.mli' -delete
+    find . -type f -name '_CoqProject' -delete || true
+    find . -type f -name '*.vo' -delete || true
+    find . -type f -name '*.vos' -delete || true
+    find . -type f -name '*.vok' -delete || true
+    find . -type f -name '*.glob' -delete || true
+    find . -type f -name '*.aux' -delete || true
+    find . -type f -name 'test.v' -delete || true
+    find . -type f -name 'test.ml' -delete || true
+    find . -type f -name 'test.mli' -delete || true
 
-    rm -rf build/
+    rm -rf build/ || true
 
     log_success "Cleaned generated files."
 }
@@ -197,7 +201,6 @@ case "${1:-}" in
         run_clean
         ;;
     --compile|--verify|--sim|--lift|--check|--query)
-        # Backward-compatible direct dispatch to the respective CLI module
         check_uv
         subcmd="${1#--}"
         shift
@@ -214,8 +217,6 @@ case "${1:-}" in
         exec env PYTHONPATH=src uv run python scripts/extract_mapping.py "$@"
         ;;
     *)
-        # All other commands (including new global options like --batch) are
-        # forwarded to the new unified CLI
         check_uv
         exec env PYTHONPATH=src uv run python -m specir.cli.main "$@"
         ;;

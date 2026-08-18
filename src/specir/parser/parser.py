@@ -2,7 +2,6 @@
 #
 # YAML to AST parser for SpecIR (.specir) files.
 # Converts YAML dictionaries into the dataclasses defined in ast.py.
-# Revision: made status optional in proof obligations (defaults to "unproved").
 
 import yaml
 from pathlib import Path

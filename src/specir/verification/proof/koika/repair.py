@@ -7,13 +7,23 @@
 import os
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 from specir.backends.llm_client import LLMClient
 from specir.backends.rocq_client import RocqClient, RocqClientError
 from specir.utils.logger import get_logger
+from specir.verification.proof.koika.auto_patcher import auto_patch
+
+try:
+    from specir.verification.proof.koika.proof_gen import sanitize_coq_script
+except ImportError:
+    sanitize_coq_script = None
+
+try:
+    from specir.verification.proof.tactic_modernizer import modernize_tactics
+except ImportError:
+    modernize_tactics = None
 
 logger = get_logger(__name__)
-
 
 def repair_coq_proof(
     original_script: str,
@@ -27,9 +37,12 @@ def repair_coq_proof(
     """
     Attempt to repair a Coq proof script that failed with the given error.
 
-    The LLM is asked to generate a corrected script.  If *rocq_client* is
-    provided, the repaired script is written to a temporary file and
-    compiled; only scripts that pass compilation are returned.
+    The LLM is asked to generate a corrected script.  Before and after the
+    LLM, deterministic auto‑patching is applied to fix common mechanical
+    mistakes (deprecated notations, `discriminate` on boolean equalities,
+    bullet misuse).  If *rocq_client* is provided, the repaired script is
+    written to a temporary file and compiled; only scripts that pass
+    compilation are returned.
 
     Args:
         original_script: The failing Coq proof (should include ``Proof.`` …
@@ -46,12 +59,40 @@ def repair_coq_proof(
         compilable script was obtained (or, if no rocq_client is given,
         whether a plausible script was generated).
     """
+    patched = auto_patch(original_script, error_message)
+    if patched != original_script:
+        logger.info("Auto‑patcher modified the proof script; attempting to use it.")
+        # Apply sanitization and modernisation if available.
+        if sanitize_coq_script:
+            patched = sanitize_coq_script(patched)
+        if modernize_tactics:
+            patched = modernize_tactics(patched)
+
+        if rocq_client:
+            if _validate_with_rocq(rocq_client, patched):
+                logger.info("Auto‑patched script passed rocq validation.")
+                return True, patched
+        else:
+            if _basic_sanity(patched):
+                logger.info("Auto‑patched script passes basic sanity.")
+                return True, patched
+        # If auto‑patch didn't fully fix it, continue with LLM repair.
+
     prompt = _build_repair_prompt(
         original_script, error_message, theorem_name, theorem_statement
     )
 
     for attempt in range(max_attempts):
         repaired = llm_client.generate(prompt).strip()
+
+        # Apply deterministic auto‑patcher to LLM output.
+        repaired = auto_patch(repaired, error_message)
+
+        # Apply sanitization and modernisation.
+        if sanitize_coq_script:
+            repaired = sanitize_coq_script(repaired)
+        if modernize_tactics:
+            repaired = modernize_tactics(repaired)
 
         if not _basic_sanity(repaired):
             logger.warning(
@@ -136,7 +177,12 @@ def _build_repair_prompt(
     parts.append(
         "Please provide a corrected Coq proof script that fixes the error. "
         "Return only the Coq code from `Proof.` to `Qed.` (or `Admitted.` if "
-        "you cannot complete the proof). Do not include any extra commentary."
+        "you cannot complete the proof). Do not include any extra commentary.\n"
+        "Important rules:\n"
+        "- Do NOT use `discriminate` on boolean equalities like `(op_reg s =? 0) = true`.\n"
+        "  Use `inversion` or `rewrite Nat.eqb_eq in H` first.\n"
+        "- Use explicit braces `{ ... }` for each subgoal, not bullets `+` or `-`.\n"
+        "- Replace any deprecated `Nat.mod_add` with `Div0.mod_add`."
     )
     return "\n".join(parts)
 
@@ -159,3 +205,33 @@ def _update_repair_prompt(
 def _basic_sanity(script: str) -> bool:
     """Return True if the script contains the minimal expected structure."""
     return "Proof." in script and ("Qed." in script or "Admitted." in script)
+
+
+def _validate_with_rocq(
+    rocq_client: RocqClient,
+    script: str
+) -> bool:
+    """
+    Validate a proof script by compiling it in a temporary file using
+    the provided RocqClient.
+
+    Returns True if compilation succeeds, False otherwise.
+    """
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=".v", prefix="repair_validate_")
+        os.close(fd)
+        Path(tmp_path).write_text(script, encoding="utf-8")
+
+        compile_result = rocq_client.compile_file(Path(tmp_path))
+        error = rocq_client._extract_error_from_response(compile_result)
+        return error is None
+    except Exception as e:
+        logger.debug("Validation with rocq raised: %s", e)
+        return False
+    finally:
+        if tmp_path is not None and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass

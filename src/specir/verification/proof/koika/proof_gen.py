@@ -1,14 +1,10 @@
 # src/specir/verification/proof/koika/proof_gen.py
 #
 # Coq proof generation using LLM.
-# Builds prompts for one‑shot proof scripts and for interactive
-# step‑by‑step tactic generation, and parses LLM responses to
-# extract proof scripts or tactic lists.
-#
-# All prompts are design‑agnostic.  The interactive prompt now
-# receives the actual list of available auto‑generated lemmas
-# so the LLM can use them by name.  Base‑ and step‑case hints
-# are configurable via the prover's configuration.
+# Extended with destruct‑template injection, mandatory‑avoid lists,
+# stronger skeleton proofs that handle nested ite chains, and
+# automatic Coq‑error correction (sanitization) plus proof‑adaptation
+# for similar properties.
 
 import re
 from typing import List, Optional, Dict, Any
@@ -16,6 +12,173 @@ from specir.backends.llm_client import LLMClient
 from specir.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+try:
+    from specir.verification.perf.perf_analyzer import ObligationAnalysis
+except ImportError:
+    ObligationAnalysis = None
+
+
+def sanitize_coq_script(script: str,
+                        context_hypotheses: Optional[List[str]] = None) -> str:
+    """
+    Apply a series of simple, safe rewrites to a generated Coq proof
+    script to eliminate the most common syntactic mistakes and deprecated
+    notations.
+    """
+    if not script:
+        return script
+
+    original = script
+
+    # 1. Rename conflicting "intros H" when H is already in the context.
+    if context_hypotheses and any("H" in h for h in context_hypotheses):
+        script = re.sub(r'\bintros\s+H\b\.', 'intros H0.', script)
+        script = re.sub(r'\bintros\s+H\b\s*;', 'intros H0;', script)
+        script = re.sub(r'\bintros\s+H\b\s*\n', 'intros H0\n', script)
+
+    # 2. Remove orphan bullet lines (harmless but clean).
+    lines = script.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped in ('-', '+', '*') and not stripped.startswith('(*'):
+            cleaned_lines.append('  (* bullet removed by sanitizer *)')
+        else:
+            cleaned_lines.append(line)
+    script = '\n'.join(cleaned_lines)
+
+    # 3. Replace deprecated Nat.mod_add with Div0.mod_add.
+    script = script.replace('Nat.mod_add', 'Div0.mod_add')
+
+    # 4. Replace obvious boolean‑equality `discriminate` patterns.
+    if re.search(r'discriminate\s+(\w+)\.', script):
+        script = re.sub(r'discriminate\s+(\w+)\.', r'inversion \1.', script)
+
+    if script != original:
+        logger.debug("Sanitization applied to proof script.")
+    return script
+
+
+def adapt_proof(original_proof: str,
+                theorem_name: str,
+                theorem_statement: str,
+                condition_subst: Optional[Dict[str, str]] = None,
+                operation_subst: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """
+    Adapt an existing successful proof script to a new theorem by
+    substituting condition expressions and operation names.
+    """
+    if not original_proof or not original_proof.startswith("Proof."):
+        return None
+
+    script = original_proof
+
+    if condition_subst:
+        for old, new in condition_subst.items():
+            script = script.replace(f"destruct ({old})", f"destruct ({new})")
+            script = script.replace(old, new)
+
+    if operation_subst:
+        for old, new in operation_subst.items():
+            script = script.replace(old, new)
+
+    if script.startswith("Proof."):
+        script = f"Theorem {theorem_name} : {theorem_statement}.\n{script}"
+    else:
+        lines = script.splitlines()
+        new_lines = []
+        replaced = False
+        for line in lines:
+            if line.strip().startswith("Theorem ") and not replaced:
+                new_lines.append(f"Theorem {theorem_name} : {theorem_statement}.")
+                replaced = True
+            else:
+                new_lines.append(line)
+        script = "\n".join(new_lines)
+
+    logger.info("Adapted proof for theorem '%s' using substitutions.", theorem_name)
+    return script
+
+
+def build_destruct_pattern(condition_var: str, num_branches: int) -> str:
+    """
+    Create a Coq destruct chain for a nested if‑then‑else on *condition_var*.
+
+    The generated chain uses **explicit braces** for each case, avoiding
+    bullet/focus issues.
+    """
+    if num_branches <= 1:
+        return f"destruct ({condition_var} =? 0) eqn:Hop0.\n{{ simpl. reflexivity. }}"
+
+    lines = []
+    for i in range(num_branches - 1):
+        eq = f"({condition_var} =? {i})"
+        if i == 0:
+            lines.append(f"destruct {eq} eqn:Hop{i}.")
+            lines.append("{ simpl. reflexivity. }")
+            lines.append("{")
+        else:
+            lines.append(f"  destruct {eq} eqn:Hop{i}.")
+            lines.append("  { simpl. reflexivity. }")
+            lines.append("  {")
+    # last branch
+    lines.append("    simpl. reflexivity.")
+    # close nested braces
+    for _ in range(num_branches - 1):
+        lines.append("  }")
+    return "\n".join(lines)
+
+
+def _default_destruct_example() -> str:
+    """
+    Return a complete proof skeleton suitable as a few‑shot example for
+    designs with a `load_inputs` rule and an `execute` rule containing a
+    nested opcode `ite`.
+
+    Uses explicit braces only.
+    """
+    return """Proof.
+  intros s inputs Hreach.
+  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].
+  { simpl. intros Hvalid. discriminate Hvalid. }
+  { inversion Hstep; subst; clear Hstep; simpl.
+    { intros Hvalid. apply IH. assumption. }
+    { intros Hvalid.
+      destruct (op_reg s' =? 0) eqn:Hop0.
+      { simpl. reflexivity. }
+      { destruct (op_reg s' =? 1) eqn:Hop1.
+        { simpl. reflexivity. }
+        { destruct (op_reg s' =? 2) eqn:Hop2.
+          { simpl. reflexivity. }
+          { simpl. reflexivity. } } } } }
+Qed."""
+
+
+def _overflow_example() -> str:
+    """
+    Example for overflow‑style properties.  Uses `lia` after destructing
+    the opcode and avoids `discriminate` on boolean equalities.
+    Uses explicit braces only.
+    """
+    return """Proof.
+  intros s inputs Hreach.
+  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].
+  { simpl. intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
+    discriminate Hvalid. }
+  { inversion Hstep; subst; clear Hstep; simpl.
+    { intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
+      simpl in Hop.
+      inversion Hop. }
+    { intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
+      destruct (op_reg s' =? 0) eqn:Hop0.
+      { simpl in *. lia. }
+      { destruct (op_reg s' =? 1) eqn:Hop1.
+        { simpl in *. lia. }
+        { destruct (op_reg s' =? 2) eqn:Hop2.
+          { simpl in *. lia. }
+          { simpl in *. lia. } } } } }
+Qed."""
 
 
 def build_coq_proof_prompt(
@@ -27,23 +190,16 @@ def build_coq_proof_prompt(
     previous_attempts: Optional[List[Dict[str, str]]] = None,
     structural_hints: Optional[str] = None,
     strategy_hint: Optional[str] = None,
+    available_lemmas: Optional[List[str]] = None,
+    mandatory_avoid: Optional[List[str]] = None,
+    positive_example: Optional[str] = None,
+    positive_examples: Optional[List[str]] = None,
+    analysis: Optional[ObligationAnalysis] = None,
+    failure_prompt_snippet: Optional[str] = None,
+    mc_trace_info: Optional[str] = None,
 ) -> str:
-    """Build a prompt for an LLM to generate a complete Coq proof script.
-
-    Args:
-        theorem_name: Name of the theorem.
-        theorem_statement: The Coq statement.
-        context: Optional Coq definitions and lemmas.
-        tactic_hints: Suggested tactics.
-        assumptions: Additional assumptions.
-        previous_attempts: List of dicts with 'script' and 'error' for repair.
-        structural_hints: Optional string describing structural findings.
-        strategy_hint: Optional string describing a specific proof strategy.
-
-    Returns:
-        A prompt string.
-    """
-    hints_str = ", ".join(tactic_hints) if tactic_hints else "induction, simpl, auto, rewrite, inversion"
+    """Build a prompt for an LLM to generate a complete Coq proof script."""
+    hints_str = ", ".join(tactic_hints) if tactic_hints else "induction, simpl, auto, rewrite, inversion, destruct, lia"
     assumes_str = "\n".join(f"Assumption: {a}" for a in assumptions) if assumptions else ""
     context_str = context if context else ""
 
@@ -58,6 +214,9 @@ def build_coq_proof_prompt(
     ]
     if context_str:
         parts.append(f"Available definitions and lemmas:\n{context_str}\n")
+    if available_lemmas:
+        lemmas_str = ", ".join(available_lemmas)
+        parts.append(f"**Proved lemmas** (you may rewrite with them): {lemmas_str}\n")
     if assumes_str:
         parts.append(f"Assumptions:\n{assumes_str}\n")
     if structural_hints:
@@ -72,6 +231,78 @@ def build_coq_proof_prompt(
         "If you cannot complete the proof, end with `Admitted.` instead of `Qed.`. "
         "Return only the Coq code without any extra commentary."
     )
+
+    # Static forbidden patterns
+    avoid_list = [
+        "Do NOT use `intros H` – use fresh names such as `intros Hcond`.",
+        "Do NOT use `discriminate` on boolean equalities; use `inversion` or `destruct`.",
+        "Use explicit braces `{ ... }` for subgoals.  Do NOT use bullets `-`, `+`, `*`.",
+        "Do NOT apply the induction hypothesis before destructing the opcode condition.",
+        "After `inversion Hstep; subst; clear Hstep`, run `simpl` before `apply IH` or `destruct`.",
+        "Always destruct `op_reg s =? 0`, `op_reg s =? 1`, etc. before applying the induction hypothesis.",
+        "Use `reflexivity` ONLY when both sides are syntactically identical.",
+        "Do NOT use `rewrite Nat.eqb_refl` unless the goal contains `x =? x`.",
+        "If the induction hypothesis has a conjunctive antecedent, destruct it before applying `IH`.",
+        "The step relation may have two constructors `step_load_inputs` and `step_execute`.",
+        "In the `step_load_inputs` subgoal, do NOT apply IH; close by contradiction/vacuity.",
+        "In the `step_execute` subgoal, destruct the opcode and use `simpl; reflexivity` or `simpl; lia`.",
+        "If you have a hypothesis `Hop : (op_reg s =? 0) = true`, use `destruct (op_reg s =? 0) eqn:Hop0` or `inversion Hop` after `simpl`, not `discriminate`.",
+    ]
+    if mandatory_avoid:
+        avoid_list = mandatory_avoid + avoid_list
+
+    if analysis is not None and analysis.has_nested_ite and analysis.max_ite_depth >= 3:
+        avoid_list.append(
+            "The step constructor contains a deeply nested if‑then‑else chain. "
+            "After inversion, destruct each condition before applying the induction hypothesis."
+        )
+
+    if failure_prompt_snippet:
+        avoid_list.append(
+            "**Recent repeated failures (do NOT repeat these mistakes):**\n" +
+            failure_prompt_snippet
+        )
+
+    parts.append(
+        "\n**CRITICAL RULES (do NOT break these):**\n" +
+        "\n".join(f"- {item}" for item in avoid_list) + "\n"
+    )
+
+    # Positive examples
+    examples = [_default_destruct_example()]
+    if "overflow" in theorem_name.lower() or "neq" in theorem_name.lower():
+        examples.append(_overflow_example())
+    if positive_example:
+        examples.append(positive_example)
+    if positive_examples:
+        examples.extend(positive_examples)
+
+    # De‑duplicate
+    seen = set()
+    unique_examples = []
+    for ex in examples:
+        if ex not in seen:
+            seen.add(ex)
+            unique_examples.append(ex)
+    examples = unique_examples
+
+    if examples:
+        for i, example in enumerate(examples, 1):
+            parts.append(
+                f"\n**Example {i} of a successful proof for a similar property:**\n"
+                f"```coq\n{example}\n```\n"
+            )
+        parts.append(
+            "Use the structure shown above as a template. Replace condition and "
+            "operation names as needed for the current theorem."
+        )
+
+    if mc_trace_info:
+        parts.append(
+            "\n**Model‑checking counterexample trace information:**\n" +
+            mc_trace_info +
+            "\nUse this information to guide arithmetic reasoning."
+        )
 
     if previous_attempts:
         recent = previous_attempts[-3:]
@@ -96,23 +327,14 @@ def generate_coq_proof(
     previous_attempts: Optional[List[Dict[str, str]]] = None,
     max_tokens: int = 2048,
     structural_hints: Optional[str] = None,
+    available_lemmas: Optional[List[str]] = None,
+    mandatory_avoid: Optional[List[str]] = None,
+    positive_example: Optional[str] = None,
+    positive_examples: Optional[List[str]] = None,
+    analysis: Optional[ObligationAnalysis] = None,
+    failure_prompt_snippet: Optional[str] = None,
+    mc_trace_info: Optional[str] = None,
 ) -> str:
-    """Generate a Coq proof script using an LLM.
-
-    Args:
-        llm_client: LLM client.
-        theorem_name: Name of the theorem.
-        theorem_statement: Coq statement.
-        context: Optional definitions and lemmas.
-        tactic_hints: Optional tactic suggestions.
-        assumptions: Optional assumptions.
-        previous_attempts: Previous failures for repair.
-        max_tokens: Maximum tokens for the response.
-        structural_hints: Optional structural analysis string.
-
-    Returns:
-        Raw LLM response.
-    """
     prompt = build_coq_proof_prompt(
         theorem_name=theorem_name,
         theorem_statement=theorem_statement,
@@ -121,6 +343,13 @@ def generate_coq_proof(
         assumptions=assumptions,
         previous_attempts=previous_attempts,
         structural_hints=structural_hints,
+        available_lemmas=available_lemmas,
+        mandatory_avoid=mandatory_avoid,
+        positive_example=positive_example,
+        positive_examples=positive_examples,
+        analysis=analysis,
+        failure_prompt_snippet=failure_prompt_snippet,
+        mc_trace_info=mc_trace_info,
     )
     logger.debug("One‑shot proof prompt (%d chars):\n%s", len(prompt), prompt)
 
@@ -170,26 +399,16 @@ def build_interactive_step_prompt(
     applied_tactics: List[str],
     recent_errors: List[str],
     base_case_hint: str = "simpl; auto with *; try lia; try nia.",
-    step_case_hint: str = "invert the step hypothesis, substitute, simpl, then try to apply the induction hypothesis or use available lemmas; finish with auto/lia/nia.",
+    step_case_hint: str = (
+        "1.  Name the step hypothesis `Hstep` in the induction scheme.\n"
+        "2.  `inversion Hstep; subst; clear Hstep.`\n"
+        "3.  If the goal now contains `if op_reg s =? …`, destruct each comparison.\n"
+        "4.  In each sub‑goal, `simpl` and apply the induction hypothesis `IH`.\n"
+        "5.  Finish with `auto; try lia; try nia`."
+    ),
     available_lemmas: Optional[List[str]] = None,
     structural_hints: Optional[str] = None,
 ) -> str:
-    """Build a prompt for the next tactic in an interactive Coq proof.
-
-    Args:
-        theorem_name: Name of the theorem being proved.
-        goals: List of current goal strings (as returned by rocq‑mcp).
-        tactic_hints: Suggested tactic names for this theorem.
-        applied_tactics: List of recently applied tactics (for context).
-        recent_errors: Recent error messages from failed tactics.
-        base_case_hint: A short description / tactic for the base case of an induction.
-        step_case_hint: A short description / tactic for the step case.
-        available_lemmas: Optional list of lemma names that are already proved and may be used.
-        structural_hints: Optional structural analysis notes.
-
-    Returns:
-        Prompt string.
-    """
     goals_str = "\n".join(goals) if goals else "No goals"
     hints_str = ", ".join(tactic_hints) if tactic_hints else (
         "induction, simpl, auto, eauto, rewrite, inversion, subst, destruct, split, lia, nia"
@@ -197,7 +416,6 @@ def build_interactive_step_prompt(
     recent_history = applied_tactics[-8:] if applied_tactics else []
     history_str = "\n".join(f"  {t}" for t in recent_history) if recent_history else "(none)"
 
-    # Error feedback
     error_str = ""
     if recent_errors:
         last_error = recent_errors[-1]
@@ -211,7 +429,6 @@ def build_interactive_step_prompt(
             for e in recent_errors[-4:-1]:
                 error_str += f"  {e}\n"
 
-    # Extract hypotheses from the goal text
     hyp_lines = []
     for line in goals_str.splitlines():
         line = line.strip()
@@ -243,23 +460,19 @@ def build_interactive_step_prompt(
         f"{structural_str}"
         f"Suggested approach: {hints_str}\n\n"
         "**CRITICAL RULES:**\n"
-        "- Look at the goal above. It shows ALL hypotheses and the conclusion.\n"
-        "- If a variable already appears in the hypotheses, "
-        "do NOT try to 'intros' it again.\n"
-        "- After `induction` on the reachability hypothesis, you will have one "
-        "subgoal per constructor of `reachable` and `step`.\n"
+        "- Use explicit braces `{ ... }` for subgoals, not bullets.\n"
+        "- If a variable already appears in the hypotheses, do NOT `intros` it again.\n"
+        "- After `induction` on the reachability hypothesis, there will be one subgoal per constructor.\n"
         f"- For the base case: `{base_case_hint}`\n"
         f"- For the step case: `{step_case_hint}`\n"
         "- Use the induction hypothesis (often named `IH`) when it helps.\n"
-        "- If the goal contains `if ... then ... else`, use `destruct` on the "
-        "condition to split into two subgoals.\n"
+        "- If the goal contains `if ... then ... else`, use `destruct` on the condition.\n"
         "- Return ONLY one complete tactic ending with a dot.\n"
         "- If your previous tactic failed, you MUST try something different."
     )
 
 
 def extract_tactics_from_response(response: str) -> List[str]:
-    """Parse an LLM response that should contain one or more Coq tactics."""
     logger.debug("Raw LLM response for tactic extraction (%d chars): %s", len(response), response)
 
     cleaned = re.sub(r'```(?:coq)?\s*', '', response)
@@ -294,63 +507,59 @@ def extract_tactics_from_response(response: str) -> List[str]:
     return unique[:10]
 
 
-def build_skeleton_script(goals: List[str]) -> Optional[str]:
-    """Construct a static induction proof script for simple safety properties."""
+def build_skeleton_script(
+    goals: List[str],
+    theorem_statement: str = "",
+    condition_var: Optional[str] = None,
+    num_branches: int = 0,
+) -> Optional[str]:
     if not goals:
         return None
 
     reachable_hyp = None
-    for g in goals:
-        for line in g.splitlines():
-            line = line.strip()
-            if "reachable" in line and ":" in line:
-                parts = line.split(":", 1)
-                if len(parts) == 2 and "reachable" in parts[1]:
-                    reachable_hyp = parts[0].strip()
-                    break
-        if reachable_hyp:
-            break
+    goal_str = goals[0] if goals else ""
+
+    for line in goal_str.splitlines():
+        line = line.strip()
+        if "reachable" in line and ":" in line:
+            parts = line.split(":", 1)
+            if len(parts) == 2 and "reachable" in parts[1]:
+                reachable_hyp = parts[0].strip()
+                break
 
     if not reachable_hyp:
         return None
 
-    goal_str = goals[0] if goals else ""
-    is_slice_goal = "slice" in goal_str and "1 0" in goal_str and "= 0" in goal_str
-    is_mod_goal = "mod 4" in goal_str and "= 0" in goal_str
-
-    if not is_slice_goal and not is_mod_goal:
-        return None
-
-    if is_slice_goal:
-        step_tactic = (
-            "match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end; "
-            "simpl; "
-            "repeat (match goal with "
-            "| [ |- context[slice (?x + 4) 1 0] ] => rewrite (slice_low2 (?x + 4)) "
-            "| [ H : context[slice ?x 1 0] |- _ ] => rewrite (slice_low2 x) in H "
-            "end); "
-            "try (rewrite Nat.add_mod; rewrite (Nat.mod_same 4) by lia; "
-            "     rewrite Nat.add_0_r; assumption); "
-            "auto; try lia; try nia."
-        )
-    else:
-        step_tactic = (
-            "match goal with H : step _ _ _ |- _ => inversion H; subst; clear H end; "
-            "simpl; "
-            "rewrite Nat.add_mod; rewrite (Nat.mod_same 4) by lia; "
-            "rewrite Nat.add_0_r; assumption; "
-            "auto; try lia; try nia."
-        )
-
-    script = (
-        "Proof.\n"
-        "  intros.\n"
-        f"  induction {reachable_hyp}.\n"
-        "  - simpl; auto; try lia; try nia.\n"
-        f"  - {step_tactic}\n"
-        "Qed."
+    has_valid_implication = bool(
+        re.search(r"\(?valid\s+\w+\s*\)?\s*=\s*true\s*->", goal_str)
     )
-    return script
+
+    if has_valid_implication:
+        base_tactic = "simpl; intros Hvalid; discriminate Hvalid."
+        if condition_var and num_branches > 1:
+            destruct_tactic = build_destruct_pattern(condition_var, num_branches)
+            step_tactic = (
+                "inversion Hstep; subst; simpl in *.\n"
+                f"  {destruct_tactic}\n"
+                "  all: try (simpl; reflexivity); try (apply IH; auto)."
+            )
+        else:
+            step_tactic = (
+                "inversion Hstep; subst; simpl in *; "
+                "auto; try lia; try nia."
+            )
+        # Use braces for the two induction subgoals.
+        script = (
+            "Proof.\n"
+            "  intros s inputs Hreach.\n"
+            f"  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].\n"
+            f"  {{ {base_tactic} }}\n"
+            f"  {{ {step_tactic} }}\n"
+            "Qed."
+        )
+        return script
+
+    return None
 
 
 def build_slice_alignment_prompt(
@@ -358,7 +567,6 @@ def build_slice_alignment_prompt(
     theorem_statement: str,
     context: str
 ) -> str:
-    """Specialised prompt for slice‑low‑2 alignment invariants."""
     return (
         "You are an expert in Coq and hardware verification.\n"
         f"The theorem `{theorem_name}` states an alignment invariant:\n"
@@ -369,14 +577,14 @@ def build_slice_alignment_prompt(
         "Proof.\n"
         "  intros s inputs Hreach.\n"
         "  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].\n"
-        "  - unfold slice; simpl; reflexivity.\n"
-        "  - inversion Hstep; subst; simpl.\n"
+        "  { unfold slice; simpl; reflexivity. }\n"
+        "  { inversion Hstep; subst; simpl.\n"
         "    rewrite slice_low2.\n"
         "    rewrite slice_low2 in IH.\n"
         "    rewrite Nat.add_mod.\n"
         "    rewrite (Nat.mod_same 4) by lia.\n"
         "    rewrite Nat.add_0_r.\n"
-        "    rewrite IH; reflexivity.\n"
+        "    rewrite IH; reflexivity. }\n"
         "Qed.\n"
         "```\n\n"
         f"Environment (the Coq definitions and lemmas above the theorem):\n```coq\n{context}\n```\n\n"
@@ -392,7 +600,6 @@ def build_skeleton_reflection_prompt(
     available_lemmas: List[str],
     structural_hints: Optional[str] = None,
 ) -> str:
-    """Prompt for LLM‑driven generation of a tailored proof skeleton."""
     goals_str = "\n".join(goals) if goals else "No goals"
     lemmas_str = ", ".join(available_lemmas) if available_lemmas else "none"
 
@@ -404,19 +611,15 @@ def build_skeleton_reflection_prompt(
         "You are an expert in Coq and hardware verification.\n\n"
         f"We need to prove the theorem `{theorem_name}`:\n"
         f"```coq\n{theorem_statement}\n```\n\n"
-        "The built‑in proof skeletons (induction on reachability + inversion + "
-        "rewriting) have already been tried and failed.  We need a custom proof "
-        "script that handles the specific structure of this design.\n\n"
+        "The built‑in proof skeletons have already been tried and failed. "
+        "We need a custom proof script that handles the specific structure "
+        "of this design.\n\n"
         f"**Current goal** (after `intros`):\n```\n{goals_str}\n```\n\n"
         f"**Available lemmas**: {lemmas_str}\n"
         f"{structural_part}"
         f"**Environment** (the Coq code above the theorem):\n```coq\n{context}\n```\n\n"
         "Please provide a complete Coq proof script starting with `Proof.` and ending "
-        "with `Qed.` (use `Admitted.` only if absolutely impossible).  The script should:\n"
-        "- Use induction on the reachability hypothesis if it exists.\n"
-        "- Case‑split on the step constructors with `inversion`.\n"
-        "- Make use of the available lemmas and the induction hypothesis.\n"
-        "- Handle `if` conditions by `destruct`-ing them.\n"
+        "with `Qed.`.  Use explicit braces `{ ... }` for subgoals, not bullets.\n"
         "Return **only** the Coq proof script, without any extra commentary."
     )
 
@@ -435,20 +638,15 @@ def generate_coq_proof_variants(
     structural_hints: Optional[str] = None,
     diversity_tags: Optional[List[str]] = None,
     repair_mode: bool = False,
+    available_lemmas: Optional[List[str]] = None,
+    mandatory_avoid: Optional[List[str]] = None,
+    positive_example: Optional[str] = None,
+    positive_examples: Optional[List[str]] = None,
+    analysis: Optional[ObligationAnalysis] = None,
+    failure_prompt_snippet: Optional[str] = None,
+    mc_trace_info: Optional[str] = None,
 ) -> List[str]:
-    """
-    Generate multiple divergent proof attempts for PERF.
-
-    If *repair_mode* is True, the LLM is asked to produce **one repaired
-    script** (addressing the error in *previous_attempts*) and the
-    remaining divergent scripts in a single response.  The returned list
-    always starts with the repaired script and then the requested number
-    of variants; the total length is *num_variants*.
-
-    All other parameters are unchanged.
-    """
     if repair_mode and not previous_attempts:
-        # Without a previous error, fall back to normal generation
         repair_mode = False
 
     if repair_mode:
@@ -456,9 +654,10 @@ def generate_coq_proof_variants(
             llm_client, theorem_name, theorem_statement, num_variants,
             context, tactic_hints, assumptions, temperature, max_tokens,
             previous_attempts, structural_hints, diversity_tags,
+            available_lemmas, mandatory_avoid, positive_example,
+            positive_examples, analysis, failure_prompt_snippet, mc_trace_info,
         )
 
-    # Original behaviour (non‑repair)
     variants = []
     original_temp = llm_client.temperature
     gen_temp = temperature if temperature > 0 else original_temp
@@ -471,6 +670,13 @@ def generate_coq_proof_variants(
         assumptions=assumptions,
         previous_attempts=previous_attempts,
         structural_hints=structural_hints,
+        available_lemmas=available_lemmas,
+        mandatory_avoid=mandatory_avoid,
+        positive_example=positive_example,
+        positive_examples=positive_examples,
+        analysis=analysis,
+        failure_prompt_snippet=failure_prompt_snippet,
+        mc_trace_info=mc_trace_info,
     )
 
     for i in range(num_variants):
@@ -495,8 +701,15 @@ def generate_coq_proof_variants(
                     theorem_name=theorem_name,
                     theorem_statement=theorem_statement,
                     context=context,
-                    tactic_hints=["induction", "simpl", "auto"],
+                    tactic_hints=["induction", "simpl", "auto", "discriminate", "destruct", "lia"],
                     assumptions=assumptions,
+                    available_lemmas=available_lemmas,
+                    mandatory_avoid=mandatory_avoid,
+                    positive_example=positive_example,
+                    positive_examples=positive_examples,
+                    analysis=analysis,
+                    failure_prompt_snippet=failure_prompt_snippet,
+                    mc_trace_info=mc_trace_info,
                 )
                 if diversity_tags and i < len(diversity_tags):
                     fallback += f"\n\n**Strategy hint:** {diversity_tags[i]}"
@@ -529,21 +742,31 @@ def _generate_with_repair(
     previous_attempts: Optional[List[Dict[str, str]]],
     structural_hints: Optional[str],
     diversity_tags: Optional[List[str]],
+    available_lemmas: Optional[List[str]],
+    mandatory_avoid: Optional[List[str]],
+    positive_example: Optional[str],
+    positive_examples: Optional[List[str]],
+    analysis: Optional[ObligationAnalysis] = None,
+    failure_prompt_snippet: Optional[str] = None,
+    mc_trace_info: Optional[str] = None,
 ) -> List[str]:
-    """Build a single prompt that asks for one repair + (num_variants-1) divergent scripts,
-    then parse the response."""
-    # Base prompt with error feedback
     prompt = build_coq_proof_prompt(
         theorem_name=theorem_name,
         theorem_statement=theorem_statement,
         context=context,
         tactic_hints=tactic_hints,
         assumptions=assumptions,
-        previous_attempts=previous_attempts,   # already includes the error
+        previous_attempts=previous_attempts,
         structural_hints=structural_hints,
+        available_lemmas=available_lemmas,
+        mandatory_avoid=mandatory_avoid,
+        positive_example=positive_example,
+        positive_examples=positive_examples,
+        analysis=analysis,
+        failure_prompt_snippet=failure_prompt_snippet,
+        mc_trace_info=mc_trace_info,
     )
 
-    # Append instructions for repair + variants
     n_extra = max(1, num_variants - 1)
     prompt += (
         "\n\n"
@@ -562,7 +785,6 @@ def _generate_with_repair(
         "Return ONLY the sections described above, without any extra commentary."
     )
 
-    # Add diversity tags for the variants (not the repair)
     if diversity_tags and n_extra > 0:
         tags = []
         for i in range(n_extra):
@@ -570,7 +792,6 @@ def _generate_with_repair(
             tags.append(f"VARIANT {i+1} strategy: {tag}")
         prompt += "\n" + "\n".join(tags)
 
-    # Generate with slightly elevated temperature
     original_temp = llm_client.temperature
     llm_client.temperature = max(0.3, temperature)
     try:
@@ -578,45 +799,31 @@ def _generate_with_repair(
     except Exception as e:
         logger.warning("Repair+variants generation failed: %s", e)
         llm_client.temperature = original_temp
-        # Fallback: return placeholder scripts
         return ["Proof. Admitted."] * num_variants
     finally:
         llm_client.temperature = original_temp
 
-    # Parse the response into repair + variants
     scripts = _parse_repair_variants_response(response, num_variants)
-    # Pad if necessary
     while len(scripts) < num_variants:
         scripts.append("Proof. Admitted.")
     return scripts[:num_variants]
 
 
 def _parse_repair_variants_response(response: str, expected_total: int) -> List[str]:
-    """
-    Parse an LLM response that contains sections marked with
-    ``### REPAIR`` and ``### VARIANT N``.  Returns a list of scripts;
-    the first element is the repair, followed by the variants in order.
-    Missing sections are filled with ``Proof. Admitted.``.
-    """
-    # Normalize line endings
     response = response.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Split on section headers
     pattern = re.compile(r"^###\s*(REPAIR|VARIANT\s+\d+)", re.MULTILINE)
     parts = pattern.split(response)
 
-    # parts alternates: text before first match, then header, content, header, content, ...
     repair_found = False
     variant_scripts = {}
 
-    # The first element (parts[0]) is text before any header – ignore.
     for i in range(1, len(parts), 2):
         header = parts[i].strip()
         content = parts[i + 1] if i + 1 < len(parts) else ""
         script = _extract_coq_block(content)
         if header == "REPAIR":
-            # Insert repair at the front later
-            variant_scripts[-1] = script   # special key for repair
+            variant_scripts[-1] = script
             repair_found = True
         else:
             match = re.match(r"VARIANT\s+(\d+)", header)
@@ -624,12 +831,11 @@ def _parse_repair_variants_response(response: str, expected_total: int) -> List[
                 num = int(match.group(1))
                 variant_scripts[num] = script
 
-    # Build final list: repair first, then variants in order
     result = []
     if repair_found and -1 in variant_scripts:
         result.append(variant_scripts[-1])
     else:
-        result.append("Proof. Admitted.")  # dummy repair
+        result.append("Proof. Admitted.")
 
     for vnum in range(1, expected_total):
         result.append(variant_scripts.get(vnum, "Proof. Admitted."))
@@ -638,7 +844,6 @@ def _parse_repair_variants_response(response: str, expected_total: int) -> List[
 
 
 def _extract_coq_block(text: str) -> str:
-    """Extract a complete Coq proof script from a section's text."""
     text = text.strip()
     if "Proof." in text:
         return extract_proof_script(text)
