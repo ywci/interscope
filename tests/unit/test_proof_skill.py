@@ -7,12 +7,12 @@
 import unittest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
-from specir.verification.proof.proof_skill import (
+from isir.verification.proof.proof_skill import (
     LLMProofSkill,
     ModelCheckProver
 )
-from specir.verification.proof.proof import ProofResult
-from specir.verification.model_checker import ModelCheckError
+from isir.verification.proof.proof import ProofResult
+from isir.verification.model_checker import ModelCheckError
 
 
 class TestProofSkillACL2(unittest.TestCase):
@@ -20,8 +20,8 @@ class TestProofSkillACL2(unittest.TestCase):
 
     def setUp(self):
         """Create a proof skill instance with mocked dependencies."""
-        patcher_prover = patch("specir.verification.proof.proof_skill.ACL2Prover")
-        patcher_llm = patch("specir.verification.proof.proof_skill.get_llm_client_from_config")
+        patcher_prover = patch("isir.verification.proof.proof_skill.ACL2Prover")
+        patcher_llm = patch("isir.verification.proof.proof_skill.get_llm_client_from_config")
         self.mock_prover_cls = patcher_prover.start()
         self.mock_get_llm = patcher_llm.start()
         self.addCleanup(patcher_prover.stop)
@@ -150,8 +150,8 @@ class TestProofSkillKoika(unittest.TestCase):
     """Test suite for the Kōika/Coq path in LLMProofSkill."""
 
     def setUp(self):
-        patcher_prover = patch("specir.verification.proof.proof_skill.KoikaProver")
-        patcher_llm = patch("specir.verification.proof.proof_skill.get_llm_client_from_config")
+        patcher_prover = patch("isir.verification.proof.proof_skill.KoikaProver")
+        patcher_llm = patch("isir.verification.proof.proof_skill.get_llm_client_from_config")
         self.mock_prover_cls = patcher_prover.start()
         self.mock_get_llm = patcher_llm.start()
         self.addCleanup(patcher_prover.stop)
@@ -213,7 +213,7 @@ class TestModelCheckProver(unittest.TestCase):
     """Tests for ModelCheckProver that wraps run_model_check."""
 
     def setUp(self):
-        self.mock_run = patch("specir.verification.proof.proof_skill.run_model_check").start()
+        self.mock_run = patch("isir.verification.proof.proof_skill.run_model_check").start()
         self.addCleanup(patch.stopall)
 
     def test_success(self):
@@ -247,7 +247,7 @@ class TestProofSkillModelCheck(unittest.TestCase):
     """Tests for model‑checking path in LLMProofSkill."""
 
     def setUp(self):
-        patcher_llm = patch("specir.verification.proof.proof_skill.get_llm_client_from_config")
+        patcher_llm = patch("isir.verification.proof.proof_skill.get_llm_client_from_config")
         self.mock_llm = patcher_llm.start()
         self.addCleanup(patcher_llm.stop)
 

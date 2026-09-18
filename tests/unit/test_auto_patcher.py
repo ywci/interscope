@@ -3,7 +3,7 @@
 # Unit tests for the deterministic Coq proof auto‑patcher.
 
 import pytest
-from specir.verification.proof.koika.auto_patcher import (
+from isir.verification.proof.koika.auto_patcher import (
     patch_deprecated_notations,
     patch_discriminate_on_bool,
     patch_bullets_to_braces,

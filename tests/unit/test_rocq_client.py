@@ -10,7 +10,7 @@ import unittest
 from queue import Empty
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-from specir.backends.rocq_client import RocqClient, RocqClientError
+from isir.backends.rocq_client import RocqClient, RocqClientError
 
 
 class TestLifecycle(unittest.TestCase):

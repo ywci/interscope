@@ -9,21 +9,21 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from specir.dialects import spec_ir
-from specir.verification.simulation import simulate_design, SimulationError
-from specir.utils.result_types import SimulationReport
+from isir.dialects import isir
+from isir.verification.simulation import simulate_design, SimulationError
+from isir.utils.result_types import SimulationReport
 
 
 def _make_spec_module(name="test"):
     """Create a minimal SpecModule for testing."""
     state_ops = [
-        spec_ir.SpecStateOp(state_name="cnt", kind="register", data_type="bits<8>", initial=0)
+        isir.SpecStateOp(state_name="cnt", kind="register", data_type="bits<8>", initial=0)
     ]
     rule_ops = [
-        spec_ir.SpecRuleOp(rule_name="inc", condition="true",
+        isir.SpecRuleOp(rule_name="inc", condition="true",
                            actions=["(write cnt (add (read cnt) 1))"])
     ]
-    return spec_ir.SpecModule(name=name, state_ops=state_ops, rule_ops=rule_ops)
+    return isir.SpecModule(name=name, state_ops=state_ops, rule_ops=rule_ops)
 
 
 class TestSimulateDesign:
@@ -37,8 +37,8 @@ class TestSimulateDesign:
         rtl_file.parent.mkdir(parents=True, exist_ok=True)
         rtl_file.write_text("// dummy")
 
-        with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
-             patch("specir.verification.simulation.verilator_sim.simulate") as mock_sim:
+        with patch("isir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
+             patch("isir.verification.simulation.verilator_sim.simulate") as mock_sim:
 
             mock_rtl.return_value = MagicMock()
             mock_rtl.return_value.top_module.file_path = rtl_file
@@ -58,7 +58,7 @@ class TestSimulateDesign:
     def test_synthesis_fails(self, tmp_path):
         """If koika_to_rtl.convert raises, a SimulationError is raised."""
         spec_mod = _make_spec_module()
-        with patch("specir.verification.simulation.koika_to_rtl.convert",
+        with patch("isir.verification.simulation.koika_to_rtl.convert",
                    side_effect=RuntimeError("synthesis error")):
             with pytest.raises(SimulationError, match="Kōika synthesis failed"):
                 simulate_design(spec_mod, output_dir=tmp_path)
@@ -70,8 +70,8 @@ class TestSimulateDesign:
         rtl_file.parent.mkdir(parents=True, exist_ok=True)
         rtl_file.write_text("// dummy")
 
-        with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
-             patch("specir.verification.simulation.verilator_sim.simulate",
+        with patch("isir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
+             patch("isir.verification.simulation.verilator_sim.simulate",
                    side_effect=RuntimeError("verilator crash")):
             mock_rtl.return_value = MagicMock()
             mock_rtl.return_value.top_module.file_path = rtl_file
@@ -93,10 +93,10 @@ class TestSimulateDesign:
             "verification": {"simulation_cycles": 1000}
         }
 
-        with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
-             patch("specir.verification.simulation.verilator_sim.simulate",
+        with patch("isir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
+             patch("isir.verification.simulation.verilator_sim.simulate",
                    return_value=vcd) as mock_sim, \
-             patch("specir.verification.simulation.get_project_root",
+             patch("isir.verification.simulation.get_project_root",
                    return_value=tmp_path):
             mock_rtl.return_value = MagicMock()
             mock_rtl.return_value.top_module.file_path = rtl_file
@@ -120,10 +120,10 @@ class TestSimulateDesign:
             "verification": {"simulation_cycles": 555}
         }
 
-        with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
-             patch("specir.verification.simulation.verilator_sim.simulate",
+        with patch("isir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
+             patch("isir.verification.simulation.verilator_sim.simulate",
                    return_value=vcd) as mock_sim, \
-             patch("specir.verification.simulation.get_config",
+             patch("isir.verification.simulation.get_config",
                    return_value=555):
             mock_rtl.return_value = MagicMock()
             mock_rtl.return_value.top_module.file_path = rtl_file
@@ -135,7 +135,7 @@ class TestSimulateDesign:
     def test_rtl_not_found_raises_error(self, tmp_path):
         """If the generated RTL file does not exist, a SimulationError is raised."""
         spec_mod = _make_spec_module()
-        with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl:
+        with patch("isir.verification.simulation.koika_to_rtl.convert") as mock_rtl:
             mock_container = MagicMock()
             mock_container.top_module.file_path = tmp_path / "nonexistent.v"
             mock_rtl.return_value = mock_container
@@ -152,9 +152,9 @@ class TestSimulateDesign:
         rtl_file.parent.mkdir(parents=True, exist_ok=True)
         rtl_file.write_text("// dummy")
 
-        with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
-             patch("specir.verification.simulation.verilator_sim.simulate") as mock_sim, \
-             patch("specir.verification.simulation._generate_assertions") as mock_gen:
+        with patch("isir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
+             patch("isir.verification.simulation.verilator_sim.simulate") as mock_sim, \
+             patch("isir.verification.simulation._generate_assertions") as mock_gen:
 
             mock_rtl.return_value = MagicMock()
             mock_rtl.return_value.top_module.file_path = rtl_file
@@ -181,9 +181,9 @@ class TestSimulateDesign:
         rtl_file.parent.mkdir(parents=True, exist_ok=True)
         rtl_file.write_text("// dummy")
 
-        with patch("specir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
-             patch("specir.verification.simulation.verilator_sim.simulate") as mock_sim, \
-             patch("specir.verification.simulation._generate_assertions") as mock_gen:
+        with patch("isir.verification.simulation.koika_to_rtl.convert") as mock_rtl, \
+             patch("isir.verification.simulation.verilator_sim.simulate") as mock_sim, \
+             patch("isir.verification.simulation._generate_assertions") as mock_gen:
 
             mock_rtl.return_value = MagicMock()
             mock_rtl.return_value.top_module.file_path = rtl_file

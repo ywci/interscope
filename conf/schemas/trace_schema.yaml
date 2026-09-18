@@ -1,0 +1,121 @@
+# conf/schemas/trace_schema.yaml
+#
+# JSON Schema for the abstract trace YAML produced by `isir lift`
+# (see src/isir/lifting/trace_to_isir.py) and consumed by `isir check`.
+#
+# Actual output format (wrapped):
+#
+#   trace:
+#     cycles:
+#       - cycle: 0
+#         state:        { wr_ptr: 0, rd_ptr: 0, count: 0 }
+#         fired_rules:  [reset]
+#         inputs:       { wr_en: 0, rd_en: 0, data_in: 0 }
+#         outputs:      { data_out: 0, full: false, empty: true }
+#       - cycle: 1
+#         ...
+#
+# Unknown top-level keys are permitted so that future lift metadata
+# does not require a schema bump.  The *cycles* array is strict: each
+# cycle must carry exactly the fields below.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://github.com/ywci/interscope/conf/schemas/trace_schema.yaml"
+title: InterScope Abstract Trace
+description: |
+  Schema for the abstract trace YAML produced by `isir lift` and consumed
+  by `isir check`.  Each cycle records the reconstructed abstract state,
+  the rules that fired, and the input/output interface values for that
+  cycle.
+
+type: object
+required:
+- trace
+additionalProperties: true
+
+properties:
+
+  trace:
+    type: object
+    required:
+    - cycles
+    additionalProperties: true
+    properties:
+
+      cycles:
+        type: array
+        minItems: 1
+        description: "One entry per simulated cycle, in chronological order."
+        items:
+          type: object
+          required:
+          - cycle
+          - state
+          - fired_rules
+          - inputs
+          - outputs
+          additionalProperties: false
+          properties:
+
+            cycle:
+              type: integer
+              minimum: 0
+              description: "Sequential cycle index (0-based)."
+
+            state:
+              type: object
+              description: |
+                Reconstructed abstract state variables for this cycle.
+                Keys are state names; values are integers or booleans.
+              additionalProperties:
+                type: [ integer, boolean ]
+
+            fired_rules:
+              type: array
+              description: "Names of rules that fired in this cycle."
+              items:
+                type: string
+                minLength: 1
+
+            inputs:
+              type: object
+              description: |
+                Reconstructed input interface values for this cycle.
+                Keys are input names; values are integers or booleans.
+              additionalProperties:
+                type: [ integer, boolean ]
+
+            outputs:
+              type: object
+              description: |
+                Reconstructed output interface values for this cycle.
+                Keys are output names; values are integers or booleans.
+              additionalProperties:
+                type: [ integer, boolean ]
+
+  design:
+    type: string
+    minLength: 1
+
+  mapping:
+    type: object
+    additionalProperties:
+      type: string
+
+  annotations:
+    type: array
+    items:
+      type: object
+      required:
+      - cycle
+      additionalProperties: true
+      properties:
+        cycle:
+          type: integer
+          minimum: 0
+        note:
+          type: string
+
+  metadata:
+    type: object
+    additionalProperties: true

@@ -7,14 +7,14 @@
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, mock_open, MagicMock, call
-from specir.verification.proof.koika.prover import KoikaProver
-from specir.verification.proof.koika.proof_gen import (
+from isir.verification.proof.koika.prover import KoikaProver
+from isir.verification.proof.koika.proof_gen import (
     build_coq_proof_prompt, extract_proof_script
 )
-from specir.verification.proof.koika.repair import (
+from isir.verification.proof.koika.repair import (
     repair_coq_proof, _basic_sanity
 )
-from specir.verification.proof.proof import ProofResult
+from isir.verification.proof.proof import ProofResult
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def mock_config():
 
 @pytest.fixture
 def mock_rocq_client():
-    with patch("specir.verification.proof.koika.prover.RocqClient") as MockRocq:
+    with patch("isir.verification.proof.koika.prover.RocqClient") as MockRocq:
         instance = MockRocq.return_value
         instance.start.return_value = None
         instance.compile_file.return_value = {"success": True}
@@ -58,7 +58,7 @@ def mock_rocq_client():
 
 @pytest.fixture
 def mock_llm_client():
-    with patch("specir.verification.proof.koika.prover.get_llm_client_from_config") as MockLLM:
+    with patch("isir.verification.proof.koika.prover.get_llm_client_from_config") as MockLLM:
         instance = MockLLM.return_value
         instance.generate.return_value = "simpl.\nauto.\ninduction s."
         yield instance
@@ -66,7 +66,7 @@ def mock_llm_client():
 
 class TestKoikaProverInit:
     def test_koika_prover_init(self, mock_config):
-        with patch("specir.verification.proof.koika.prover.RocqClient") as mock_rocq_class:
+        with patch("isir.verification.proof.koika.prover.RocqClient") as mock_rocq_class:
             mock_rocq_class.return_value.start.return_value = None
             prover = KoikaProver(config=mock_config)
             assert prover.max_repair == 3
@@ -84,7 +84,7 @@ class TestKoikaProverInit:
             "provers": {"koika": {"prove": {}}},
             "proof": {},
         }
-        with patch("specir.verification.proof.koika.prover.RocqClient") as mock_rocq_class:
+        with patch("isir.verification.proof.koika.prover.RocqClient") as mock_rocq_class:
             mock_rocq_class.return_value.start.return_value = None
             prover = KoikaProver(config=minimal_config)
             assert prover.proof_timeout == 600
@@ -285,8 +285,8 @@ class TestProveTheorem:
             "isError": False
         }
 
-        with patch("specir.verification.proof.koika.prover.RocqClient", return_value=mock_rocq_instance), \
-             patch("specir.verification.proof.koika.prover.build_interactive_step_prompt") as mock_build, \
+        with patch("isir.verification.proof.koika.prover.RocqClient", return_value=mock_rocq_instance), \
+             patch("isir.verification.proof.koika.prover.build_interactive_step_prompt") as mock_build, \
              patch.object(prover, "_try_skeleton_proof", return_value=None), \
              patch.object(prover, "_request_skeleton_reflection", return_value=None), \
              patch.object(prover, "_theorem_already_proven", return_value=False), \

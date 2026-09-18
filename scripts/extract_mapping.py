@@ -1,7 +1,7 @@
 # scripts/extract_mapping.py
 #
-# Standalone script that extracts SpecIR mapping information from a Verilog
-# file containing ``//@specir`` annotations.  The output is a JSON file in the
+# Standalone script that extracts ISIR mapping information from a Verilog
+# file containing ``//@isir`` annotations.  The output is a JSON file in the
 # same format as ``mapping.json`` produced by the Kōika compiler.
 #
 # Usage:
@@ -20,7 +20,7 @@ try:
     if str(_PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(_PROJECT_ROOT))
 
-    from specir.backends.koika_compiler import _extract_mapping_from_verilog
+    from isir.backends.koika_compiler import _extract_mapping_from_verilog
     HAS_PROJECT = True
 except ImportError:
     HAS_PROJECT = False
@@ -36,18 +36,18 @@ def _standalone_extract(verilog_path: Path, design_name: str) -> Dict[str, Any]:
     - is_relevant_for_proof: Whether this signal matters for proofs
 
     Annotation format:
-        //@specir: <kind> = <ref> [group=<group>] [prop=<prop>]
+        //@isir: <kind> = <ref> [group=<group>] [prop=<prop>]
 
     Examples:
-        //@specir: register = head group=state prop=fifo_no_overflow
-        //@specir: rule_condition = do_enqueue.condition group=control
-        //@specir: input = data_in group=input prop=fifo_no_overflow
+        //@isir: register = head group=state prop=fifo_no_overflow
+        //@isir: rule_condition = do_enqueue.condition group=control
+        //@isir: input = data_in group=input prop=fifo_no_overflow
     """
     entries = []
 
     # Enhanced regex for PERF fields
     annotation_re = re.compile(
-        r"//@specir:\s*(\w+)\s*=\s*(\S+)(?:\s+group=(\w+))?(?:\s+prop=([\w,]+))?"
+        r"//@isir:\s*(\w+)\s*=\s*(\S+)(?:\s+group=(\w+))?(?:\s+prop=([\w,]+))?"
     )
     reg_re = re.compile(
         r"(?:reg|wire)\s*(?:\[[\w\-: ]+\]\s*)?([\w]+)\s*;"
@@ -55,7 +55,7 @@ def _standalone_extract(verilog_path: Path, design_name: str) -> Dict[str, Any]:
 
     with open(verilog_path, "r") as f:
         for line in f:
-            if "//@specir" not in line:
+            if "//@isir" not in line:
                 continue
 
             # Extract the annotation part
@@ -74,13 +74,13 @@ def _standalone_extract(verilog_path: Path, design_name: str) -> Dict[str, Any]:
                 relevant_properties = [p.strip() for p in prop_str.split(",") if p.strip()]
 
             # Try to extract the signal name from the same line
-            code_part = line.split("//@specir")[0]
+            code_part = line.split("//@isir")[0]
             reg_match = reg_re.search(code_part)
             signal = reg_match.group(1) if reg_match else ref
 
             entry = {
                 "rtl_signal": signal,
-                "specir_ref": f"module.state[name={ref}]",
+                "isir_ref": f"module.state[name={ref}]",
                 "kind": kind,
                 "width": None,
                 # PERF-specific fields
@@ -114,11 +114,11 @@ def build_property_signal_index(mapping_data: Dict[str, Any]) -> Dict[str, List[
         relevant_props = entry.get("relevant_properties", [])
         rtl_signal = entry.get("rtl_signal", "")
 
-        # Also add entries based on specir_ref heuristic
-        # (e.g., if specir_ref contains "property[name=...]")
-        specir_ref = entry.get("specir_ref", "")
+        # Also add entries based on isir_ref heuristic
+        # (e.g., if isir_ref contains "property[name=...]")
+        isir_ref = entry.get("isir_ref", "")
         import re
-        match = re.search(r"property\[name=([^\]]+)\]", specir_ref)
+        match = re.search(r"property\[name=([^\]]+)\]", isir_ref)
         if match:
             prop_name = match.group(1)
             if prop_name not in index:
@@ -172,12 +172,12 @@ def get_relevant_signals(mapping_data: Dict[str, Any], property_name: str) -> Li
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Extract SpecIR mapping from Verilog //@specir annotations.\n\n"
+            "Extract ISIR mapping from Verilog //@isir annotations.\n\n"
             "PERF fields (group, prop) are extracted from annotations:\n"
-            "  //@specir: <kind> = <ref> [group=<group>] [prop=<prop>]\n\n"
+            "  //@isir: <kind> = <ref> [group=<group>] [prop=<prop>]\n\n"
             "Examples:\n"
-            "  //@specir: register = head group=state prop=fifo_no_overflow\n"
-            "  //@specir: rule_condition = do_enqueue.condition group=control"
+            "  //@isir: register = head group=state prop=fifo_no_overflow\n"
+            "  //@isir: rule_condition = do_enqueue.condition group=control"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

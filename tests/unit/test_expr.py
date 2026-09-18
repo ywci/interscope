@@ -1,11 +1,11 @@
 # tests/unit/test_expr.py
 #
-# Comprehensive unit tests for the SpecIR expression engine
-# (src/specir/utils/expr.py). Covers parsing, evaluation,
+# Comprehensive unit tests for the ISIR expression engine
+# (src/isir/utils/expr.py). Covers parsing, evaluation,
 # type checking, and error handling.
 
 import pytest
-from specir.utils.expr import (
+from isir.utils.expr import (
     parse_sexpr,
     eval_expr,
     type_check_expr,

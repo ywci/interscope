@@ -1,0 +1,374 @@
+# conf/schemas/isir_schema.yaml
+#
+# JSON Schema for `.isir` files (ISIR version 0.1).
+# Validated by src/isir/parser/validator.py.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://github.com/ywci/interscope/conf/schemas/isir_schema.yaml"
+title: InterScope ISIR Specification
+description: |
+  Schema for `.isir` input files consumed by the InterScope toolchain.
+
+type: object
+required:
+- isir_version
+- module
+properties:
+  isir_version:
+    type: string
+    pattern: "^0\\.1$"
+    description: "ISIR version (currently 0.1)"
+  module:
+    type: object
+    required:
+    - name
+    - clocks
+    - resets
+    - state
+    - rules
+    properties:
+      name:
+        type: string
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$"
+      version:
+        type: string
+      parameters:
+        type: array
+        items:
+          type: object
+          required: [ name, type ]
+          properties:
+            name: { type: string }
+            type: { enum: [ int, bit, string ] }
+            default: { type: [ string, integer, boolean ] }
+      clocks:
+        type: array
+        items:
+          type: object
+          required: [ name, edge ]
+          properties:
+            name: { type: string }
+            period: { type: string }
+            edge: { enum: [ posedge, negedge ] }
+      resets:
+        type: array
+        items:
+          type: object
+          required: [ name, polarity, async, affects ]
+          properties:
+            name: { type: string }
+            polarity: { enum: [ active_high, active_low ] }
+            async: { type: boolean }
+            affects:
+              anyOf:
+              - type: string
+                enum: [ "all" ]
+              - type: array
+                items: { type: string }
+      inputs:
+        type: array
+        items:
+          $ref: "#/$defs/interface"
+      outputs:
+        type: array
+        items:
+          $ref: "#/$defs/interface"
+      types:
+        type: array
+        items:
+          type: object
+          required: [ name, kind ]
+          properties:
+            name: { type: string }
+            kind: { enum: [ enum, struct ] }
+            values: { type: array, items: { type: string } }
+            fields: { type: object, additionalProperties: { type: string } }
+            encoding: { type: string }
+      components:
+        type: array
+        items:
+          type: object
+          required: [ name, module ]
+          properties:
+            name: { type: string }
+            module: { type: string }
+            parameters: { type: object }
+            port_map: { type: object }
+            evidence: { $ref: "#/$defs/evidence_ref" }
+      state:
+        type: array
+        items:
+          type: object
+          required: [ name, kind, type ]
+          properties:
+            name: { type: string }
+            kind: { enum: [ register, memory, wire ] }
+            type:
+              anyOf:
+              - { type: string }
+              - { type: object }
+            initial: { type: [ string, integer, boolean ] }
+            attributes:
+              type: array
+              items: { enum: [ stable, volatile, shadow ] }
+            evidence: { $ref: "#/$defs/evidence_ref" }
+      rules:
+        type: array
+        items:
+          type: object
+          required: [ name ]
+          properties:
+            name: { type: string }
+            condition: { type: [ string, array ] }
+            action:
+              type: array
+              items: { type: [ string, array ] }
+            priority: { type: integer }
+            attributes:
+              type: array
+              items: { enum: [ atomic, speculative, commutative, split ] }
+            evidence: { $ref: "#/$defs/evidence_ref" }
+      directives:
+        type: array
+        items:
+          type: object
+          required: [ type, name, expression ]
+          properties:
+            type: { enum: [ assume, assert, cover ] }
+            name: { type: string }
+            expression: { type: [ string, array ] }
+            clock: { type: string }
+            severity: { enum: [ error, warning ] }
+          if:
+            properties:
+              type:
+                const: assert
+            required: [ type ]
+          then:
+            properties:
+              severity: { enum: [ error, warning ] }
+          else:
+            properties:
+              severity: false
+      properties:
+        type: array
+        items:
+          type: object
+          required: [ name, kind, expression ]
+          properties:
+            name: { type: string }
+            kind: { enum: [ safety, liveness, invariant ] }
+            expression:
+              type: object
+              required: [ kind ]
+              properties:
+                kind: { enum: [ always, eventually, until ] }
+                operand: { type: [ string, array ] }
+                left: { type: [ string, array ] }
+                right: { type: [ string, array ] }
+                bound: { type: integer }
+            assumes: { type: array, items: { type: [ string, array ] } }
+            guarantees: { type: array, items: { type: [ string, array ] } }
+            proof_status: { enum: [ unproved, proved, counterexample ] }
+            evidence:
+              type: array
+              items: { $ref: "#/$defs/evidence_ref" }
+      schedule:
+        type: object
+        required: [ kind ]
+        properties:
+          kind: { enum: [ parallel, sequential, conflict_free ] }
+          rule_order: { type: array, items: { type: string } }
+          conflict_sets:
+            type: array
+            items: { type: array, items: { type: string } }
+        allOf:
+        - if:
+            properties:
+              kind:
+                const: sequential
+          then:
+            required: [ rule_order ]
+        - if:
+            properties:
+              kind:
+                const: conflict_free
+          then:
+            required: [ conflict_sets ]
+      fairness:
+        type: array
+        items:
+          type: object
+          required: [ name, type, condition ]
+          properties:
+            name: { type: string }
+            type: { enum: [ weak, strong ] }
+            condition: { type: [ string, array ] }
+      proof_obligations:
+        type: array
+        items:
+          type: object
+          required: [ property, engine ]
+          properties:
+            property: { type: string }
+            status: { enum: [ unproved, proved, disproved, inconclusive ] }
+            engine: { enum: [ theorem_proving, model_checking, simulation ] }
+            backend:
+              enum: [ koika, kōika, acl2 ]
+              description: |
+                Prover backend.  `kōika` is accepted as an alias for `koika`;
+                the code normalizes the accented form to the ASCII form at
+                runtime.  Required for theorem-proving obligations.
+            artifact:
+              type: object
+              properties:
+                type: { enum: [ coq_theorem, acl2_theorem, invariant, counterexample_trace ] }
+                ref: { type: string }
+            assumes: { type: array, items: { type: [ string, array ] } }
+            guarantees: { type: array, items: { type: [ string, array ] } }
+            metadata:
+              type: object
+              properties:
+                perf:
+                  type: object
+                  properties:
+                    enabled: { type: boolean }
+                    beam_size: { type: integer, minimum: 1 }
+                    branches_per_node: { type: integer, minimum: 1 }
+                    depth_limit: { type: integer, minimum: 1 }
+                    dimensions:
+                      type: array
+                      items: { type: string }
+                    primary_dimension: { type: string }
+                    generation_temperature: { type: number, minimum: 0.0, maximum: 1.0 }
+                    trace_alignment_weight: { type: number, minimum: 0.0, maximum: 1.0 }
+                    error_history_enabled: { type: boolean }
+                    error_history_max_entries: { type: integer, minimum: 1 }
+                    adaptive_branching:
+                      oneOf:
+                      - type: boolean
+                      - type: object
+                        properties:
+                          enabled: { type: boolean }
+                          min_branches_for_hard_obligations: { type: integer, minimum: 1 }
+                          max_branches_for_hard_obligations: { type: integer, minimum: 1 }
+                        additionalProperties: false
+                    mc_guided_prompt_enabled: { type: boolean }
+                    proof_pattern_cache_path: { type: string }
+                    try_skeleton_first: { type: boolean }
+                    parallel_variant_generation: { type: boolean }
+                    unify_repair_and_generation: { type: boolean }
+                    min_beam_size: { type: integer, minimum: 1 }
+                    perf_light_repair_attempts: { type: integer, minimum: 0 }
+                    scoring_tournament_size: { type: integer, minimum: 1 }
+                    always_verify_children: { type: boolean }
+                    max_workers: { type: integer, minimum: 1 }
+                    timeout_per_node: { type: integer, minimum: 1 }
+                    coqc_timeout: { type: integer, minimum: 1 }
+                    max_tool_failures_before_fallback: { type: integer, minimum: 1 }
+                    early_stop_patience: { type: integer, minimum: 0 }
+                    early_stop_min_improvement: { type: number, minimum: 0.0, maximum: 1.0 }
+                    temperature_decay: { type: number, minimum: 0.0, maximum: 1.0 }
+                    temperature_min: { type: number, minimum: 0.0, maximum: 1.0 }
+                    reflection_quality_window: { type: integer, minimum: 1 }
+                    min_reflection_quality: { type: number, minimum: 0.0, maximum: 1.0 }
+                    max_reflection_retries: { type: integer, minimum: 0 }
+                    backtracking:
+                      type: object
+                      properties:
+                        enabled: { type: boolean }
+                        stagnation_depth: { type: integer, minimum: 1 }
+                        max_restarts: { type: integer, minimum: 0 }
+                        max_backtrack_depth: { type: integer, minimum: 1 }
+                        restore_beam_size: { type: integer, minimum: 1 }
+                        avoid_repeated_branches: { type: boolean }
+                        on_demand:
+                          type: object
+                          properties:
+                            enabled: { type: boolean }
+                            force_every: { type: integer, minimum: 0 }
+                            time_limit: { type: number, minimum: 0.0 }
+                            max_same_error: { type: integer, minimum: 1 }
+                            skip_forced_regeneration: { type: boolean }
+                      additionalProperties: true
+                  additionalProperties: true
+              additionalProperties: true
+            confidence: { type: number, minimum: 0, maximum: 1 }
+            feedback:
+              type: array
+              items:
+                type: object
+                required: [ iteration, error, resolution ]
+                properties:
+                  iteration: { type: integer }
+                  error: { type: string }
+                  resolution: { type: string }
+          if:
+            properties:
+              engine:
+                const: theorem_proving
+            required: [ engine ]
+          then:
+            required: [ backend ]
+      metadata:
+        $ref: "#/$defs/metadata"
+      evidence:
+        type: array
+        items:
+          $ref: "#/$defs/evidence"
+  metadata:
+    $ref: "#/$defs/metadata"
+  evidence:
+    type: array
+    items:
+      $ref: "#/$defs/evidence"
+
+$defs:
+  interface:
+    type: object
+    required: [ name, direction, type ]
+    properties:
+      name: { type: string }
+      direction: { enum: [ input, output, inout ] }
+      type:
+        anyOf:
+        - { type: string }
+        - { type: object }
+      protocol: { enum: [ ready_valid, handshake, fixed_cycle, none ] }
+  evidence_ref:
+    type: object
+    required: [ type, value ]
+    properties:
+      type: { enum: [ uri, local_id ] }
+      value: { type: string }
+  evidence:
+    type: object
+    required: [ type, ref, engine ]
+    properties:
+      type:
+        enum: [ counterexample_trace, inductive_invariant, coq_theorem, acl2_theorem, simulation_trace ]
+      ref: { $ref: "#/$defs/evidence_ref" }
+      engine: { type: string }
+      status: { type: string }
+  metadata:
+    type: object
+    properties:
+      engine:
+        type: string
+      options:
+        type: object
+        additionalProperties: true
+      design_category:
+        type: string
+        description: "Category of the design (e.g., FIFO, ALU, etc.)"
+      design_level:
+        type: integer
+        minimum: 1
+        maximum: 4
+        description: "Complexity level of the design (1-4)"
+      expected_properties:
+        type: array
+        items:
+          type: string
+        description: "Names of expected properties that should be provable"
+    additionalProperties: true

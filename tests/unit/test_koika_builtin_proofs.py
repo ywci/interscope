@@ -9,7 +9,7 @@
 
 import pytest
 from unittest.mock import patch
-from specir.verification.proof.koika.prover import KoikaProver
+from isir.verification.proof.koika.prover import KoikaProver
 
 
 def _get_builtin_proof(prover: KoikaProver, theorem_name: str) -> str:
@@ -36,7 +36,7 @@ def prover() -> KoikaProver:
         "provers": {"koika": {"prove": {"use_rocq_mcp": False}}},
         "proof": {},
     }
-    with patch("specir.verification.proof.koika.prover.get_llm_client_from_config") as mock_llm:
+    with patch("isir.verification.proof.koika.prover.get_llm_client_from_config") as mock_llm:
         mock_llm.return_value = object()  # dummy LLM client
         return KoikaProver(config=config)
 

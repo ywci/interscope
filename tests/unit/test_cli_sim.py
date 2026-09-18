@@ -1,15 +1,15 @@
 # tests/unit/test_cli_sim.py
 #
-# Unit tests for the `specir sim` CLI subcommand.
+# Unit tests for the `isir sim` CLI subcommand.
 # Updated to include the `output_format` attribute and SimulationReport returns.
 
 import argparse
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from specir.cli.sim import _setup_arg_parser, sim_spec
-from specir.verification.simulation import SimulationError
-from specir.utils.result_types import SimulationReport
+from isir.cli.sim import _setup_arg_parser, sim_spec
+from isir.verification.simulation import SimulationError
+from isir.utils.result_types import SimulationReport
 
 
 class TestArgumentParser:
@@ -20,8 +20,8 @@ class TestArgumentParser:
 
     def test_default_values(self):
         parser = _setup_arg_parser()
-        args = parser.parse_args(["input.specir"])
-        assert args.input == "input.specir"
+        args = parser.parse_args(["input.isir"])
+        assert args.input == "input.isir"
         assert args.out_dir is None
         assert args.cycles is None
         assert args.verilator_path is None
@@ -32,7 +32,7 @@ class TestArgumentParser:
     def test_all_optional_arguments(self):
         parser = _setup_arg_parser()
         args = parser.parse_args([
-            "input.specir",
+            "input.isir",
             "--out-dir", "/tmp/build",
             "--cycles", "500",
             "--verilator-path", "/usr/local/bin/verilator",
@@ -50,7 +50,7 @@ class TestArgumentParser:
     def test_short_flags(self):
         parser = _setup_arg_parser()
         args = parser.parse_args([
-            "input.specir",
+            "input.isir",
             "-o", "/tmp/build",
             "-c", "200"
         ])
@@ -63,7 +63,7 @@ class TestSimSpecExecution:
     def mock_args(self):
         """Return an argparse.Namespace with typical values including output_format."""
         args = argparse.Namespace()
-        args.input = "/path/to/design.specir"
+        args.input = "/path/to/design.isir"
         args.out_dir = None
         args.cycles = None
         args.verilator_path = None
@@ -73,31 +73,31 @@ class TestSimSpecExecution:
         return args
 
     def test_file_not_found(self, mock_args):
-        mock_args.input = "/nonexistent.specir"
+        mock_args.input = "/nonexistent.isir"
         with patch("pathlib.Path.exists", return_value=False):
             ret = sim_spec(mock_args)
             assert ret == 1
 
     def test_schema_validation_failure(self, mock_args):
         with patch("pathlib.Path.exists", return_value=True), \
-             patch("specir.cli.sim.validate_specir_file",
+             patch("isir.cli.sim.validate_isir_file",
                    side_effect=Exception("schema error")):
             ret = sim_spec(mock_args)
             assert ret == 1
 
     def test_parsing_failure(self, mock_args):
         with patch("pathlib.Path.exists", return_value=True), \
-             patch("specir.cli.sim.validate_specir_file"), \
-             patch("specir.cli.sim.parse_specir",
+             patch("isir.cli.sim.validate_isir_file"), \
+             patch("isir.cli.sim.parse_isir",
                    side_effect=Exception("parse error")):
             ret = sim_spec(mock_args)
             assert ret == 1
 
-    def test_ast_to_spec_conversion_failure(self, mock_args):
+    def test_ast_to_isir_conversion_failure(self, mock_args):
         with patch("pathlib.Path.exists", return_value=True), \
-             patch("specir.cli.sim.validate_specir_file"), \
-             patch("specir.cli.sim.parse_specir") as mock_parse, \
-             patch("specir.cli.sim.convert_ast_to_spec_module",
+             patch("isir.cli.sim.validate_isir_file"), \
+             patch("isir.cli.sim.parse_isir") as mock_parse, \
+             patch("isir.cli.sim.convert_ast_to_isir_module",
                    side_effect=Exception("conversion error")):
             mock_ast = MagicMock()
             mock_ast.module = MagicMock()
@@ -116,10 +116,10 @@ class TestSimSpecExecution:
             metadata={"simulation_tool": "verilator"}
         )
         with patch("pathlib.Path.exists", return_value=True), \
-             patch("specir.cli.sim.validate_specir_file"), \
-             patch("specir.cli.sim.parse_specir") as mock_parse, \
-             patch("specir.cli.sim.convert_ast_to_spec_module") as mock_convert, \
-             patch("specir.cli.sim.simulate_design") as mock_sim:
+             patch("isir.cli.sim.validate_isir_file"), \
+             patch("isir.cli.sim.parse_isir") as mock_parse, \
+             patch("isir.cli.sim.convert_ast_to_isir_module") as mock_convert, \
+             patch("isir.cli.sim.simulate_design") as mock_sim:
             mock_ast = MagicMock()
             mock_ast.module = MagicMock()
             mock_parse.return_value = mock_ast
@@ -132,10 +132,10 @@ class TestSimSpecExecution:
 
     def test_simulation_error(self, mock_args):
         with patch("pathlib.Path.exists", return_value=True), \
-             patch("specir.cli.sim.validate_specir_file"), \
-             patch("specir.cli.sim.parse_specir") as mock_parse, \
-             patch("specir.cli.sim.convert_ast_to_spec_module") as mock_convert, \
-             patch("specir.cli.sim.simulate_design",
+             patch("isir.cli.sim.validate_isir_file"), \
+             patch("isir.cli.sim.parse_isir") as mock_parse, \
+             patch("isir.cli.sim.convert_ast_to_isir_module") as mock_convert, \
+             patch("isir.cli.sim.simulate_design",
                    side_effect=SimulationError("sim failed")):
             mock_ast = MagicMock()
             mock_ast.module = MagicMock()
@@ -148,9 +148,9 @@ class TestSimSpecExecution:
 
     def test_unexpected_error(self, mock_args):
         with patch("pathlib.Path.exists", return_value=True), \
-             patch("specir.cli.sim.validate_specir_file"), \
-             patch("specir.cli.sim.parse_specir") as mock_parse, \
-             patch("specir.cli.sim.convert_ast_to_spec_module",
+             patch("isir.cli.sim.validate_isir_file"), \
+             patch("isir.cli.sim.parse_isir") as mock_parse, \
+             patch("isir.cli.sim.convert_ast_to_isir_module",
                    side_effect=RuntimeError("unexpected")):
             mock_ast = MagicMock()
             mock_ast.module = MagicMock()

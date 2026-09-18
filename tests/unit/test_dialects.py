@@ -1,21 +1,21 @@
 # tests/unit/test_dialects.py
 #
-# Unit tests for the SpecIR dialects (spec_ir, assert_ir, koika_ir,
-# acl2_ir, rtl_ir, trace_ir). Validates creation, string representation,
-# and that the koika_ir.from_spec_module function correctly delegates to
+# Unit tests for the ISIR dialects (isir, asserts, koika,
+# acl2, rtl, trace). Validates creation, string representation,
+# and that the koika.from_spec_module function correctly delegates to
 # the lowering pass.
 
 import pytest
-from specir.dialects import spec_ir
-from specir.dialects import assert_ir
-from specir.dialects import koika_ir
-from specir.dialects import acl2_ir
-from specir.dialects import rtl_ir
-from specir.dialects import trace_ir
+from isir.dialects import isir
+from isir.dialects import asserts
+from isir.dialects import koika
+from isir.dialects import acl2
+from isir.dialects import rtl
+from isir.dialects import trace
 
 
 def test_spec_dialect_operations():
-    state_op = spec_ir.SpecStateOp(
+    state_op = isir.SpecStateOp(
         state_name="head",
         kind="register",
         data_type="bits<3>",
@@ -29,7 +29,7 @@ def test_spec_dialect_operations():
     assert state_op.initial == 0
     assert state_op.attributes == ["stable"]
 
-    rule_op = spec_ir.SpecRuleOp(
+    rule_op = isir.SpecRuleOp(
         rule_name="enqueue",
         condition="(not (read full))",
         actions=["(mem_write mem head data_in)", "(write head 1)"],
@@ -41,7 +41,7 @@ def test_spec_dialect_operations():
     assert len(rule_op.actions) == 2
     assert rule_op.priority == 1
 
-    prop_op = spec_ir.SpecPropertyOp(
+    prop_op = isir.SpecPropertyOp(
         prop_name="no_overflow",
         kind="safety",
         expression={"kind": "always", "operand": "(implies (read full) (not enqueue))"}
@@ -49,7 +49,7 @@ def test_spec_dialect_operations():
     assert prop_op.prop_name == "no_overflow"
     assert prop_op.expression["kind"] == "always"
 
-    directive_op = spec_ir.SpecDirectiveOp(
+    directive_op = isir.SpecDirectiveOp(
         directive_name="no_simultaneous",
         kind="assume",
         expression="(not (and enqueue dequeue))",
@@ -62,7 +62,7 @@ def test_spec_dialect_operations():
     assert directive_op.clock == "clk"
     assert directive_op.severity == "error"
 
-    schedule_op = spec_ir.SpecScheduleOp(
+    schedule_op = isir.SpecScheduleOp(
         kind="conflict_free",
         rule_order=[],
         conflict_sets=[["enqueue", "dequeue"]]
@@ -70,7 +70,7 @@ def test_spec_dialect_operations():
     assert schedule_op.kind == "conflict_free"
     assert schedule_op.conflict_sets == [["enqueue", "dequeue"]]
 
-    spec_module = spec_ir.SpecModule(
+    spec_module = isir.SpecModule(
         name="fifo",
         version="0.1",
         state_ops=[state_op],
@@ -92,7 +92,7 @@ def test_spec_dialect_operations():
 
 def test_spec_interface_dataclass():
     """The spec dialect now has a proper Interface dataclass."""
-    iface = spec_ir.Interface(
+    iface = isir.Interface(
         name="data_in",
         direction="input",
         data_type="bits<32>",
@@ -104,36 +104,36 @@ def test_spec_interface_dataclass():
     assert iface.protocol == "ready_valid"
 
 
-def test_ast_to_spec_module_exists():
-    """The canonical AST→SpecIR converter is in lowering/ast_to_spec.py."""
-    from specir.lowering.ast_to_spec import convert_ast_to_spec_module
-    assert callable(convert_ast_to_spec_module)
+def test_ast_to_isir_module_exists():
+    """The canonical AST→ISIR converter is in lowering/ast_to_isir.py."""
+    from isir.lowering.ast_to_isir import convert_ast_to_isir_module
+    assert callable(convert_ast_to_isir_module)
 
 
 def test_assert_dialect_operations():
-    always = assert_ir.AssertAlwaysOp(condition="(not (full and empty))", clock="clk")
+    always = asserts.AssertAlwaysOp(condition="(not (full and empty))", clock="clk")
     assert always.condition == "(not (full and empty))"
     assert always.clock == "clk"
 
-    seq = assert_ir.AssertSequenceOp(sequence=["req", "##2 grant"], clock="clk")
+    seq = asserts.AssertSequenceOp(sequence=["req", "##2 grant"], clock="clk")
     assert seq.sequence == ["req", "##2 grant"]
 
-    prop = assert_ir.AssertPropertyOp(kind="always", operand="(full -> not enqueue)")
+    prop = asserts.AssertPropertyOp(kind="always", operand="(full -> not enqueue)")
     assert prop.kind == "always"
 
-    assume = assert_ir.AssertAssumeOp(condition="(not (enqueue and dequeue))")
+    assume = asserts.AssertAssumeOp(condition="(not (enqueue and dequeue))")
     assert assume.condition == "(not (enqueue and dequeue))"
 
-    cover = assert_ir.AssertCoverOp(condition="full")
+    cover = asserts.AssertCoverOp(condition="full")
     assert cover.condition == "full"
 
-    clock_op = assert_ir.AssertClockOp(clock_name="clk", edge="posedge")
+    clock_op = asserts.AssertClockOp(clock_name="clk", edge="posedge")
     assert clock_op.clock_name == "clk"
 
-    reset_op = assert_ir.AssertResetOp(reset_condition="(!rst_n)")
+    reset_op = asserts.AssertResetOp(reset_condition="(!rst_n)")
     assert reset_op.reset_condition == "(!rst_n)"
 
-    mod = assert_ir.AssertModule(
+    mod = asserts.AssertModule(
         name="fifo_assert",
         clock=clock_op,
         reset=reset_op,
@@ -148,11 +148,11 @@ def test_assert_dialect_operations():
 
 def test_assert_from_spec_module_raises():
     with pytest.raises(NotImplementedError):
-        assert_ir.from_spec_module(None)
+        asserts.from_spec_module(None)
 
 
 def test_koika_dialect_operations():
-    rule = koika_ir.KoikaRuleOp(
+    rule = koika.KoikaRuleOp(
         rule_name="enqueue",
         condition="not full",
         actions=["write(head, head+1)"]
@@ -160,7 +160,7 @@ def test_koika_dialect_operations():
     assert rule.rule_name == "enqueue"
     assert "write(head, head+1)" in rule.actions
 
-    design = koika_ir.KoikaDesignOp(
+    design = koika.KoikaDesignOp(
         design_name="fifo",
         rules=["enqueue", "dequeue"],
         schedule="conflict_free"
@@ -168,14 +168,14 @@ def test_koika_dialect_operations():
     assert design.design_name == "fifo"
     assert design.rules == ["enqueue", "dequeue"]
 
-    thm = koika_ir.KoikaTheoremOp(
+    thm = koika.KoikaTheoremOp(
         theorem_name="no_overflow",
         statement="forall st, reachable st -> full st -> not enqueue st",
         tactic_hints=["induction", "simpl"]
     )
     assert thm.theorem_name == "no_overflow"
 
-    mod = koika_ir.KoikaModule(
+    mod = koika.KoikaModule(
         name="fifo_koika",
         rule_ops=[rule],
         design_op=design,
@@ -186,20 +186,20 @@ def test_koika_dialect_operations():
 
 def test_koika_from_spec_module_succeeds():
     """from_spec_module now delegates to the real lowering pass and returns a KoikaModule."""
-    spec_mod = spec_ir.SpecModule(name="test")
+    spec_mod = isir.SpecModule(name="test")
     spec_mod.state_ops.append(
-        spec_ir.SpecStateOp(state_name="x", kind="register", data_type="bool", initial=False)
+        isir.SpecStateOp(state_name="x", kind="register", data_type="bool", initial=False)
     )
     spec_mod.rule_ops.append(
-        spec_ir.SpecRuleOp(rule_name="dummy", condition="true", actions=[])
+        isir.SpecRuleOp(rule_name="dummy", condition="true", actions=[])
     )
-    result = koika_ir.from_spec_module(spec_mod)
-    assert isinstance(result, koika_ir.KoikaModule)
+    result = koika.from_spec_module(spec_mod)
+    assert isinstance(result, koika.KoikaModule)
     assert result.name == "test"
 
 
 def test_acl2_dialect_operations():
-    defun = acl2_ir.ACL2DefunOp(
+    defun = acl2.ACL2DefunOp(
         func_name="next-state",
         args=["st", "inputs"],
         body="(cond ((enqueue inputs) ...) (t st))"
@@ -207,21 +207,21 @@ def test_acl2_dialect_operations():
     assert defun.func_name == "next-state"
     assert defun.args == ["st", "inputs"]
 
-    defthm = acl2_ir.ACL2DefthmOp(
+    defthm = acl2.ACL2DefthmOp(
         thm_name="no-overflow",
         statement="(implies (full st) (not (enqueue st)))",
         hints=["(Goal :induct t)"]
     )
     assert defthm.thm_name == "no-overflow"
 
-    defun_sk = acl2_ir.ACL2DefunSkOp(
+    defun_sk = acl2.ACL2DefunSkOp(
         pred_name="exists-full",
         exists_vars=["st"],
         body="(full st)"
     )
     assert defun_sk.pred_name == "exists-full"
 
-    mod = acl2_ir.ACL2Module(
+    mod = acl2.ACL2Module(
         name="fifo_acl2",
         defuns=[defun],
         defthms=[defthm],
@@ -232,39 +232,39 @@ def test_acl2_dialect_operations():
 
 def test_acl2_from_spec_module_raises():
     with pytest.raises(NotImplementedError):
-        acl2_ir.from_spec_module(None)
+        acl2.from_spec_module(None)
 
 
 def test_rtl_dialect_operations():
-    mod_op = rtl_ir.RTLModuleOp(module_name="fifo")
+    mod_op = rtl.RTLModuleOp(module_name="fifo")
     assert mod_op.module_name == "fifo"
 
-    reg = rtl_ir.RTLRegOp(reg_name="head", width=3, initial="0")
+    reg = rtl.RTLRegOp(reg_name="head", width=3, initial="0")
     assert reg.reg_name == "head"
 
-    wire = rtl_ir.RTLWireOp(wire_name="tmp", width=32)
+    wire = rtl.RTLWireOp(wire_name="tmp", width=32)
     assert wire.wire_name == "tmp"
 
-    assign = rtl_ir.RTLAssignOp(lhs="data_out", rhs="read_data")
+    assign = rtl.RTLAssignOp(lhs="data_out", rhs="read_data")
     assert assign.lhs == "data_out"
 
-    always = rtl_ir.RTLAlwaysOp(sensitivity="@(posedge clk)", body=["head <= head_next"])
+    always = rtl.RTLAlwaysOp(sensitivity="@(posedge clk)", body=["head <= head_next"])
     assert always.sensitivity == "@(posedge clk)"
 
-    inst = rtl_ir.RTLInstanceOp(instance_name="fifo0", module_name="fifo", port_map={"clk": "clk"})
+    inst = rtl.RTLInstanceOp(instance_name="fifo0", module_name="fifo", port_map={"clk": "clk"})
     assert inst.instance_name == "fifo0"
 
-    mapping = rtl_ir.RTLMapping(
+    mapping = rtl.RTLMapping(
         design_name="fifo",
-        entries=[rtl_ir.MappingEntry(rtl_signal="top.head", specir_ref="module.state[name=head]", kind="register")]
+        entries=[rtl.MappingEntry(rtl_signal="top.head", isir_ref="module.state[name=head]", kind="register")]
     )
     assert len(mapping.entries) == 1
     json_dict = mapping.to_json()
     assert json_dict["design"] == "fifo"
     assert json_dict["mapping"][0]["rtl_signal"] == "top.head"
 
-    rtl_module = rtl_ir.RTLModule(name="fifo")
-    container = rtl_ir.RTLModuleContainer(
+    rtl_module = rtl.RTLModule(name="fifo")
+    container = rtl.RTLModuleContainer(
         modules={"fifo": rtl_module},
         mapping=mapping,
         design_name="fifo",
@@ -276,29 +276,29 @@ def test_rtl_dialect_operations():
 
 def test_rtl_from_koika_module_raises():
     with pytest.raises(NotImplementedError):
-        rtl_ir.from_koika_module(None)
+        rtl.from_koika_module(None)
 
 
 def test_trace_dialect_operations():
-    module_op = trace_ir.TraceModuleOp(trace_name="fifo_sim")
+    module_op = trace.TraceModuleOp(trace_name="fifo_sim")
     assert module_op.trace_name == "fifo_sim"
 
-    clock = trace_ir.TraceClockOp(clock_name="clk", period="10ns", edge="posedge")
+    clock = trace.TraceClockOp(clock_name="clk", period="10ns", edge="posedge")
     assert clock.clock_name == "clk"
 
-    signal = trace_ir.TraceSignalOp(signal_name="full", width=1)
+    signal = trace.TraceSignalOp(signal_name="full", width=1)
     assert signal.signal_name == "full"
 
-    annotation = trace_ir.TraceAnnotationOp(signal_name="full", specir_ref="module.state[name=full]", kind="register")
+    annotation = trace.TraceAnnotationOp(signal_name="full", isir_ref="module.state[name=full]", kind="register")
     assert annotation.signal_name == "full"
 
-    cycle_op = trace_ir.TraceCycleOp(cycle_number=0)
+    cycle_op = trace.TraceCycleOp(cycle_number=0)
     assert cycle_op.cycle_number == 0
 
-    value_op = trace_ir.TraceValueOp(signal_name="full", value=0)
+    value_op = trace.TraceValueOp(signal_name="full", value=0)
     assert value_op.signal_name == "full"
 
-    trace_mod = trace_ir.TraceModule(module_op=module_op, clock=clock, signals=[signal], annotations=[annotation])
+    trace_mod = trace.TraceModule(module_op=module_op, clock=clock, signals=[signal], annotations=[annotation])
     trace_mod.add_cycle(0, {"full": 0})
     trace_mod.add_cycle(1, {"full": 1})
     assert len(trace_mod.cycles) == 2

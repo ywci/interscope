@@ -8,8 +8,8 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch
-from specir.evidence.registry import EvidenceRegistry
-from specir.evidence.annotator import (
+from isir.evidence.registry import EvidenceRegistry
+from isir.evidence.annotator import (
     create_evidence_ref,
     add_evidence_to_registry,
     annotate_module,
@@ -19,12 +19,12 @@ from specir.evidence.annotator import (
     annotate_component,
     annotate_proof_obligation
 )
-from specir.parser.ast import (
+from isir.parser.ast import (
     Module, State, Rule, Property, ProofObligation,
     Evidence, EvidenceRef, ComponentInstance
 )
-from specir.cli.verify import _safe_register_mc_evidence, _safe_register_evidence
-from specir.verification.proof.proof import ProofResult
+from isir.cli.verify import _safe_register_mc_evidence, _safe_register_evidence
+from isir.verification.proof.proof import ProofResult
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ class TestAnnotator:
             ref=EvidenceRef(type="uri", value="file://sim.vcd"),
             engine="sim",
         )
-        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+        with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_module(mod, ev, property_name="prop")
         assert len(mod.evidence) == 1
         assert mod.evidence[0].type == "simulation_trace"
@@ -143,7 +143,7 @@ class TestAnnotator:
             ref=EvidenceRef(type="local_id", value="inv_x"),
             engine="IC3"
         )
-        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+        with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_state(st, ev)
         assert st.evidence is not None
         assert st.evidence.value == "inv_x"
@@ -155,7 +155,7 @@ class TestAnnotator:
             ref=EvidenceRef(type="uri", value="file://proof.v"),
             engine="koika"
         )
-        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+        with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_rule(r, ev)
         assert r.evidence.value == "file://proof.v"
 
@@ -166,7 +166,7 @@ class TestAnnotator:
             ref=EvidenceRef(type="uri", value="file://ce.vcd"),
             engine="BMC"
         )
-        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+        with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_property(p, ev, property_name="prop1")
         assert len(p.evidence) == 1
         assert p.evidence[0].value == "file://ce.vcd"
@@ -178,7 +178,7 @@ class TestAnnotator:
             ref=EvidenceRef(type="uri", value="file://trace.vcd"),
             engine="sim"
         )
-        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+        with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_component(comp, ev)
         assert comp.evidence.value == "file://trace.vcd"
 
@@ -189,14 +189,14 @@ class TestAnnotator:
             ref=EvidenceRef(type="uri", value="file://proof.v"),
             engine="koika"
         )
-        with patch("specir.evidence.annotator.add_evidence_to_registry"):
+        with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_proof_obligation(po, ev)
         assert po.artifact["type"] == "coq_theorem"
         assert po.artifact["ref"] == "file://proof.v"
 
 
 class TestModelCheckingEvidence:
-    @patch("specir.evidence.registry.get_config")
+    @patch("isir.evidence.registry.get_config")
     def test_proved_registers_inductive_invariant(self, mock_cfg, tmp_path):
         db_path = tmp_path / "evidence.db"
         mock_cfg.return_value = {"evidence": {"db_path": str(db_path)}}
@@ -211,7 +211,7 @@ class TestModelCheckingEvidence:
         assert entries[0]["status"] == "proved"
         assert entries[0]["ref_type"] == "local_id"
 
-    @patch("specir.evidence.registry.get_config")
+    @patch("isir.evidence.registry.get_config")
     def test_counterexample_registers_trace(self, mock_cfg, tmp_path):
         db_path = tmp_path / "evidence.db"
         mock_cfg.return_value = {"evidence": {"db_path": str(db_path)}}
@@ -229,7 +229,7 @@ class TestModelCheckingEvidence:
         assert entries[0]["ref_type"] == "uri"
         assert "ce.vcd" in entries[0]["ref_value"]
 
-    @patch("specir.evidence.registry.get_config")
+    @patch("isir.evidence.registry.get_config")
     def test_counterexample_no_trace_uses_local_id(self, mock_cfg, tmp_path):
         db_path = tmp_path / "evidence.db"
         mock_cfg.return_value = {"evidence": {"db_path": str(db_path)}}
@@ -247,7 +247,7 @@ class TestModelCheckingEvidence:
 
 
 class TestTheoremProvingEvidence:
-    @patch("specir.evidence.registry.get_config")
+    @patch("isir.evidence.registry.get_config")
     def test_koika_proof_registers_coq_theorem(self, mock_cfg, tmp_path):
         db_path = tmp_path / "evidence.db"
         mock_cfg.return_value = {"evidence": {"db_path": str(db_path)}}
@@ -262,7 +262,7 @@ class TestTheoremProvingEvidence:
         assert entries[0]["status"] == "proved"
         assert "file://Proof. trivial. Qed." in entries[0]["ref_value"]
 
-    @patch("specir.evidence.registry.get_config")
+    @patch("isir.evidence.registry.get_config")
     def test_acl2_proof_registers_acl2_theorem(self, mock_cfg, tmp_path):
         db_path = tmp_path / "evidence.db"
         mock_cfg.return_value = {"evidence": {"db_path": str(db_path)}}

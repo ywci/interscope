@@ -9,12 +9,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from specir.backends.koika_compiler import (
+from isir.backends.koika_compiler import (
     _find_compiler,
     compile_ocaml_to_verilog,
     KoikaCompilationError
 )
-from specir.dialects.rtl_ir import RTLModuleContainer
+from isir.dialects.rtl import RTLModuleContainer
 
 
 class TestFindCompiler(unittest.TestCase):
@@ -77,7 +77,7 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
     def tearDown(self):
         self.tmp_dir.cleanup()
 
-    @patch("specir.backends.koika_compiler._find_compiler")
+    @patch("isir.backends.koika_compiler._find_compiler")
     @patch("subprocess.run")
     def test_successful_compilation(self, mock_run, mock_find):
         mock_find.return_value = self.compiler_path
@@ -88,7 +88,7 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
         self.assertIsInstance(container, RTLModuleContainer)
         self.assertEqual(container.design_name, self.design_name)
 
-    @patch("specir.backends.koika_compiler._find_compiler")
+    @patch("isir.backends.koika_compiler._find_compiler")
     @patch("subprocess.run")
     def test_compiler_error_raises(self, mock_run, mock_find):
         mock_find.return_value = self.compiler_path
@@ -99,7 +99,7 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
             compile_ocaml_to_verilog(self.design_name, self.output_dir)
         self.assertIn("Kōika compilation failed", str(ctx.exception))
 
-    @patch("specir.backends.koika_compiler._find_compiler")
+    @patch("isir.backends.koika_compiler._find_compiler")
     @patch("subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 300, output=b"", stderr=b""))
     def test_timeout_raises(self, mock_run, mock_find):
         mock_find.return_value = self.compiler_path
@@ -108,7 +108,7 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
             compile_ocaml_to_verilog(self.design_name, self.output_dir)
         self.assertIn("timed out", str(ctx.exception))
 
-    @patch("specir.backends.koika_compiler._find_compiler")
+    @patch("isir.backends.koika_compiler._find_compiler")
     @patch("subprocess.run")
     def test_compiler_command_args(self, mock_run, mock_find):
         mock_find.return_value = self.compiler_path

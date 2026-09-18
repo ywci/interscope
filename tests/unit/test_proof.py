@@ -5,7 +5,7 @@
 
 import pytest
 from dataclasses import dataclass
-from specir.verification.proof.proof import ProofResult, ProofSkill
+from isir.verification.proof.proof import ProofResult, ProofSkill
 
 
 class TestProofResult:

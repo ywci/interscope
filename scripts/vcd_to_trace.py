@@ -14,9 +14,9 @@ _PROJECT_ROOT = _SCRIPT_DIR.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from specir.lifting.vcd_to_trace import convert
-from specir.dialects.trace_ir import TraceModule, TracePropertyEvaluation, TraceCycleData
-from specir.utils.logger import get_logger, setup_logging
+from isir.lifting.vcd_to_trace import convert
+from isir.dialects.trace import TraceModule, TracePropertyEvaluation, TraceCycleData
+from isir.utils.logger import get_logger, setup_logging
 
 logger = get_logger(__name__)
 

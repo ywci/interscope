@@ -1,11 +1,11 @@
 # tests/unit/test_property_checker.py
 #
-# Unit tests for the SpecIR property checker.
+# Unit tests for the ISIR property checker.
 # Verifies temporal operators, assumption handling, and result details.
 
 import pytest
-from specir.parser.ast import Property, TemporalExpr
-from specir.verification.property_checker import (
+from isir.parser.ast import Property, TemporalExpr
+from isir.verification.property_checker import (
     check_property,
     check_all_properties,
     PropertyCheckResult,

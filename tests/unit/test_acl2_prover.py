@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 from typing import List, Optional
-from specir.verification.proof.acl2.prover import ACL2Prover
-from specir.verification.proof.proof import ProofResult
+from isir.verification.proof.acl2.prover import ACL2Prover
+from isir.verification.proof.proof import ProofResult
 
 
 class TestACL2Prover(unittest.TestCase):
@@ -29,8 +29,8 @@ class TestACL2Prover(unittest.TestCase):
             }
         }
 
-        patcher_client = patch("specir.verification.proof.acl2.prover.get_acl2_client_from_config")
-        patcher_llm = patch("specir.verification.proof.acl2.prover.get_llm_client_from_config")
+        patcher_client = patch("isir.verification.proof.acl2.prover.get_acl2_client_from_config")
+        patcher_llm = patch("isir.verification.proof.acl2.prover.get_llm_client_from_config")
         self.mock_get_client = patcher_client.start()
         self.mock_get_llm = patcher_llm.start()
         self.addCleanup(patcher_client.stop)

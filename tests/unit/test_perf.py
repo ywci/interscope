@@ -10,24 +10,24 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call, ANY
 from dataclasses import asdict
-from specir.verification.perf.perf_config import (
+from isir.verification.perf.perf_config import (
     PERFConfig,
     validate_perf_against_config,
     VALID_DIMENSIONS,
     DEFAULT_DIMENSIONS,
 )
-from specir.verification.perf.perf_stats import PERFStats
-from specir.verification.perf.perf_scorer import (
+from isir.verification.perf.perf_stats import PERFStats
+from isir.verification.perf.perf_scorer import (
     PERFScorer,
     PERFNode,
     compute_pareto_front,
     select_beam,
 )
-from specir.verification.perf.perf_parallel import PERFParallelEvaluator
-from specir.verification.perf.perf_evidence import PERFEvidence
-from specir.verification.perf.perf_traversal import PERFTraversal
-from specir.backends.llm_client import LLMClient
-from specir.evidence.registry import EvidenceRegistry
+from isir.verification.perf.perf_parallel import PERFParallelEvaluator
+from isir.verification.perf.perf_evidence import PERFEvidence
+from isir.verification.perf.perf_traversal import PERFTraversal
+from isir.backends.llm_client import LLMClient
+from isir.evidence.registry import EvidenceRegistry
 
 
 class TestPERFConfig:
@@ -398,7 +398,7 @@ class TestPERFParallelEvaluator:
 
 
 class TestPERFEvidence:
-    @patch("specir.verification.perf.perf_evidence.add_evidence_to_registry")
+    @patch("isir.verification.perf.perf_evidence.add_evidence_to_registry")
     def test_register_proof(self, mock_add_evidence):
         mock_add_evidence.return_value = 123
         evidence_manager = PERFEvidence()
@@ -429,7 +429,7 @@ class TestPERFEvidence:
         assert "nodes=1" in second_evidence.ref.value
         assert second_kwargs["property_name"] == "prop"
 
-    @patch("specir.verification.perf.perf_evidence.add_evidence_to_registry")
+    @patch("isir.verification.perf.perf_evidence.add_evidence_to_registry")
     def test_register_counterexample(self, mock_add_evidence):
         mock_add_evidence.return_value = 456
 
@@ -447,7 +447,7 @@ class TestPERFEvidence:
             status="counterexample",
         )
 
-    @patch("specir.verification.perf.perf_evidence.add_evidence_to_registry")
+    @patch("isir.verification.perf.perf_evidence.add_evidence_to_registry")
     def test_register_stats(self, mock_add_evidence):
         mock_add_evidence.return_value = 789
 
@@ -469,7 +469,7 @@ class TestPERFEvidence:
         assert "depth=2" in evidence_obj.ref.value
         assert kwargs["property_name"] == "prop"
 
-    @patch("specir.verification.perf.perf_evidence.EvidenceRegistry")
+    @patch("isir.verification.perf.perf_evidence.EvidenceRegistry")
     def test_get_perf_proofs(self, mock_registry_class):
         mock_registry = MagicMock(spec=EvidenceRegistry)
         mock_registry_class.return_value = mock_registry
@@ -505,8 +505,8 @@ class TestPERFTraversal:
             "workspace": "/tmp",
         }
 
-    @patch("specir.verification.perf.perf_traversal.PERFParallelEvaluator")
-    @patch("specir.verification.perf.perf_traversal.PERFScorer")
+    @patch("isir.verification.perf.perf_traversal.PERFParallelEvaluator")
+    @patch("isir.verification.perf.perf_traversal.PERFScorer")
     def test_traverse_initial_success(self, mock_scorer, mock_parallel):
         traversal = PERFTraversal(self.config, self.llm, self.context)
         traversal._get_initial_script = MagicMock(return_value="Proof. Qed.")
@@ -516,8 +516,8 @@ class TestPERFTraversal:
         assert script == "Proof. Qed."
         assert stats.successful_depth == 0
 
-    @patch("specir.verification.perf.perf_traversal.PERFParallelEvaluator")
-    @patch("specir.verification.perf.perf_traversal.PERFScorer")
+    @patch("isir.verification.perf.perf_traversal.PERFParallelEvaluator")
+    @patch("isir.verification.perf.perf_traversal.PERFScorer")
     def test_traverse_no_children(self, mock_scorer, mock_parallel):
         traversal = PERFTraversal(self.config, self.llm, self.context)
         traversal._get_initial_script = MagicMock(return_value="Proof. Qed.")
@@ -528,8 +528,8 @@ class TestPERFTraversal:
         assert script is None
         assert stats.max_depth == 1
 
-    @patch("specir.verification.perf.perf_traversal.PERFParallelEvaluator")
-    @patch("specir.verification.perf.perf_traversal.PERFScorer")
+    @patch("isir.verification.perf.perf_traversal.PERFParallelEvaluator")
+    @patch("isir.verification.perf.perf_traversal.PERFScorer")
     def test_traverse_child_success(self, mock_scorer_class, mock_parallel_class):
         mock_scorer = MagicMock()
         mock_scorer.score_nodes.side_effect = lambda nodes, ob, ctx: nodes
@@ -559,8 +559,8 @@ class TestPERFTraversal:
         assert script == "Proof. Qed."
         assert stats.successful_depth == 1
 
-    @patch("specir.verification.perf.perf_traversal.PERFParallelEvaluator")
-    @patch("specir.verification.perf.perf_traversal.PERFScorer")
+    @patch("isir.verification.perf.perf_traversal.PERFParallelEvaluator")
+    @patch("isir.verification.perf.perf_traversal.PERFScorer")
     def test_traverse_depth_exhausted(self, mock_scorer_class, mock_parallel_class):
         mock_scorer = MagicMock()
         mock_scorer.score_nodes.side_effect = lambda nodes, ob, ctx: nodes
@@ -589,8 +589,8 @@ class TestPERFTraversal:
         assert script is None
         assert stats.max_depth == 2
 
-    @patch("specir.verification.perf.perf_traversal.PERFParallelEvaluator")
-    @patch("specir.verification.perf.perf_traversal.PERFScorer")
+    @patch("isir.verification.perf.perf_traversal.PERFParallelEvaluator")
+    @patch("isir.verification.perf.perf_traversal.PERFScorer")
     def test_traverse_with_acl2_backend(self, mock_scorer_class, mock_parallel_class):
         config = PERFConfig(
             enabled=True, beam_size=2, branches_per_node=2, depth_limit=1

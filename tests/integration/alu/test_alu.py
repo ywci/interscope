@@ -62,7 +62,7 @@ def _write_library_config(config_path: Path):
 
 @pytest.fixture
 def alu_spec_path():
-    return Path(__file__).parent / "alu.specir"
+    return Path(__file__).parent / "alu.isir"
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ def test_alu_compile_koika(alu_spec_path, build_dir):
         "--no-rtl",
     ]
     result = subprocess.run(
-        [sys.executable, "-m", "specir.cli.compile"] + cmd,
+        [sys.executable, "-m", "isir.cli.compile"] + cmd,
         capture_output=True,
         text=True,
         timeout=60,
@@ -103,7 +103,7 @@ def test_alu_compile_acl2(alu_spec_path, build_dir):
         "--out-dir", str(build_dir),
     ]
     result = subprocess.run(
-        [sys.executable, "-m", "specir.cli.compile"] + cmd,
+        [sys.executable, "-m", "isir.cli.compile"] + cmd,
         capture_output=True,
         text=True,
         timeout=60,
@@ -140,7 +140,7 @@ def test_alu_verify_koika(alu_spec_path, build_dir):
     env = os.environ.copy()
     env["SPECIR_CONFIG"] = str(conf_path)
     result = subprocess.run(
-        [sys.executable, "-m", "specir.cli.verify"] + cmd,
+        [sys.executable, "-m", "isir.cli.verify"] + cmd,
         capture_output=True,
         text=True,
         timeout=120,
@@ -180,7 +180,7 @@ def test_alu_verify_acl2(alu_spec_path, build_dir):
     ]
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "specir.cli.verify"] + cmd,
+            [sys.executable, "-m", "isir.cli.verify"] + cmd,
             capture_output=True,
             text=True,
             timeout=120,

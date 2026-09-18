@@ -1,30 +1,30 @@
 # tests/unit/test_parser.py
 #
-# Unit tests for the SpecIR YAML parser.
+# Unit tests for the ISIR YAML parser.
 # Updated for Reset.async_reset and version 0.1 compatibility.
 
 import pytest
 import yaml
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from specir.parser.parser import parse_specir, SpecIRParseError
-from specir.parser.ast import (
-    SpecIR, Module, Clock, Reset, State, Rule, Property, TemporalExpr,
+from isir.parser.parser import parse_isir, ISIRParseError
+from isir.parser.ast import (
+    ISIR, Module, Clock, Reset, State, Rule, Property, TemporalExpr,
     Interface, Parameter, ComponentInstance, Directive, Fairness,
     ProofObligation, Metadata, Evidence, EvidenceRef
 )
 
 
-def write_temp_specir(data: dict) -> Path:
-    """Write a YAML dictionary to a temporary .specir file and return its path."""
-    with NamedTemporaryFile(mode="w", suffix=".specir", delete=False) as f:
+def write_temp_isir(data: dict) -> Path:
+    """Write a YAML dictionary to a temporary .isir file and return its path."""
+    with NamedTemporaryFile(mode="w", suffix=".isir", delete=False) as f:
         yaml.dump(data, f, default_flow_style=False)
         return Path(f.name)
 
 
-def test_minimal_specir():
+def test_minimal_isir():
     data = {
-        "specir_version": "0.1",
+        "isir_version": "0.1",
         "module": {
             "name": "minimal",
             "clocks": [{"name": "clk", "edge": "posedge"}],
@@ -33,9 +33,9 @@ def test_minimal_specir():
             "rules": [{"name": "rule1", "action": ["(write reg1 0)"]}],
         }
     }
-    path = write_temp_specir(data)
-    spec = parse_specir(path)
-    assert spec.specir_version == "0.1"
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
+    assert spec.isir_version == "0.1"
     assert spec.module.name == "minimal"
     assert len(spec.module.clocks) == 1
     assert spec.module.clocks[0].name == "clk"
@@ -50,7 +50,7 @@ def test_minimal_specir():
 
 def test_full_fifo_example():
     data = {
-        "specir_version": "0.1",
+        "isir_version": "0.1",
         "module": {
             "name": "fifo",
             "clocks": [{"name": "clk", "edge": "posedge"}],
@@ -108,8 +108,8 @@ def test_full_fifo_example():
             ]
         }
     }
-    path = write_temp_specir(data)
-    spec = parse_specir(path)
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
     assert spec.module.name == "fifo"
     assert len(spec.module.state) == 4
     assert len(spec.module.rules) == 3
@@ -122,7 +122,7 @@ def test_full_fifo_example():
 
 def test_with_proof_obligation():
     data = {
-        "specir_version": "0.1",
+        "isir_version": "0.1",
         "module": {
             "name": "with_proof",
             "clocks": [{"name": "clk", "edge": "posedge"}],
@@ -148,8 +148,8 @@ def test_with_proof_obligation():
             ]
         }
     }
-    path = write_temp_specir(data)
-    spec = parse_specir(path)
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
     po = spec.module.proof_obligations[0]
     assert po.property == "reg_never_overflow"
     assert po.backend == "koika"
@@ -158,43 +158,43 @@ def test_with_proof_obligation():
     path.unlink()
 
 
-def test_missing_specir_version():
+def test_missing_isir_version():
     data = {
         "module": {"name": "test", "clocks": [], "resets": [], "state": [], "rules": []}
     }
-    path = write_temp_specir(data)
-    with pytest.raises(SpecIRParseError, match="Missing 'specir_version' field"):
-        parse_specir(path)
+    path = write_temp_isir(data)
+    with pytest.raises(ISIRParseError, match="Missing 'isir_version' field"):
+        parse_isir(path)
     path.unlink()
 
 
 def test_missing_module():
-    data = {"specir_version": "0.1"}
-    path = write_temp_specir(data)
-    with pytest.raises(SpecIRParseError, match="Missing 'module' field"):
-        parse_specir(path)
+    data = {"isir_version": "0.1"}
+    path = write_temp_isir(data)
+    with pytest.raises(ISIRParseError, match="Missing 'module' field"):
+        parse_isir(path)
     path.unlink()
 
 
 def test_module_not_dict():
-    data = {"specir_version": "0.1", "module": "not a dict"}
-    path = write_temp_specir(data)
-    with pytest.raises(SpecIRParseError, match="'module' must be a mapping"):
-        parse_specir(path)
+    data = {"isir_version": "0.1", "module": "not a dict"}
+    path = write_temp_isir(data)
+    with pytest.raises(ISIRParseError, match="'module' must be a mapping"):
+        parse_isir(path)
     path.unlink()
 
 
 def test_invalid_yaml_syntax():
-    path = Path("/tmp/invalid.specir")
-    path.write_text("specir_version: 0.1\nmodule: [unclosed list\n")
-    with pytest.raises(SpecIRParseError, match="YAML parsing error"):
-        parse_specir(path)
+    path = Path("/tmp/invalid.isir")
+    path.write_text("isir_version: 0.1\nmodule: [unclosed list\n")
+    with pytest.raises(ISIRParseError, match="YAML parsing error"):
+        parse_isir(path)
     path.unlink()
 
 
 def test_missing_required_field_in_module():
     data = {
-        "specir_version": "0.1",
+        "isir_version": "0.1",
         "module": {
             "name": "missing_clocks",
             "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
@@ -202,15 +202,15 @@ def test_missing_required_field_in_module():
             "rules": []
         }
     }
-    path = write_temp_specir(data)
-    spec = parse_specir(path)
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
     assert spec.module.clocks == []
     path.unlink()
 
 
 def test_optional_fields():
     data = {
-        "specir_version": "0.1",
+        "isir_version": "0.1",
         "module": {
             "name": "optional_test",
             "clocks": [{"name": "clk", "edge": "posedge"}],
@@ -228,8 +228,8 @@ def test_optional_fields():
             "evidence": [{"type": "coq_theorem", "ref": "#lemma1", "engine": "theorem_proving"}],
         }
     }
-    path = write_temp_specir(data)
-    spec = parse_specir(path)
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
     assert len(spec.module.parameters) == 1
     assert spec.module.parameters[0].name == "WIDTH"
     assert len(spec.module.inputs) == 1
@@ -248,4 +248,4 @@ def test_optional_fields():
 
 def test_file_not_found():
     with pytest.raises(FileNotFoundError):
-        parse_specir("/non/existent/file.specir")
+        parse_isir("/non/existent/file.isir")

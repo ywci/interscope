@@ -6,8 +6,8 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from specir.backends import verilator_sim
-from specir.backends.verilator_sim import (
+from isir.backends import verilator_sim
+from isir.backends.verilator_sim import (
     VerilatorError,
     generate_testbench,
     build_simulation,

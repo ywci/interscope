@@ -1,7 +1,7 @@
 # tests/integration/perf/test_perf_integration.py
 #
 # Integration tests for PERF (Proof tree Exploration with Reflective Feedback).
-# These tests run the full `specir verify` command with PERF enabled and check
+# These tests run the full `isir verify` command with PERF enabled and check
 # that the traversal executes, respects configuration flags, and produces
 # expected outcomes (success or graceful failure).
 
@@ -77,9 +77,9 @@ def _llm_available(config_path: Path) -> bool:
     return True
 
 
-def _run_specir(subcommand: str, args: list, timeout: int = 120, **kwargs) -> subprocess.CompletedProcess:
+def _run_isir(subcommand: str, args: list, timeout: int = 120, **kwargs) -> subprocess.CompletedProcess:
     """
-    Run a specir CLI command with the given subcommand and arguments.
+    Run a isir CLI command with the given subcommand and arguments.
     Ensures PYTHONPATH includes the project's src/ directory and that the
     system PATH is fully preserved.
     """
@@ -94,7 +94,7 @@ def _run_specir(subcommand: str, args: list, timeout: int = 120, **kwargs) -> su
         env["PATH"] = os.environ.get("PATH", "")
 
     return subprocess.run(
-        [sys.executable, "-m", "specir.cli." + subcommand] + args,
+        [sys.executable, "-m", "isir.cli." + subcommand] + args,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -107,7 +107,7 @@ def _run_specir(subcommand: str, args: list, timeout: int = 120, **kwargs) -> su
 @pytest.fixture
 def alu_spec_path():
     """Path to the ALU spec in the same directory."""
-    return Path(__file__).parent / "alu.specir"
+    return Path(__file__).parent / "alu.isir"
 
 
 @pytest.fixture
@@ -340,7 +340,7 @@ def test_perf_koika_alu(alu_spec_path, build_dir, perf_config_path):
         "--perf",
     ]
     env = {"SPECIR_CONFIG": str(perf_config_path)}
-    result = _run_specir("verify", cmd, timeout=180, env=env)
+    result = _run_isir("verify", cmd, timeout=180, env=env)
 
     assert result.returncode in (0, 1), (
         f"PERF verification crashed with code {result.returncode}:\n"
@@ -367,7 +367,7 @@ def test_perf_acl2_alu(alu_spec_path, build_dir, perf_config_path):
         "--perf",
     ]
     env = {"SPECIR_CONFIG": str(perf_config_path)}
-    result = _run_specir("verify", cmd, timeout=180, env=env)
+    result = _run_isir("verify", cmd, timeout=180, env=env)
 
     assert result.returncode in (0, 1), (
         f"PERF ACL2 verification crashed with code {result.returncode}:\n"
@@ -395,7 +395,7 @@ def test_perf_with_model_checking_alu(alu_spec_path, build_dir, perf_config_path
         "--perf",
     ]
     env = {"SPECIR_CONFIG": str(perf_config_path)}
-    result = _run_specir("verify", cmd, timeout=300, env=env)
+    result = _run_isir("verify", cmd, timeout=300, env=env)
 
     assert result.returncode in (0, 1), (
         f"PERF with MC verification crashed with code {result.returncode}:\n"
@@ -417,7 +417,7 @@ def test_perf_conflict_detection(alu_spec_path, build_dir, conflict_config_path)
         "--out-dir", str(build_dir / "verify"),
     ]
     env = {"SPECIR_CONFIG": str(conflict_config_path)}
-    result = _run_specir("verify", cmd, timeout=10, env=env)
+    result = _run_isir("verify", cmd, timeout=10, env=env)
 
     assert result.returncode != 0, "Expected conflict error but verification succeeded"
     assert "Configuration conflict" in result.stderr or "use_proof_library" in result.stderr, (
@@ -444,7 +444,7 @@ def test_perf_stats_flag_alu(alu_spec_path, build_dir, perf_config_path):
         "--perf-stats",
     ]
     env = {"SPECIR_CONFIG": str(perf_config_path)}
-    result = _run_specir("verify", cmd, timeout=180, env=env)
+    result = _run_isir("verify", cmd, timeout=180, env=env)
 
     output = result.stdout + result.stderr
     # The CLI now prints a "PERF Failure Diagnostics" block (from

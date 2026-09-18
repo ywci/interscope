@@ -1,6 +1,6 @@
 # tests/unit/test_verify.py
 #
-# Unit tests for the `specir verify` CLI command.
+# Unit tests for the `isir verify` CLI command.
 # Updated for new ablation flags, output_format, and ProofObligationResult.
 # Also updated to include `show_proof` in Namespace objects used by _finish_summary.
 
@@ -10,7 +10,7 @@ import argparse
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
-from specir.cli.verify import (
+from isir.cli.verify import (
     verify_spec,
     _setup_arg_parser,
     _canonical_backend,
@@ -20,14 +20,14 @@ from specir.cli.verify import (
     _safe_register_mc_evidence,
     _generate_acl2_from_module
 )
-from specir.verification.proof.proof import ProofResult
-from specir.verification.proof.proof_skill import LLMProofSkill
-from specir.verification.model_checker import ModelCheckError
-from specir.utils.result_types import ProofObligationResult, Status
+from isir.verification.proof.proof import ProofResult
+from isir.verification.proof.proof_skill import LLMProofSkill
+from isir.verification.model_checker import ModelCheckError
+from isir.utils.result_types import ProofObligationResult, Status
 
 
 def _make_minimal_spec_module(name="test"):
-    from specir.dialects.spec_ir import SpecModule, SpecStateOp, SpecRuleOp, SpecPropertyOp
+    from isir.dialects.isir import SpecModule, SpecStateOp, SpecRuleOp, SpecPropertyOp
     mod = SpecModule(name=name)
     mod.state_ops.append(
         SpecStateOp(state_name="x", kind="register", data_type="bits<8>", initial=0)
@@ -65,12 +65,12 @@ class TestCanonicalBackend:
 
 
 class TestVerifyTheoremProving:
-    @patch("specir.cli.verify.LLMProofSkill")
-    @patch("specir.cli.verify.convert_ast_to_spec_module")
-    @patch("specir.cli.verify.parse_specir")
-    @patch("specir.cli.verify.validate_specir_file")
+    @patch("isir.cli.verify.LLMProofSkill")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
     @patch(
-        "specir.cli.verify.load_config",
+        "isir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
             "provers": {"koika": {"prove": {}}},
@@ -99,7 +99,7 @@ class TestVerifyTheoremProving:
             "pathlib.Path.read_text", return_value="dummy"
         ):
             args = argparse.Namespace(
-                input=str(tmp_path / "test.specir"),
+                input=str(tmp_path / "test.isir"),
                 backend=None,
                 out_dir=str(tmp_path),
                 max_attempts=None,
@@ -121,12 +121,12 @@ class TestVerifyTheoremProving:
         assert ret == 0
         mock_skill_instance.prove.assert_called_once()
 
-    @patch("specir.cli.verify.LLMProofSkill")
-    @patch("specir.cli.verify.convert_ast_to_spec_module")
-    @patch("specir.cli.verify.parse_specir")
-    @patch("specir.cli.verify.validate_specir_file")
+    @patch("isir.cli.verify.LLMProofSkill")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
     @patch(
-        "specir.cli.verify.load_config",
+        "isir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
             "provers": {"koika": {"prove": {}}},
@@ -151,7 +151,7 @@ class TestVerifyTheoremProving:
 
         with patch("pathlib.Path.exists", return_value=True):
             args = argparse.Namespace(
-                input=str(tmp_path / "test.specir"),
+                input=str(tmp_path / "test.isir"),
                 backend=None,
                 out_dir=str(tmp_path),
                 max_attempts=None,
@@ -172,12 +172,12 @@ class TestVerifyTheoremProving:
 
         assert ret == 1
 
-    @patch("specir.cli.verify.LLMProofSkill")
-    @patch("specir.cli.verify.convert_ast_to_spec_module")
-    @patch("specir.cli.verify.parse_specir")
-    @patch("specir.cli.verify.validate_specir_file")
+    @patch("isir.cli.verify.LLMProofSkill")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
     @patch(
-        "specir.cli.verify.load_config",
+        "isir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
             "provers": {"koika": {"prove": {}}},
@@ -201,7 +201,7 @@ class TestVerifyTheoremProving:
 
         with patch("pathlib.Path.exists", return_value=True):
             args = argparse.Namespace(
-                input=str(tmp_path / "test.specir"),
+                input=str(tmp_path / "test.isir"),
                 backend="koika",
                 out_dir=str(tmp_path),
                 max_attempts=None,
@@ -226,13 +226,13 @@ class TestVerifyTheoremProving:
 
 
 class TestVerifyModelChecking:
-    @patch("specir.cli.verify.run_model_check")
-    @patch("specir.cli.verify.koika_to_rtl_convert")
-    @patch("specir.cli.verify.convert_ast_to_spec_module")
-    @patch("specir.cli.verify.parse_specir")
-    @patch("specir.cli.verify.validate_specir_file")
+    @patch("isir.cli.verify.run_model_check")
+    @patch("isir.cli.verify.koika_to_rtl_convert")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
     @patch(
-        "specir.cli.verify.load_config",
+        "isir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
             "verification": {"bmc_max_depth": 100},
@@ -272,7 +272,7 @@ class TestVerifyModelChecking:
             }
 
             args = argparse.Namespace(
-                input=str(tmp_path / "test.specir"),
+                input=str(tmp_path / "test.isir"),
                 backend="model_checking",
                 out_dir=str(tmp_path),
                 max_attempts=None,
@@ -294,13 +294,13 @@ class TestVerifyModelChecking:
         assert ret == 0
         mock_mc.assert_called_once()
 
-    @patch("specir.cli.verify.run_model_check")
-    @patch("specir.cli.verify.koika_to_rtl_convert")
-    @patch("specir.cli.verify.convert_ast_to_spec_module")
-    @patch("specir.cli.verify.parse_specir")
-    @patch("specir.cli.verify.validate_specir_file")
+    @patch("isir.cli.verify.run_model_check")
+    @patch("isir.cli.verify.koika_to_rtl_convert")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
     @patch(
-        "specir.cli.verify.load_config",
+        "isir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
             "verification": {"bmc_max_depth": 100},
@@ -338,7 +338,7 @@ class TestVerifyModelChecking:
             "pathlib.Path.read_text", return_value="// dummy"
         ):
             args = argparse.Namespace(
-                input=str(tmp_path / "test.specir"),
+                input=str(tmp_path / "test.isir"),
                 backend="model_checking",
                 out_dir=str(tmp_path),
                 max_attempts=None,
@@ -359,13 +359,13 @@ class TestVerifyModelChecking:
 
         assert ret == 1
 
-    @patch("specir.cli.verify.run_model_check", side_effect=ModelCheckError("tool not found"))
-    @patch("specir.cli.verify.koika_to_rtl_convert")
-    @patch("specir.cli.verify.convert_ast_to_spec_module")
-    @patch("specir.cli.verify.parse_specir")
-    @patch("specir.cli.verify.validate_specir_file")
+    @patch("isir.cli.verify.run_model_check", side_effect=ModelCheckError("tool not found"))
+    @patch("isir.cli.verify.koika_to_rtl_convert")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
     @patch(
-        "specir.cli.verify.load_config", return_value={"directories": {"build": "build"}}
+        "isir.cli.verify.load_config", return_value={"directories": {"build": "build"}}
     )
     def test_mc_tool_error(
         self,
@@ -388,7 +388,7 @@ class TestVerifyModelChecking:
             "pathlib.Path.read_text", return_value="// dummy"
         ):
             args = argparse.Namespace(
-                input=str(tmp_path / "test.specir"),
+                input=str(tmp_path / "test.isir"),
                 backend="model_checking",
                 out_dir=str(tmp_path),
                 max_attempts=None,
@@ -409,15 +409,15 @@ class TestVerifyModelChecking:
 
         assert ret == 1
 
-    @patch("specir.cli.verify.LLMProofSkill")
-    @patch("specir.cli.verify.run_model_check")
-    @patch("specir.cli.verify.koika_to_rtl_convert")
-    @patch("specir.cli.verify.spec_to_koika_convert")
-    @patch("specir.cli.verify.convert_ast_to_spec_module")
-    @patch("specir.cli.verify.parse_specir")
-    @patch("specir.cli.verify.validate_specir_file")
+    @patch("isir.cli.verify.LLMProofSkill")
+    @patch("isir.cli.verify.run_model_check")
+    @patch("isir.cli.verify.koika_to_rtl_convert")
+    @patch("isir.cli.verify.isir_to_koika_convert")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
     @patch(
-        "specir.cli.verify.load_config",
+        "isir.cli.verify.load_config",
         return_value={
             "directories": {"build": "build"},
             "verification": {"bmc_max_depth": 100},
@@ -463,7 +463,7 @@ class TestVerifyModelChecking:
             "pathlib.Path.read_text", return_value="// dummy"
         ), patch("shutil.which", return_value="/usr/bin/sby"):
             args = argparse.Namespace(
-                input=str(tmp_path / "test.specir"),
+                input=str(tmp_path / "test.isir"),
                 backend=None,
                 out_dir=str(tmp_path),
                 max_attempts=None,
@@ -496,7 +496,7 @@ class TestReport:
         ]
         report_path = tmp_path / "report.json"
         args = argparse.Namespace(
-            input=str(tmp_path / "test.specir"),
+            input=str(tmp_path / "test.isir"),
             backend=None,
             report=str(report_path),
             debug=False,
@@ -520,7 +520,7 @@ class TestReport:
             )
         ]
         args = argparse.Namespace(
-            input="test.specir",
+            input="test.isir",
             backend=None,
             report=None,
             debug=False,

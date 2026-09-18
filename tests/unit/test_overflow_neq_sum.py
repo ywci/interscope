@@ -11,8 +11,8 @@
 import pytest
 from unittest.mock import patch
 
-from specir.verification.proof.koika.prover import KoikaProver
-from specir.verification.proof.koika.auto_patcher import (
+from isir.verification.proof.koika.prover import KoikaProver
+from isir.verification.proof.koika.auto_patcher import (
     auto_patch,
 )
 
@@ -39,7 +39,7 @@ def prover():
         },
         "proof": {"max_repair_attempts": 1},
     }
-    with patch("specir.verification.proof.koika.prover.get_llm_client_from_config") as mock_llm:
+    with patch("isir.verification.proof.koika.prover.get_llm_client_from_config") as mock_llm:
         mock_llm.return_value = object()
         return KoikaProver(config=config)
 

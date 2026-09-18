@@ -29,10 +29,10 @@ def _koika_works() -> bool:
         return False
 
 
-def _run_specir(subcommand: str, args: list, timeout: int = 180, **kwargs) -> subprocess.CompletedProcess:
-    """Run a specir CLI subcommand with a default generous timeout."""
+def _run_isir(subcommand: str, args: list, timeout: int = 180, **kwargs) -> subprocess.CompletedProcess:
+    """Run a isir CLI subcommand with a default generous timeout."""
     return subprocess.run(
-        [sys.executable, "-m", "specir.cli." + subcommand] + args,
+        [sys.executable, "-m", "isir.cli." + subcommand] + args,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -42,7 +42,7 @@ def _run_specir(subcommand: str, args: list, timeout: int = 180, **kwargs) -> su
 
 @pytest.fixture
 def counter_spec_path():
-    return Path(__file__).parent / "counter.specir"
+    return Path(__file__).parent / "counter.isir"
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_counter_compile_koika(counter_spec_path, build_dir):
         "--out-dir", str(build_dir),
         "--no-rtl",
     ]
-    result = _run_specir("compile", cmd, timeout=120)
+    result = _run_isir("compile", cmd, timeout=120)
     assert result.returncode == 0, (
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
@@ -108,7 +108,7 @@ def test_counter_compile_acl2(counter_spec_path, build_dir):
         "--backend", "acl2",
         "--out-dir", str(build_dir),
     ]
-    result = _run_specir("compile", cmd, timeout=120)
+    result = _run_isir("compile", cmd, timeout=120)
     assert result.returncode == 0, (
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
@@ -143,7 +143,7 @@ def test_counter_verify_koika(counter_spec_path, build_dir):
     env = os.environ.copy()
     env["SPECIR_CONFIG"] = str(conf_path)
     result = subprocess.run(
-        [sys.executable, "-m", "specir.cli.verify"] + cmd,
+        [sys.executable, "-m", "isir.cli.verify"] + cmd,
         capture_output=True,
         text=True,
         timeout=120,
@@ -182,7 +182,7 @@ def test_counter_verify_acl2(counter_spec_path, build_dir):
         "--no-perf",
     ]
     try:
-        result = _run_specir("verify", cmd, timeout=300)
+        result = _run_isir("verify", cmd, timeout=300)
     except subprocess.TimeoutExpired as e:
         pytest.fail(
             f"ACL2 verification timed out (300 seconds).\n"

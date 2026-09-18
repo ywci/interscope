@@ -1,12 +1,12 @@
 # tests/unit/test_ast.py
 #
-# Unit tests for the SpecIR AST dataclasses.
+# Unit tests for the ISIR AST dataclasses.
 
 import pytest
-from specir.parser.ast import (
+from isir.parser.ast import (
     Clock, ComponentInstance, Directive, Evidence, EvidenceRef, Fairness,
     Interface, Metadata, Module, Parameter, Property, ProofObligation,
-    ProofObligationFeedback, Reset, Rule, Schedule, SpecIR, State,
+    ProofObligationFeedback, Reset, Rule, Schedule, ISIR, State,
     TemporalExpr, UserType,
 )
 
@@ -216,15 +216,15 @@ def test_module():
     assert len(module.rules) == 1
 
 
-def test_specir_root():
+def test_isir_root():
     module = Module(name="test")
-    spec = SpecIR(specir_version="0.1", module=module)
-    assert spec.specir_version == "0.1"
+    spec = ISIR(isir_version="0.1", module=module)
+    assert spec.isir_version == "0.1"
     assert spec.module.name == "test"
 
 
-def test_specir_top_level_metadata():
-    """SpecIR root now accepts top-level metadata and evidence."""
+def test_isir_top_level_metadata():
+    """ISIR root now accepts top-level metadata and evidence."""
     module = Module(name="test")
     md = Metadata(engine="bmc")
     ev = Evidence(
@@ -232,7 +232,7 @@ def test_specir_top_level_metadata():
         ref=EvidenceRef(type="uri", value="file://trace.vcd"),
         engine="verilator"
     )
-    spec = SpecIR(specir_version="0.1", module=module, metadata=md, evidence=[ev])
+    spec = ISIR(isir_version="0.1", module=module, metadata=md, evidence=[ev])
     assert spec.metadata.engine == "bmc"
     assert len(spec.evidence) == 1
     assert spec.evidence[0].type == "simulation_trace"
