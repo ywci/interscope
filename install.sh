@@ -18,6 +18,17 @@ log_success() { echo "${GREEN}${BOLD}[SUCCESS]${RESET} $*"; }
 log_warning() { echo "${YELLOW}${BOLD}[WARNING]${RESET} $*" >&2; }
 log_error()   { echo "${RED}${BOLD}[ERROR]${RESET} $*" >&2; exit 1; }
 
+_WARNED_ONCE=""
+
+log_warning_once() {
+    local key="$1"
+    shift
+    if [[ " $_WARNED_ONCE " != *" $key "* ]]; then
+        _WARNED_ONCE="$_WARNED_ONCE $key"
+        log_warning "$@"
+    fi
+}
+
 SMOKE_TIMEOUT=5
 
 safe_smoke_test() {
@@ -48,6 +59,20 @@ safe_smoke_test() {
     fi
 }
 
+_APT_UPDATE_DONE=false
+
+safe_apt_update() {
+    if $_APT_UPDATE_DONE; then
+        return 0
+    fi
+    _APT_UPDATE_DONE=true
+    if ! sudo apt-get update -qq; then
+        log_warning "apt-get update failed; continuing without a refreshed package index."
+        return 1
+    fi
+    return 0
+}
+
 PYTHON=${PYTHON:-python3}
 UV_PYTHON_VERSION=${UV_PYTHON_VERSION:-3.12}
 INSTALL_EXTERNAL=${INSTALL_EXTERNAL:-true}
@@ -57,6 +82,11 @@ OPAM_ROOT="${OPAMROOT:-$HOME/.opam}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    log_warning_once "root" "Running as root is not recommended."
+    export OPAMROOTISOK=1
+fi
 
 ensure_uv() {
     add_common_uv_paths() {
@@ -71,9 +101,21 @@ ensure_uv() {
     if command -v uv &>/dev/null; then return 0; fi
     log_info "Installing uv..."
     command -v "$PYTHON" &>/dev/null || log_error "$PYTHON not found"
-    "$PYTHON" -m pip install --user uv || log_error "Failed to install uv"
-    add_common_uv_paths
-    command -v uv &>/dev/null || log_error "uv still not found after installation"
+
+    if "$PYTHON" -m pip install --user uv >/dev/null 2>&1; then
+        add_common_uv_paths
+    fi
+
+    if ! command -v uv &>/dev/null; then
+        if command -v curl &>/dev/null; then
+            curl -fsSL https://astral.sh/uv/install.sh | sh || true
+        elif command -v wget &>/dev/null; then
+            wget -qO- https://astral.sh/uv/install.sh | sh || true
+        fi
+        add_common_uv_paths
+    fi
+
+    command -v uv &>/dev/null || log_error "uv still not found after installation. Install manually: https://docs.astral.sh/uv/"
     log_info "uv installed: $(uv --version)"
 }
 
@@ -83,13 +125,28 @@ setup_venv() {
         uv python install "$UV_PYTHON_VERSION" || \
             log_error "Failed to install Python $UV_PYTHON_VERSION"
     fi
+
+    if [[ -d ".venv" ]]; then
+        local existing_py=""
+        if [[ -x ".venv/bin/python" ]]; then
+            existing_py=$(.venv/bin/python -c \
+                'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' \
+                2>/dev/null || echo "")
+        fi
+        if [[ "$existing_py" != "$UV_PYTHON_VERSION" ]]; then
+            log_warning "Existing .venv uses Python '${existing_py:-unknown}'; recreating with $UV_PYTHON_VERSION."
+            rm -rf .venv
+        else
+            log_info "Virtual environment already exists with Python $existing_py; reusing it."
+        fi
+    fi
+
     if [[ ! -d ".venv" ]]; then
         log_info "Creating virtual environment with Python $UV_PYTHON_VERSION..."
         uv venv --python "$UV_PYTHON_VERSION" --seed || \
             log_error "Failed to create venv"
-    else
-        log_info "Virtual environment already exists; skipping creation."
     fi
+
     source .venv/bin/activate
     log_info "Virtual environment activated."
 }
@@ -128,17 +185,17 @@ install_opam() {
 
     if command -v apt-get &>/dev/null; then
         log_info "Detected apt package manager. Installing opam..."
-        sudo apt-get update -qq
-        sudo apt-get install -y opam || {
+        safe_apt_update || true
+        if ! sudo apt-get install -y opam; then
             log_warning "apt-get install opam failed. Trying the official installer."
             _install_opam_via_script
-        }
+        fi
     elif command -v brew &>/dev/null; then
         log_info "Detected Homebrew. Installing opam..."
-        brew install opam || {
+        if ! brew install opam; then
             log_warning "brew install opam failed. Trying the official installer."
             _install_opam_via_script
-        }
+        fi
     else
         log_warning "No known package manager found. Trying the official opam installer..."
         _install_opam_via_script
@@ -161,15 +218,16 @@ _install_opam_via_script() {
     else
         log_error "Neither curl nor wget found. Cannot download opam installer."
     fi
+    export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
     export PATH="$OPAM_ROOT/bin:$PATH"
 }
 
 init_opam() {
     if [[ ! -d "$OPAM_ROOT" ]]; then
         log_info "Initialising opam..."
-        opam init --bare --disable-sandboxing -y || {
+        if ! opam init --bare --disable-sandboxing -y; then
             log_error "opam init failed. Please run 'opam init' manually and rerun this script."
-        }
+        fi
     fi
 
     if ! opam switch list --short | grep -q "."; then
@@ -191,7 +249,7 @@ init_opam() {
         fi
     fi
 
-    eval $(opam env)
+    eval "$(opam env)"
 }
 
 install_rocq_mcp() {
@@ -204,9 +262,9 @@ install_rocq_mcp() {
         log_info "Installing Coq and coq-lsp globally (for non‑Kōika use)..."
         install_opam
         init_opam
-        opam install coq coq-lsp -y || {
+        if ! opam install coq coq-lsp -y; then
             log_warning "Failed to install Coq/coq‑lsp globally. You may need to install them manually."
-        }
+        fi
     else
         log_info "Coq already available."
     fi
@@ -265,18 +323,18 @@ install_acl2_binary() {
     log_info "Attempting to install ACL2 binary..."
     if command -v apt-get &>/dev/null; then
         log_info "Detected apt package manager. Installing ACL2..."
-        sudo apt-get update -qq
-        sudo apt-get install -y acl2 || {
+        safe_apt_update || true
+        if ! sudo apt-get install -y acl2; then
             log_warning "apt-get install acl2 failed. Please install manually."
             return 0
-        }
+        fi
         log_success "ACL2 installed via apt."
     elif command -v brew &>/dev/null; then
         log_info "Detected Homebrew. Installing ACL2..."
-        brew install acl2 || {
+        if ! brew install acl2; then
             log_warning "brew install acl2 failed. Please install manually."
             return 0
-        }
+        fi
         log_success "ACL2 installed via Homebrew."
     else
         log_warning "Could not detect a package manager. ACL2 must be installed manually."
@@ -294,7 +352,7 @@ install_acl2_mcp() {
 
     if command -v acl2-mcp &>/dev/null; then
         log_info "acl2-mcp already installed."
-        safe_smoke_test "acl2-mcp exists" acl2-mcp --version 2>/dev/null || true
+        safe_smoke_test "acl2-mcp exists" acl2-mcp --version 2>/dev/null
         return 0
     fi
 
@@ -338,7 +396,7 @@ install_acl2_mcp() {
     fi
 
     log_success "acl2-mcp installed successfully."
-    safe_smoke_test "acl2-mcp exists" acl2-mcp --version 2>/dev/null || true
+    safe_smoke_test "acl2-mcp exists" acl2-mcp --version 2>/dev/null
 }
 
 KOIKA_REQUIRED_COQ_VERSION="8.18.0"
@@ -348,18 +406,34 @@ KOIKA_SWITCH_NAME="coq-8.18-ocaml-4.14"
 check_koika_environment() {
     if opam switch list --short 2>/dev/null | grep -q "^${KOIKA_SWITCH_NAME}$"; then
         opam switch "$KOIKA_SWITCH_NAME" >/dev/null 2>&1
-        eval $(opam env) 2>/dev/null
-        local existing_coq=$(coqc --version 2>/dev/null | head -1 | sed -E 's/.*version ([0-9]+\.[0-9]+).*/\1/' || echo "0")
+        eval "$(opam env)" 2>/dev/null
+
+        local existing_coq
+        existing_coq=$(coqc --version 2>/dev/null \
+            | sed -nE 's/.*version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
+        existing_coq=${existing_coq:-0}
+
         if [[ "$existing_coq" == "${KOIKA_REQUIRED_COQ_VERSION%.*}" ]]; then
             log_info "Kōika switch '$KOIKA_SWITCH_NAME' already exists with Coq $existing_coq — reusing it."
             return 0
         fi
-        log_warning "Kōika switch '$KOIKA_SWITCH_NAME' exists but has Coq $existing_coq (want $KOIKA_REQUIRED_COQ_VERSION)."
+
+        log_warning "Kōika switch '$KOIKA_SWITCH_NAME' exists but has Coq $existing_coq (want $KOIKA_REQUIRED_COQ_VERSION) — fixing it."
+        opam remove coq-lsp -y 2>/dev/null || true
+        if ! opam install "coq=$KOIKA_REQUIRED_COQ_VERSION" -y; then
+            log_warning "Failed to install Coq $KOIKA_REQUIRED_COQ_VERSION in the existing switch."
+            return 1
+        fi
+        return 0
     fi
 
     local need_switch=false
-    local ocaml_ver=$(ocamlc -version 2>/dev/null || echo "0")
-    local coq_ver=$(coqc --version 2>/dev/null | head -1 | sed -E 's/.*version ([0-9]+\.[0-9]+).*/\1/' || echo "0")
+    local ocaml_ver
+    ocaml_ver=$(ocamlc -version 2>/dev/null || echo "0")
+    local coq_ver
+    coq_ver=$(coqc --version 2>/dev/null \
+        | sed -nE 's/.*version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
+    coq_ver=${coq_ver:-0}
 
     if [[ "$ocaml_ver" != "$KOIKA_REQUIRED_OCAML_VERSION" ]]; then
         log_warning "OCaml version $ocaml_ver detected, but Kōika requires $KOIKA_REQUIRED_OCAML_VERSION."
@@ -370,33 +444,39 @@ check_koika_environment() {
         need_switch=true
     fi
 
-    if $need_switch; then
-        if [[ "${KOIKA_INSTALL_SWITCH:-false}" == "true" ]]; then
-            log_info "Creating dedicated opam switch '$KOIKA_SWITCH_NAME'..."
-            opam switch create "$KOIKA_SWITCH_NAME" "ocaml-base-compiler.$KOIKA_REQUIRED_OCAML_VERSION" --yes || {
-                log_error "Failed to create opam switch. Please create it manually."
-            }
-            opam switch "$KOIKA_SWITCH_NAME"
-            eval $(opam env)
-            opam install "coq=$KOIKA_REQUIRED_COQ_VERSION" -y || {
-                log_error "Failed to install Coq $KOIKA_REQUIRED_COQ_VERSION."
-            }
-            log_success "Opam switch '$KOIKA_SWITCH_NAME' is ready."
-        else
-            log_error "Incompatible OCaml/Coq versions for Kōika."
-            echo ""
-            echo "  Please create a dedicated opam switch:"
-            echo "    opam switch create $KOIKA_SWITCH_NAME ocaml-base-compiler.$KOIKA_REQUIRED_OCAML_VERSION --yes"
-            echo "    opam switch $KOIKA_SWITCH_NAME"
-            echo "    eval \$(opam env)"
-            echo "    opam install coq=$KOIKA_REQUIRED_COQ_VERSION -y"
-            echo ""
-            echo "  Then rerun this installer with:  ./install.sh --install-koika-switch"
-            exit 1
-        fi
-    else
+    if ! $need_switch; then
         log_info "OCaml and Coq versions are compatible with Kōika."
+        return 0
     fi
+
+    if [[ "${KOIKA_INSTALL_SWITCH:-false}" == "true" ]]; then
+        log_info "Creating dedicated opam switch '$KOIKA_SWITCH_NAME'..."
+        if ! opam switch create "$KOIKA_SWITCH_NAME" \
+                "ocaml-base-compiler.$KOIKA_REQUIRED_OCAML_VERSION" --yes; then
+            log_warning "Failed to create opam switch for Kōika. Skipping Kōika."
+            return 1
+        fi
+        opam switch "$KOIKA_SWITCH_NAME"
+        eval "$(opam env)"
+        if ! opam install "coq=$KOIKA_REQUIRED_COQ_VERSION" -y; then
+            log_warning "Failed to install Coq $KOIKA_REQUIRED_COQ_VERSION. Skipping Kōika."
+            return 1
+        fi
+        log_success "Opam switch '$KOIKA_SWITCH_NAME' is ready."
+        return 0
+    fi
+
+    log_warning "Incompatible OCaml/Coq versions for Kōika. Skipping Kōika installation."
+    echo ""
+    echo "  To install Kōika, create a dedicated opam switch manually:"
+    echo "    opam switch create $KOIKA_SWITCH_NAME ocaml-base-compiler.$KOIKA_REQUIRED_OCAML_VERSION --yes"
+    echo "    opam switch $KOIKA_SWITCH_NAME"
+    echo "    eval \$(opam env)"
+    echo "    opam install coq=$KOIKA_REQUIRED_COQ_VERSION -y"
+    echo ""
+    echo "  Then rerun this installer with:  ./install.sh --install-koika-switch"
+    echo ""
+    return 1
 }
 
 install_koika() {
@@ -407,21 +487,25 @@ install_koika() {
     log_info "Setting up Kōika compiler and Coq libraries..."
 
     if ! command -v opam &>/dev/null; then
-        log_warning "opam not found. Kōika installation requires opam. Please install opam first or run the script again."
+        log_warning "opam not found. Kōika installation requires opam. Skipping Kōika."
         return 0
     fi
-    eval $(opam env) 2>/dev/null || true
+    eval "$(opam env)" 2>/dev/null || true
 
-    check_koika_environment
+    if ! check_koika_environment; then
+        log_warning "Kōika environment not available; skipping Kōika installation."
+        return 0
+    fi
 
     log_info "Installing Kōika OCaml dependencies..."
     local koika_deps=(
         "zarith" "hashcons" "core" "core_unix" "ppx_jane" "dune=3.19.0"
         "base" "stdio" "parsexp" "ppx_deriving" "ppx_compare" "ppx_hash" "ppx_sexp_conv"
     )
-    opam install "${koika_deps[@]}" -y || {
-        log_error "Failed to install Kōika OCaml dependencies."
-    }
+    if ! opam install "${koika_deps[@]}" -y; then
+        log_warning "Failed to install Kōika OCaml dependencies. Skipping Kōika."
+        return 0
+    fi
 
     local KOIKA_DIR="$SCRIPT_DIR/tools/koika"
     if [[ -d "$KOIKA_DIR" ]]; then
@@ -429,10 +513,10 @@ install_koika() {
         (cd "$KOIKA_DIR" && git pull) || log_warning "Failed to update Kōika. Using existing version."
     else
         log_info "Cloning Kōika repository..."
-        git clone https://github.com/mit-plv/koika.git "$KOIKA_DIR" || {
-            log_warning "Failed to clone Kōika. Please clone it manually."
+        if ! git clone https://github.com/mit-plv/koika.git "$KOIKA_DIR"; then
+            log_warning "Failed to clone Kōika. Skipping Kōika."
             return 0
-        }
+        fi
     fi
 
     cd "$KOIKA_DIR"
@@ -464,15 +548,23 @@ install_koika() {
     log_info "Skipping coq-lsp in the Kōika switch (would upgrade Coq 8.18 → 9.1)."
 
     local BUILD_OCAML="_build/default/ocaml"
-    local SITE_LIB=$(ocamlfind printconf path 2>/dev/null)
+    local SITE_LIB
+    SITE_LIB=$(ocamlfind printconf path 2>/dev/null || echo "")
+    if [[ -z "$SITE_LIB" || ! -d "$SITE_LIB" ]]; then
+        log_warning "ocamlfind not found or returned an invalid path ('$SITE_LIB'); skipping Kōika library install."
+        cd "$SCRIPT_DIR"
+        return 0
+    fi
+
     local TARGET_ROOT="$SITE_LIB/koika"
     log_info "Installing Koika libraries into $TARGET_ROOT"
 
-    rm -rf "$TARGET_ROOT" "${TARGET_ROOT}".* 2>/dev/null
+    rm -rf "$TARGET_ROOT" "${TARGET_ROOT}".* 2>/dev/null || true
     mkdir -p "$TARGET_ROOT"
 
     log_info "Copying all build artefacts..."
-    find "$BUILD_OCAML" -name "*.cma" -o -name "*.cmi" -o -name "*.cmxa" -o -name "*.a" | xargs -I {} cp {} "$TARGET_ROOT/"
+    find "$BUILD_OCAML" \( -name "*.cma" -o -name "*.cmi" -o -name "*.cmxa" -o -name "*.a" \) \
+        -exec cp {} "$TARGET_ROOT/" \;
 
     log_info "Generating unified META file..."
     cat > "$TARGET_ROOT/META" <<'METAEOF'
@@ -539,7 +631,9 @@ METAEOF
     if [[ -f "$CUTTLEC_EXE" ]]; then
         chmod +x "$CUTTLEC_EXE"
     else
-        log_error "cuttlec.exe not found after build."
+        log_warning "cuttlec.exe not found after build; skipping Kōika wrapper setup."
+        cd "$SCRIPT_DIR"
+        return 0
     fi
 
     local WRAPPER_DIR="$KOIKA_DIR/bin"
@@ -547,7 +641,8 @@ METAEOF
     cat > "$WRAPPER_DIR/koika" <<EOF
 #!/bin/bash
 eval \$(opam env)
-export OCAMLPATH="\${OCAMLPATH:-}:\$(dirname "\$(readlink -f "\$0")")/../_build/install/default/lib"
+WRAPPER_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+export OCAMLPATH="\${OCAMLPATH:-}:\$WRAPPER_DIR/../_build/install/default/lib"
 exec "$CUTTLEC_EXE" "\$@"
 EOF
     chmod +x "$WRAPPER_DIR/koika"
@@ -566,7 +661,8 @@ EOF
 
     local KOIKA_BIN="$KOIKA_DIR/bin/koika"
     log_info "Verifying Kōika Coq‑DSL pipeline with a minimal design..."
-    local SMOKE_DIR=$(mktemp -d)
+    local SMOKE_DIR
+    SMOKE_DIR=$(mktemp -d)
     (
         cd "$SMOKE_DIR"
         cat > min.v <<'EOF'
@@ -594,7 +690,7 @@ Definition prog := Interop.Backends.register package.
 Extraction "min.ml" prog.
 EOF
 
-        eval $(opam env)
+        eval "$(opam env)"
         local FOUND_PATH=""
         local FOUND_OPTION=""
         for path in "$KOIKA_DIR/_build/install/default/lib/coq/user-contrib" \
@@ -616,14 +712,12 @@ EOF
         else
             if [ -f min.ml ]; then
                 touch min.mli
-                if "$KOIKA_BIN" min.ml -T verilog -o . >/tmp/koika_cuttlec.log 2>&1; then
-                    if [ -f min.v ]; then
-                        log_success "Kōika Coq‑DSL pipeline verified successfully."
-                    else
-                        log_warning "Coq‑DSL smoke test: Verilog generation failed."
-                    fi
+                mkdir -p out
+                if "$KOIKA_BIN" min.ml -T verilog -o out >/tmp/koika_cuttlec.log 2>&1 \
+                        && [ -n "$(ls -A out 2>/dev/null)" ]; then
+                    log_success "Kōika Coq‑DSL pipeline verified successfully."
                 else
-                    log_warning "Coq‑DSL smoke test: cuttlec compilation failed."
+                    log_warning "Coq‑DSL smoke test: cuttlec compilation failed or produced no output."
                     log_warning "See /tmp/koika_cuttlec.log"
                 fi
             else
@@ -665,31 +759,38 @@ install_symbiyosys() {
     log_info "Installing missing model‑checking tools..."
 
     if command -v apt-get &>/dev/null; then
-        if $need_sby || $need_z3; then
-            sudo apt-get update -qq
-            local pkgs=()
-            $need_sby && pkgs+=(symbiyosys yosys)
-            $need_z3 && pkgs+=(z3)
-            sudo apt-get install -y "${pkgs[@]}" || {
-                log_warning "apt install failed for: ${pkgs[*]}. Please install manually."
-                return 0
-            }
-            log_success "Model‑checking tools installed via apt."
+        if $need_z3; then
+            safe_apt_update || true
+            if sudo apt-get install -y z3; then
+                log_success "Installed z3 via apt."
+                need_z3=false
+            else
+                log_warning "apt install z3 failed. Install manually: https://github.com/Z3Prover/z3"
+            fi
+        fi
+        if $need_sby; then
+            log_warning "SymbiYosys (sby) is not in the distro repos; install it manually:"
+            echo "  release tarball: https://github.com/YosysHQ/symbiyosys/releases"
+            echo "  or OSS CAD Suite: https://github.com/YosysHQ/oss-cad-suite-build"
         fi
     elif command -v brew &>/dev/null; then
         if $need_sby; then
-            brew install yosys symbiyosys || {
+            if brew install yosys symbiyosys; then
+                need_sby=false
+            else
                 log_warning "brew install symbiyosys failed. Please install manually."
-                return 0
-            }
+            fi
         fi
         if $need_z3; then
-            brew install z3 || {
+            if brew install z3; then
+                need_z3=false
+            else
                 log_warning "brew install z3 failed. Please install manually."
-                return 0
-            }
+            fi
         fi
-        log_success "Model‑checking tools installed via Homebrew."
+        if ! $need_sby && ! $need_z3; then
+            log_success "Model‑checking tools installed via Homebrew."
+        fi
     else
         if $need_sby; then
             log_warning "Could not detect a package manager. SymbiYosys must be installed manually."
@@ -701,17 +802,22 @@ install_symbiyosys() {
         return 0
     fi
 
-    if $need_sby || command -v sby &>/dev/null; then
-        safe_smoke_test "sby --help" sby --help
-    fi
-    if $need_z3 || command -v z3 &>/dev/null; then
-        safe_smoke_test "z3 --version" z3 --version
-    fi
+    command -v sby &>/dev/null && safe_smoke_test "sby --help" sby --help
+    command -v z3 &>/dev/null && safe_smoke_test "z3 --version" z3 --version
 }
 
 verify_imports() {
-    python -c "import yaml; import jsonschema; import click; import pytest; import mcp" && \
-        log_info "Core imports OK"
+    local py="python"
+    if ! command -v "$py" &>/dev/null; then
+        py="$PYTHON"
+    fi
+    if ! command -v "$py" &>/dev/null; then
+        log_error "No Python interpreter found in the virtual environment (looked for 'python' and '$PYTHON')."
+    fi
+    if ! "$py" -c "import yaml; import jsonschema; import click; import pytest; import mcp"; then
+        log_error "Core Python imports failed. Check the virtual environment."
+    fi
+    log_info "Core imports OK"
 }
 
 usage() {
