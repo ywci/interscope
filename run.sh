@@ -47,21 +47,21 @@ MARKER_DEF="integration: integration test"
 
 run_unit_tests() {
     log_info "Running unit tests..."
-    PYTHONPATH=src uv run pytest tests/unit -v \
+    PYTHONPATH=src .venv/bin/python -m pytest tests/unit -v \
         -o "markers=${MARKER_DEF}" \
         -W ignore::pytest.PytestUnknownMarkWarning
 }
 
 run_integration_tests() {
     log_info "Running integration tests..."
-    PYTHONPATH=src uv run pytest tests/integration -v \
+    PYTHONPATH=src .venv/bin/python -m pytest tests/integration -v \
         -o "markers=${MARKER_DEF}" \
         -W ignore::pytest.PytestUnknownMarkWarning
 }
 
 run_all_tests() {
     log_info "Running all tests..."
-    PYTHONPATH=src uv run pytest tests/unit tests/integration -v \
+    PYTHONPATH=src .venv/bin/python -m pytest tests/unit tests/integration -v \
         -o "markers=${MARKER_DEF}" \
         -W ignore::pytest.PytestUnknownMarkWarning
 }

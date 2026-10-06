@@ -41,9 +41,10 @@ class TestFindCompiler(unittest.TestCase):
         self.assertEqual(result, Path("/usr/local/bin/koika"))
 
     @patch("shutil.which", return_value=None)
-    @patch.object(Path, "exists", side_effect=[False, True])
+    @patch.object(Path, "exists", side_effect=[False, False, False, True])
     def test_found_in_common_location(self, mock_exists, mock_which):
-        """If not on PATH, check common locations."""
+        """If not on PATH, check common locations (repo wrapper, Kōika switch,
+        default switch, then /usr/local/bin)."""
         result = _find_compiler(koika_path=None)
         self.assertEqual(result, Path("/usr/local/bin/koika"))
 

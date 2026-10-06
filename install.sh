@@ -53,6 +53,8 @@ UV_PYTHON_VERSION=${UV_PYTHON_VERSION:-3.12}
 INSTALL_EXTERNAL=${INSTALL_EXTERNAL:-true}
 KOIKA_INSTALL_SWITCH=${KOIKA_INSTALL_SWITCH:-false}
 
+OPAM_ROOT="${OPAMROOT:-$HOME/.opam}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -100,13 +102,14 @@ install_python_deps() {
         "jsonschema>=4.0"
         "click>=8.0"
         "pytest>=7.0"
-        "mcp>=0.1.0"
+        "mcp>=0.1.0,<2"
     )
 
     local optional=(
         "openai>=1.0"
         "anthropic>=0.30"
         "requests>=2.28"
+        "httpx>=0.27"
     )
 
     uv pip install "${required[@]}" "${optional[@]}" || \
@@ -158,11 +161,11 @@ _install_opam_via_script() {
     else
         log_error "Neither curl nor wget found. Cannot download opam installer."
     fi
-    export PATH="$HOME/.opam/bin:$PATH"
+    export PATH="$OPAM_ROOT/bin:$PATH"
 }
 
 init_opam() {
-    if [[ ! -d "$HOME/.opam" ]]; then
+    if [[ ! -d "$OPAM_ROOT" ]]; then
         log_info "Initialising opam..."
         opam init --bare --disable-sandboxing -y || {
             log_error "opam init failed. Please run 'opam init' manually and rerun this script."
@@ -343,6 +346,17 @@ KOIKA_REQUIRED_OCAML_VERSION="4.14.2"
 KOIKA_SWITCH_NAME="coq-8.18-ocaml-4.14"
 
 check_koika_environment() {
+    if opam switch list --short 2>/dev/null | grep -q "^${KOIKA_SWITCH_NAME}$"; then
+        opam switch "$KOIKA_SWITCH_NAME" >/dev/null 2>&1
+        eval $(opam env) 2>/dev/null
+        local existing_coq=$(coqc --version 2>/dev/null | head -1 | sed -E 's/.*version ([0-9]+\.[0-9]+).*/\1/' || echo "0")
+        if [[ "$existing_coq" == "${KOIKA_REQUIRED_COQ_VERSION%.*}" ]]; then
+            log_info "Kōika switch '$KOIKA_SWITCH_NAME' already exists with Coq $existing_coq — reusing it."
+            return 0
+        fi
+        log_warning "Kōika switch '$KOIKA_SWITCH_NAME' exists but has Coq $existing_coq (want $KOIKA_REQUIRED_COQ_VERSION)."
+    fi
+
     local need_switch=false
     local ocaml_ver=$(ocamlc -version 2>/dev/null || echo "0")
     local coq_ver=$(coqc --version 2>/dev/null | head -1 | sed -E 's/.*version ([0-9]+\.[0-9]+).*/\1/' || echo "0")
@@ -447,13 +461,7 @@ install_koika() {
         log_warning "Check /tmp/koika_coq_build.log for details."
     fi
 
-    log_info "Installing coq-lsp for interactive proof support (required by PERF / rocq‑mcp)..."
-    if opam install coq-lsp -y; then
-        log_success "coq-lsp installed in the current switch."
-        safe_smoke_test "pet --version" pet --version || true
-    else
-        log_warning "Failed to install coq-lsp. Interactive proof features (skeleton proof, PERF) may not work."
-    fi
+    log_info "Skipping coq-lsp in the Kōika switch (would upgrade Coq 8.18 → 9.1)."
 
     local BUILD_OCAML="_build/default/ocaml"
     local SITE_LIB=$(ocamlfind printconf path 2>/dev/null)
@@ -546,11 +554,11 @@ EOF
 
     export PATH="$WRAPPER_DIR:$PATH"
     if ! grep -q "$WRAPPER_DIR" "$HOME/.bashrc" 2>/dev/null; then
-        echo "export PATH=\"$WRAPPER_DIR:\$PATH\"" >> "$HOME/.bashrc"
+        echo "export PATH=\"$WRAPPER_DIR:\$PATH\"" >> "$HOME/.bashrc" 2>/dev/null || true
     fi
 
     if ! grep -q "OCAMLPATH.*_build/install/default/lib" "$HOME/.bashrc" 2>/dev/null; then
-        echo "export OCAMLPATH=\"\${OCAMLPATH:-}:$KOIKA_DIR/_build/install/default/lib\"" >> "$HOME/.bashrc"
+        echo "export OCAMLPATH=\"\${OCAMLPATH:-}:$KOIKA_DIR/_build/install/default/lib\"" >> "$HOME/.bashrc" 2>/dev/null || true
     fi
 
     log_success "Kōika compiler (cuttlec) and Coq libraries ready."

@@ -132,13 +132,23 @@ def _find_compiler(koika_path: Optional[str]) -> Path:
             return candidate
         raise KoikaCompilationError(f"Kōika compiler not found at '{koika_path}'")
 
+    import os
     import shutil
+
     path = shutil.which("koika")
     if path:
         return Path(path)
 
-    for loc in [Path.home() / ".opam" / "default" / "bin" / "koika",
-                Path("/usr/local/bin/koika")]:
+    koika_switch = os.environ.get("KOIKA_SWITCH_NAME", "coq-8.18-ocaml-4.14")
+    opam_root = Path(os.environ.get("OPAMROOT", Path.home() / ".opam"))
+    repo_wrapper = Path(__file__).resolve().parents[3] / "tools" / "koika" / "bin" / "koika"
+
+    for loc in [
+        repo_wrapper,
+        opam_root / koika_switch / "bin" / "koika",
+        opam_root / "default" / "bin" / "koika",
+        Path("/usr/local/bin/koika"),
+    ]:
         if loc.exists():
             return loc
 
