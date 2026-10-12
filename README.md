@@ -4,7 +4,7 @@ InterScope is the reference implementation of **ISIR** (InterScope IR), a semi�
 
 The project provides:
 
-- A **YAML‑based specification language** (`.isir` files) – supports version `0.1`.
+- A **YAML‑based specification language** (`.isir` files).
 - **Unified assertion dialect** lowering to SVA, VHDL PSL, or Verilog OVL.
 - **Dual proof backends** (Kōika/Coq + ACL2) with LLM‑assisted proof generation and iterative repair.
 - **Model checking** of generated assertions using SymbiYosys (sby).
@@ -22,6 +22,7 @@ The project provides:
 |----------|----------|
 | [`docs/ISIR.md`](docs/ISIR.md) | ISIR language reference: syntax, semantics, dialects, and versioning. |
 | [`docs/ARCH.md`](docs/ARCH.md) | Architecture overview: parser, lowering passes, verification engines, and PERF. |
+| [`conf/config.yaml`](conf/config.yaml) | User-editable configuration (LLM provider, PERF, model-checking, simulation, synthesis). |
 | [`conf/schemas/isir_schema.yaml`](conf/schemas/isir_schema.yaml) | JSON Schema for `.isir` input files. |
 | [`conf/schemas/trace_schema.yaml`](conf/schemas/trace_schema.yaml) | JSON Schema for abstract trace YAML produced by `isir lift`. |
 
@@ -35,6 +36,38 @@ cd interscope
 ./install.sh
 ```
 
+`install.sh` sets up a Python virtual environment (via `uv`) and attempts to install external verification tools (rocq‑mcp, ACL2, acl2‑mcp, Kōika, SymbiYosys + Z3). If automatic installation fails, it prints clear manual instructions.
+
+### Installer Options
+
+| Flag | Effect |
+|------|--------|
+| `--no-external` | Skip installation of external tools (rocq‑mcp, ACL2, acl2‑mcp, Kōika, SymbiYosys). Only the Python venv and core Python dependencies are set up. |
+| `--install-koika-switch` | Automatically create the dedicated Kōika opam switch (OCaml 4.14.2 + Coq 8.18.0). Without this flag, the installer exits with the exact `opam switch create` command to run manually. |
+| `-h`, `--help` | Show the installer's own help text. |
+
+### Installer Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `OPAMROOT` | Redirect the opam root. Useful in containers/sandboxes where `$HOME/.opam` isn't writable. Honoured by both `install.sh` and the Kōika compiler discovery path (see [Configuration → Kōika compiler discovery](#kōika-compiler-discovery)). |
+| `KOIKA_SWITCH_NAME` | Override the expected Kōika opam switch name (default: `coq-8.18-ocaml-4.14`). |
+| `PYTHON` | Override the Python interpreter used to bootstrap `uv` (default: `python3`). |
+| `UV_PYTHON_VERSION` | Override the Python version requested from `uv` (default: `3.12`). |
+| `INSTALL_EXTERNAL` | Set to `false` to skip external tools (equivalent to `--no-external`). |
+| `KOIKA_INSTALL_SWITCH` | Set to `true` to auto-create the Kōika switch (equivalent to `--install-koika-switch`). |
+
+### After Installation: Activate the Kōika Switch
+
+If Kōika was installed into its dedicated opam switch, activate it before running InterScope:
+
+```bash
+opam switch coq-8.18-ocaml-4.14
+eval $(opam env)
+```
+
+The installer prints this reminder automatically when the switch exists.
+
 ---
 
 ## Configuration
@@ -46,18 +79,51 @@ Edit `conf/config.yaml` to set:
 - Prover‑specific settings (tactic hints, proof timeout, repair attempts).
 - Model‑checking parameters (`bmc_max_depth`, `ic3_max_steps`, `formal_timeout`).
 - Simulation settings (cycles, Verilator path).
-- **PERF settings**: beam size, branching factor, depth limit, Pareto dimensions, backtracking (including on‑demand triggers), reflection quality, repair persistence, and minimum beam size (see below).
+- **PERF settings**: beam size, branching factor, depth limit, Pareto dimensions, backtracking (including on‑demand triggers), reflection quality, repair persistence, and minimum beam size (see [PERF](#perf-proof-tree-exploration-with-reflective-feedback)).
 - **Synthesis settings** (optional) for RTL quality experiments.
 
 All paths are optional; the tool works with sensible defaults.
 
 The `.isir` file format is validated against [`conf/schemas/isir_schema.yaml`](conf/schemas/isir_schema.yaml); abstract trace YAML is validated against [`conf/schemas/trace_schema.yaml`](conf/schemas/trace_schema.yaml).
 
+### API Keys
+
+API keys are resolved automatically. The precedence is:
+
+1. An explicit `llm.api_key` value in `config.yaml`.
+2. The provider‑specific environment variable, if set: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, or `OLLAMA_API_KEY`.
+3. `None` (fine for keyless local providers like Ollama).
+
+So you can switch `llm.provider` to `deepseek` and just export `DEEPSEEK_API_KEY` — no need to edit the file. Placeholder values such as `"not-needed"`, `""`, or `"changeme"` are ignored and fall through to the environment variable. You may also use `${VAR}` substitution, e.g. `api_key: "${DEEPSEEK_API_KEY}"`.
+
+### Base URLs
+
+Base URLs are resolved the same way:
+
+1. An explicit `llm.base_url` value in `config.yaml`.
+2. The provider‑specific environment variable, if set: `DEEPSEEK_API_BASE`, `OPENAI_API_BASE`, `ANTHROPIC_API_BASE`, or `OLLAMA_API_BASE`. The SDK‑native spelling (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, …) is also accepted as a fallback.
+3. A built‑in default for `deepseek` (`https://api.deepseek.com/v1`) and `ollama` (`http://localhost:11434/v1`).
+
+So `DEEPSEEK_API_BASE=https://api.deepseek.com/v1 ./run.sh ...` works without editing the file. You may also use `${VAR}` substitution, e.g. `base_url: "${DEEPSEEK_API_BASE}"`.
+
+### Kōika Compiler Discovery
+
+The Kōika compiler is discovered in this order:
+
+1. An explicit `koika_path` in `config.yaml`.
+2. `koika` on `PATH`.
+3. The repo‑local wrapper at `tools/koika/bin/koika` (created by `install.sh`).
+4. `$OPAMROOT/<KOIKA_SWITCH_NAME>/bin/koika` (default: `$HOME/.opam/coq-8.18-ocaml-4.14/bin/koika`).
+5. `$OPAMROOT/default/bin/koika`.
+6. `/usr/local/bin/koika`.
+
+This ensures InterScope finds the compiler after a standard `./install.sh`, including in containers or sandboxes where `OPAMROOT` has been redirected.
+
 ---
 
 ## Usage
 
-The main entry point is the `run.sh` wrapper. All commands are forwarded to the `isir` CLI running inside the uv environment.
+The main entry point is the `run.sh` wrapper. All commands are forwarded to the `isir` CLI. Most commands are executed via `uv run`; the test runners instead invoke `.venv/bin/python -m pytest` directly to guarantee they bind to this repo's virtualenv (rather than a parent project's).
 
 ### Global Options
 
@@ -80,7 +146,15 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 | `./run.sh --sim <file.isir>` | Compile to RTL and run Verilator simulation (produces a VCD trace). |
 | `./run.sh --lift <vcd_file>` | Lift a VCD trace to an abstract ISIR trace (YAML). |
 | `./run.sh --check <trace.yaml>` | Check properties against an abstract trace (schema‑validated by default). |
-| `./run.sh --query ...` | Query the evidence registry (SQLite) – now with `export`, `stats`, and `filter` sub‑commands. |
+| `./run.sh --query ...` | Query the evidence registry (SQLite) – supports `export`, `stats`, and `filter` sub‑commands. |
+| `./run.sh --test unit\|integration\|all` | Run the unit / integration / full test suites. |
+| `./run.sh --verify-examples [--backend NAME]` | Verify every `.isir` under `examples/` and print a pass/fail summary. Defaults to the `koika` backend; use `--backend` to pick another. |
+| `./run.sh --validate-config` | Validate `config.yaml` (checks for conflicting settings such as PERF + proof‑library cache). |
+| `./run.sh --clean` | Remove build artifacts (`build/`, `*.pyc`, Coq `.vo`/`.glob`/etc.). |
+| `./run.sh --clean-all [--yes] [--no-tools]` | Remove build artifacts, `.venv/`, and cloned tool repos under `tools/`. Prompts on a TTY unless `--yes` is passed; `--no-tools` keeps the cloned tool repos. System tools (opam switches, ACL2, SymbiYosys, Coq) are never touched. |
+| `./run.sh --vcd-to-trace <vcd>` | Convert a VCD file to the trace dialect (debug helper). |
+| `./run.sh --extract-mapping <vfile>` | Extract ISIR mapping from Verilog annotations. |
+| `./run.sh --help` | Show the wrapper's help text. |
 
 For compatibility, the old `--command` style is still accepted. The newer unified CLI also accepts commands without leading dashes, e.g.:
 
@@ -138,7 +212,7 @@ PERF is particularly effective when:
 - PERF can build a **destruct‑chain skeleton** as the root node when the obligation has a deeply nested `ite` (e.g., opcode dispatch chains). This gives the search a strong, structurally informed starting point.
 - After PERF exhausts, the most promising candidate from the search is **automatically handed to the linear prover** for a final focused repair pass, instead of being discarded.
 - A `min_beam_size` parameter prevents the beam from collapsing to a single node, preserving diversity.
-- Light repair attempts per unique error signature are now configurable (`perf_light_repair_attempts`), making PERF’s repair more persistent and closer to the linear prover’s behaviour.
+- Light repair attempts per unique error signature are now configurable (`perf_light_repair_attempts`), making PERF's repair more persistent and closer to the linear prover's behaviour.
 - Backtracking and reflection quality are now explicitly configurable (see below).
 
 Before launching the full beam search, PERF attempts a fast **interactive skeleton proof** (structural induction + inversion) when `try_skeleton_first` is enabled (the default). This often succeeds immediately on simple safety properties. During the beam search, PERF also injects the actual Coq/ACL2 definitions into the LLM prompts, enabling more accurate proof generation.
@@ -230,6 +304,8 @@ PERF_MIN_REFLECTION_QUALITY=0.15
 PERF_MAX_REFLECTION_RETRIES=2
 ```
 
+> **Note:** The numeric values shown above are **illustrative examples** of valid overrides, not defaults. Refer to the tables in [PERF Configuration Parameters](#perf-configuration-parameters) for actual defaults.
+
 Example:
 
 ```bash
@@ -244,7 +320,7 @@ To see detailed traversal statistics (nodes explored, depths reached, pruning, t
 ./run.sh --verify examples/fifo/fifo.isir --perf --perf-stats
 ```
 
-The output will include a summary table with all key metrics, including backtrack counts, diversity usage, reflection quality history, and per‑depth breakdown.
+The output includes a summary table with all key metrics, including backtrack counts, diversity usage, reflection quality history, and per‑depth breakdown.
 
 ### Integration with Model Checking
 
@@ -263,7 +339,7 @@ For running experiments over multiple designs, InterScope supports batch mode an
 
 ```bash
 # Batch compile all designs in a directory, output JSON
-./run.sh --batch benchmarks/level1/ --compile --output-format json --report-file compile_results.json
+./run.sh --batch my_designs/ --compile --output-format json --report-file compile_results.json
 ```
 
 Individual commands can also produce JSON output without batch mode:
@@ -313,6 +389,19 @@ The synthesis results (area, cell count, delay) are included in the structured o
 
 ## Examples
 
+### Quick Verification of All Bundled Examples
+
+```bash
+# Verify every examples/*/*.isir with the default (koika) backend
+./run.sh --verify-examples
+
+# Same, but with the model-checking backend
+./run.sh --verify-examples --backend model_checking
+
+# Show full per-example output instead of a one-line PASS/FAIL
+./run.sh --verify-examples --debug
+```
+
 ### FIFO Design (Kōika + ACL2 + Simulation)
 
 ```bash
@@ -329,10 +418,10 @@ cd examples/fifo
 
 ```bash
 # Compile all designs in a directory
-../../run.sh --batch benchmarks/level1/ --compile --output-format json
+../../run.sh --batch my_designs/ --compile --output-format json
 
 # Verify with PERF, disable Pareto pruning (ablation study)
-../../run.sh --batch benchmarks/level1/ --verify --backend koika --perf --no-pareto --output-format json --report-file ablation_no_pareto.json
+../../run.sh --batch my_designs/ --verify --backend koika --perf --no-pareto --output-format json --report-file ablation_no_pareto.json
 ```
 
 ### Model Checking
@@ -366,6 +455,35 @@ The SVA backend emits **Yosys‑compatible procedural assertions** and uses **no
 ./run.sh --check my_trace.yaml --spec examples/fifo/fifo.isir --no-validate
 ```
 
+### Testing
+
+```bash
+# Unit tests only
+./run.sh --test unit
+
+# Integration tests only
+./run.sh --test integration
+
+# Full test suite
+./run.sh --test all
+```
+
+### Resetting the Environment
+
+```bash
+# Remove build artifacts only
+./run.sh --clean
+
+# Remove build artifacts, .venv, and cloned tool repos (interactive)
+./run.sh --clean-all
+
+# Non-interactive reset for CI, keeping cloned tool repos
+./run.sh --clean-all --yes --no-tools
+
+# Reinstall
+./install.sh
+```
+
 ---
 
 ## Customising the Proof Library
@@ -382,6 +500,8 @@ Qed.""",
 ```
 
 The existing entries are **complete Coq proofs** (not skeletons) and are applied automatically when a theorem name matches. The prover will automatically pick up new entries the next time it runs. This makes it easy to maintain a personal library of proven properties for your own designs.
+
+> **Note:** The proof library is disabled when PERF is enabled. See [Enabling PERF](#enabling-perf).
 
 ---
 

@@ -321,7 +321,6 @@ def load_config(
             prove_cfg.setdefault("invariant_mining", True)
             prove_cfg.setdefault("skeleton_reflection", True)
             prove_cfg.setdefault("skeleton_step_tactics", [])
-            # New default for rocq-mcp master switch
             prove_cfg.setdefault("use_rocq_mcp", True)
 
         elif prover == "acl2":

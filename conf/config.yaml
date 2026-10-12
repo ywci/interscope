@@ -1,8 +1,8 @@
 llm:
-  provider: "ollama" # openai, anthropic, ollama, deepseek
-  model: "qwen3.5:27b" # model name (Ollama tag)
-  api_key: "not-needed" # set per provider requirements
-  base_url: "http://localhost:11434/v1" # OpenAI‑compatible endpoint
+  provider: "deepseek" # openai, anthropic, ollama, deepseek
+  model: "deepseek-chat" # DeepSeek model (deepseek-chat | deepseek-reasoner)
+  api_key: "" # empty -> auto-detect from <PROVIDER>_API_KEY env var
+  base_url: "" # empty -> auto-detect from <PROVIDER>_API_BASE env var
   temperature: 0.2
   max_tokens: 8192 # output token limit (not context length)
   timeout: 300 # seconds per API call

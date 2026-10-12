@@ -91,13 +91,10 @@ def test_patch_bullets_to_braces_removes_orphan_bullets():
   lia.
 Qed."""
     patched = patch_bullets_to_braces(script)
-    # Orphan bullet lines are replaced with harmless comments.
     assert "(* orphan bullet removed by auto‑patcher *)" in patched
     assert patched.count("(* orphan bullet removed by auto‑patcher *)") == 2
-    # No braces are introduced.
     assert "{" not in patched
     assert "}" not in patched
-    # Non‑bullet lines remain.
     assert "auto." in patched
     assert "lia." in patched
 
@@ -110,7 +107,6 @@ def test_patch_bullets_to_braces_does_not_alter_bullets_with_content():
   + (* second *) reflexivity.
 Qed."""
     patched = patch_bullets_to_braces(script)
-    # The script is unchanged because these bullets have content.
     assert patched == script
 
 
@@ -139,15 +135,12 @@ Qed."""
 
     patched = auto_patch(script, error_msg)
 
-    # Deprecated notation fixed
     assert "Nat.mod_add" not in patched
     assert "Div0.mod_add" in patched
 
-    # discriminate on boolean equality fixed
     assert "discriminate Hop." not in patched
     assert "inversion Hop." in patched
 
-    # Bullets with content are NOT converted (the error is not a focus error)
     assert "+ intros Hcond." in patched
     assert "- simpl. intros Hcond." in patched
 
@@ -163,13 +156,12 @@ Qed."""
     error_msg = 'File "test.v", line 3:\nError: [Focus] Wrong bullet +.'
     patched = auto_patch(script, error_msg)
 
-    # Orphan bullets removed
     assert "(* orphan bullet removed by auto‑patcher *)" in patched
-    assert "+ auto." not in patched   # the bullet alone is removed
+    assert "+ auto." not in patched
     assert "+ lia." not in patched
     assert "auto." in patched
     assert "lia." in patched
-    # No braces introduced
+
     assert "{" not in patched
     assert "}" not in patched
 

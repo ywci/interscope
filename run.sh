@@ -88,9 +88,157 @@ run_clean() {
     log_success "Cleaned generated files."
 }
 
+run_clean_all() {
+    local assume_yes=0
+    local include_tools=1
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y)   assume_yes=1; shift ;;
+            --no-tools) include_tools=0; shift ;;
+            *) log_error "Unknown option for --clean-all: $1" ;;
+        esac
+    done
+
+    local targets=(".venv" ".uv-cache" "build")
+    if [[ $include_tools -eq 1 ]]; then
+        targets+=(
+            "tools/rocq-mcp"
+            "tools/acl2-mcp"
+            "tools/koika"
+        )
+    fi
+
+    local existing=()
+    local t
+    for t in "${targets[@]}"; do
+        [[ -e "$SCRIPT_DIR/$t" ]] && existing+=("$t")
+    done
+
+    echo ""
+    log_warning "--clean-all will remove the following paths under the repo:"
+    if [[ ${#existing[@]} -eq 0 ]]; then
+        echo "    (nothing to remove — repo is already clean)"
+    else
+        for t in "${existing[@]}"; do
+            echo "    $SCRIPT_DIR/$t"
+        done
+    fi
+    log_warning "System-installed tools are NOT removed:"
+    echo "    opam switches (e.g. coq-8.18-ocaml-4.14, default),"
+    echo "    ACL2, SymbiYosys, Coq, uv, and any globally installed Python packages."
+    echo "    The global uv cache (\$XDG_CACHE_HOME/uv or ~/.cache/uv) is also left"
+    echo "    untouched — run 'uv cache clean' if you want to reclaim that space."
+    echo ""
+
+    if [[ ${#existing[@]} -eq 0 ]]; then
+        log_info "Nothing to do."
+        return 0
+    fi
+
+    if [[ $assume_yes -eq 0 && -t 0 ]]; then
+        read -r -p "Proceed? [y/N] " reply
+        case "$reply" in
+            [yY]|[yY][eE][sS]) ;;
+            *) log_info "Aborted."; return 0 ;;
+        esac
+    fi
+
+    run_clean
+
+    for t in "${targets[@]}"; do
+        if [[ -e "$SCRIPT_DIR/$t" ]]; then
+            rm -rf "$SCRIPT_DIR/$t"
+            log_info "Removed $t"
+        fi
+    done
+
+    log_success "Deep clean complete. Run './install.sh' to reinstall."
+}
+
+run_verify_examples() {
+    local backend="koika"
+    local pass_args=()
+    local quiet=1
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --backend|-b)
+                backend="${2:-koika}"
+                shift 2
+                ;;
+            --debug)
+                quiet=0
+                pass_args+=("$1")
+                shift
+                ;;
+            *)
+                pass_args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    local examples=()
+    local f
+    for f in examples/*/*.isir; do
+        [[ -f "$f" ]] && examples+=("$f")
+    done
+    if [[ ${#examples[@]} -eq 0 ]]; then
+        log_error "No .isir files found under examples/"
+    fi
+
+    local total=${#examples[@]}
+    local passed=0
+    local failed=0
+    local failed_names=()
+    local name
+    local ok=0
+
+    echo ""
+    log_info "Verifying ${total} example(s) with backend '${backend}'..."
+    echo ""
+
+    for f in "${examples[@]}"; do
+        name="$(basename "$f" .isir)"
+        if [[ $quiet -eq 1 ]]; then
+            if env PYTHONPATH=src uv run python -m isir.cli.verify \
+                    "$f" --backend "$backend" "${pass_args[@]}" >/dev/null 2>&1; then
+                ok=1
+            else
+                ok=0
+            fi
+        else
+            echo ""
+            log_info "--- ${name} ---"
+            if env PYTHONPATH=src uv run python -m isir.cli.verify \
+                    "$f" --backend "$backend" "${pass_args[@]}"; then
+                ok=1
+            else
+                ok=0
+            fi
+        fi
+
+        if [[ $ok -eq 1 ]]; then
+            passed=$((passed + 1))
+            echo "  ${GREEN}${BOLD}[PASS]${RESET} ${name}"
+        else
+            failed=$((failed + 1))
+            failed_names+=("${name}")
+            echo "  ${RED}${BOLD}[FAIL]${RESET} ${name}"
+        fi
+    done
+
+    echo ""
+    echo "${BOLD}===== Examples: ${passed} passed, ${failed} failed =====${RESET}"
+    if [[ $failed -gt 0 ]]; then
+        echo "  Failed: ${failed_names[*]}"
+        return 1
+    fi
+    log_success "All ${total} examples passed."
+}
+
 show_help() {
     cat <<EOF
-${BOLD}InterScope run.sh wrapper${RESET} – Version 0.3 (ISIR, batch, structured output)
+${BOLD}InterScope run.sh wrapper${RESET} – Version 0.0.3 (ISIR, batch, structured output)
 
 ${BOLD}Global options:${RESET}
   --batch [DIR]                Process all .isir files in DIR (default: current directory)
@@ -101,6 +249,7 @@ ${BOLD}Global options:${RESET}
 
 ${BOLD}Commands:${RESET}
   --test unit|integration|all   Run tests
+  --verify-examples [flags]     Verify all examples/ (backend: koika by default)
   --validate-config             Validate config.yaml (checks for conflicts)
   --compile <file> ...          Compile an .isir file
   --verify <file> ...           Verify proof obligations
@@ -111,7 +260,14 @@ ${BOLD}Commands:${RESET}
   --query ...                   Query evidence registry
   --vcd-to-trace <vcd> ...      Convert VCD file to trace dialect (debug)
   --extract-mapping <vfile> ... Extract ISIR mapping from Verilog annotations
-  --clean                       Remove generated files
+  --clean                       Remove generated files (build artifacts only)
+  --clean-all [--yes] [--no-tools]
+                                Also remove .venv, .uv-cache, and tools/* clones.
+                                  --yes       Skip the confirmation prompt.
+                                  --no-tools  Keep tools/* clones; remove only
+                                              build artifacts, .venv, and .uv-cache.
+                                System-installed tools and the global uv cache
+                                (~/.cache/uv) are NEVER removed.
   --help                        Show this help
   --version                     Show version
 
@@ -120,13 +276,22 @@ ${BOLD}Examples:${RESET}
   ./run.sh --output-format json --compile examples/fifo/fifo.isir
 
   # Batch compile all designs in a directory, save report
-  ./run.sh --batch benchmarks/level1/ --compile --output-format json --report-file compile_results.json
+  ./run.sh --batch my_designs/ --compile --output-format json --report-file compile_results.json
 
   # Batch verify with PERF and external config
   ./run.sh --config custom_config.yaml --batch my_designs/ --verify --perf
 
   # Check properties against a lifted trace (schema validation on by default)
   ./run.sh --check build/traces/lifted.yaml --spec examples/fifo/fifo.isir
+
+  # Fast reset: drop build artifacts only
+  ./run.sh --clean
+
+  # Full reset: drop build artifacts, .venv, .uv-cache, and cloned tool repos (interactive)
+  ./run.sh --clean-all
+
+  # Non-interactive full reset (CI), keeping cloned tool repos
+  ./run.sh --clean-all --yes --no-tools
 
 ${BOLD}Environment Variables (PERF overrides):${RESET}
   PERF_ENABLED=true|false              Override PERF master switch
@@ -162,19 +327,28 @@ case "${1:-}" in
                 ;;
         esac
         ;;
+    --verify-examples)
+        check_uv
+        shift
+        run_verify_examples "$@"
+        ;;
     --validate-config)
         check_uv
         shift
         exec env PYTHONPATH=src uv run python -m isir.cli.validate_config "$@"
         ;;
     --version)
-        echo "InterScope version 0.3 (alpha – ISIR)"
+        echo "InterScope version 0.0.3"
         ;;
     --help)
         show_help
         ;;
     --clean)
         run_clean
+        ;;
+    --clean-all)
+        shift
+        run_clean_all "$@"
         ;;
     --compile|--verify|--sim|--lift|--check|--query)
         check_uv

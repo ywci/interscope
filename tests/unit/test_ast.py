@@ -135,7 +135,6 @@ def test_property():
     assert prop.kind == "safety"
     assert prop.expression == texpr
     assert prop.proof_status == "unproved"
-    # evidence defaults to empty list
     assert prop.evidence == []
 
 

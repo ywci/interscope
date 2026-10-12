@@ -70,7 +70,6 @@ class KoikaProver:
         self.invariant_mining = prove_cfg.get("invariant_mining", True)
         self.skeleton_reflection = prove_cfg.get("skeleton_reflection", True)
 
-        # Master switch for rocq-mcp.  If false, interactive paths are skipped.
         self.use_rocq_mcp = prove_cfg.get("use_rocq_mcp", True)
 
         self.base_case_hint = prove_cfg.get(
@@ -119,7 +118,11 @@ class KoikaProver:
         self._rocq_broken = False
 
         self._prelude = get_prelude("koika")
-        self._prelude_validated = False   # cache validation result
+        self._prelude_validated = False
+
+    def set_structural_hints(self, hints: str) -> None:
+        """Store structural analysis hints for subsequent proof attempts."""
+        self.structural_hints = hints
 
     def _prepare_proof_script(self, script: str, theorem_name: str = "",
                               error_msg: str = "") -> str:

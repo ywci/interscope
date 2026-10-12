@@ -33,6 +33,103 @@ except ImportError:
     HAS_REQUESTS = False
 
 
+# Mapping from supported provider names to the environment variable that holds
+# their API key.  Keyless providers (Ollama/local) map to None.
+PROVIDER_API_KEY_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "ollama": "OLLAMA_API_KEY",
+    "local": None,
+}
+
+# Values treated as "no real key" placeholders; these trigger the environment
+# variable fallback instead of being used verbatim.
+_API_KEY_PLACEHOLDERS = frozenset({
+    "", "none", "null", "not-needed", "not_needed",
+    "changeme", "change-me", "your-api-key", "your_api_key",
+})
+
+
+def resolve_api_key(provider: str, api_key: Optional[str] = None) -> Optional[str]:
+    """Resolve the API key for *provider*.
+
+    Precedence:
+      1. An explicit, non-placeholder *api_key* argument.
+      2. The provider-specific environment variable (e.g. ``DEEPSEEK_API_KEY``
+         for ``deepseek``), if it exists and is non-empty.
+      3. ``None`` (acceptable for keyless providers such as Ollama).
+
+    Args:
+        provider: Provider name (``openai``, ``anthropic``, ``deepseek``,
+            ``ollama``, or ``local``).
+        api_key: Explicit API key from configuration, if any.
+
+    Returns:
+        The resolved API key, or ``None`` if none could be determined.
+    """
+    provider = (provider or "").lower()
+    key = (api_key or "").strip()
+    if key and key.lower() not in _API_KEY_PLACEHOLDERS:
+        return key
+
+    env_var = PROVIDER_API_KEY_ENV.get(provider)
+    if env_var:
+        env_val = os.environ.get(env_var, "").strip()
+        if env_val:
+            return env_val
+    return None
+
+
+# Mapping from supported provider names to the environment variables (checked in
+# order) that may supply their base URL / API base.  Both the ``*_API_BASE`` and
+# the SDK-native ``*_BASE_URL`` spellings are accepted.
+PROVIDER_API_BASE_ENV = {
+    "openai": ("OPENAI_API_BASE", "OPENAI_BASE_URL"),
+    "anthropic": ("ANTHROPIC_API_BASE", "ANTHROPIC_BASE_URL"),
+    "deepseek": ("DEEPSEEK_API_BASE", "DEEPSEEK_BASE_URL"),
+    "ollama": ("OLLAMA_API_BASE", "OLLAMA_BASE_URL"),
+    "local": (),
+}
+
+# Built-in default endpoints for providers with a well-known address.  Applied
+# only when neither the configuration nor the environment supplies a base URL.
+PROVIDER_API_BASE_DEFAULTS = {
+    "deepseek": "https://api.deepseek.com/v1",
+    "ollama": "http://localhost:11434/v1",
+}
+
+
+def resolve_api_base(provider: str, api_base: Optional[str] = None) -> Optional[str]:
+    """Resolve the base URL / API base for *provider*.
+
+    Precedence:
+      1. An explicit, non-empty *api_base* argument.
+      2. The provider-specific environment variable(s) (e.g. ``DEEPSEEK_API_BASE``
+         then ``DEEPSEEK_BASE_URL`` for ``deepseek``).
+      3. ``None`` (a built-in default from :data:`PROVIDER_API_BASE_DEFAULTS`, or
+         the client library's own default).
+
+    Args:
+        provider: Provider name (``openai``, ``anthropic``, ``deepseek``,
+            ``ollama``, or ``local``).
+        api_base: Explicit base URL from configuration, if any.
+
+    Returns:
+        The resolved base URL, or ``None`` if none could be determined.
+    """
+    provider = (provider or "").lower()
+    base = (api_base or "").strip()
+    if base:
+        return base
+
+    for env_var in PROVIDER_API_BASE_ENV.get(provider, ()):
+        env_val = os.environ.get(env_var, "").strip()
+        if env_val:
+            return env_val
+    return None
+
+
 class LLMClientError(Exception):
     """Raised when LLM API calls fail after all retries."""
     pass
@@ -64,21 +161,21 @@ class LLMClient:
         self.timeout = timeout
         self.retries = retries
 
+        # Keep the original provider name for env‑var resolution; the client
+        # library only understands "openai" and "anthropic".
+        original_provider = self.provider
+
         # DeepSeek is OpenAI‑compatible
         if self.provider == "deepseek":
             self.provider = "openai"
-            if api_base is None:
-                api_base = "https://api.deepseek.com/v1"
-            if api_key is None:
-                api_key = os.environ.get("DEEPSEEK_API_KEY")
 
-        # Obtain API key from environment if not provided
-        if api_key is None:
-            env_var = f"{self.provider.upper()}_API_KEY"
-            api_key = os.environ.get(env_var)
-
-        self.api_key = api_key
-        self.api_base = api_base
+        # Resolve the API key and base URL: explicit values first, then the
+        # provider-specific environment variables (e.g. DEEPSEEK_API_KEY,
+        # DEEPSEEK_API_BASE), then built-in defaults where known.
+        self.api_key = resolve_api_key(original_provider, api_key)
+        self.api_base = resolve_api_base(original_provider, api_base)
+        if not self.api_base:
+            self.api_base = PROVIDER_API_BASE_DEFAULTS.get(original_provider)
         self._client = None
 
         if self.provider in ("openai", "ollama", "local"):
@@ -111,10 +208,13 @@ class LLMClient:
                     "Anthropic API key is required. "
                     "Set ANTHROPIC_API_KEY environment variable."
                 )
-            self._client = anthropic.Anthropic(
-                api_key=self.api_key,
-                timeout=self.timeout,
-            )
+            anthropic_kwargs: Dict[str, Any] = {
+                "api_key": self.api_key,
+                "timeout": self.timeout,
+            }
+            if self.api_base:
+                anthropic_kwargs["base_url"] = self.api_base
+            self._client = anthropic.Anthropic(**anthropic_kwargs)
 
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")

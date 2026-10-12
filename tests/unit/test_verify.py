@@ -74,7 +74,7 @@ class TestVerifyTheoremProving:
         return_value={
             "directories": {"build": "build"},
             "provers": {"koika": {"prove": {}}},
-            "proof": {"perf": {"enabled": False}},  # ensure PERF config exists
+            "proof": {"perf": {"enabled": False}}
         }
     )
     def test_koika_proof_passes(

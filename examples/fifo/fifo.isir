@@ -59,13 +59,13 @@ module:
       initial: true
   rules:
     - name: write
-      condition: (and write_en (not (read full)))
+      condition: (and write_en (lt (read count) 8))
       action:
         - (mem_write mem (read write_ptr) data_in)
         - (write write_ptr (add (read write_ptr) 1))
         - (write count (add (read count) 1))
     - name: read
-      condition: (and read_en (not (read empty)))
+      condition: (and read_en (gt (read count) 0))
       action:
         - (write data_out (mem_read mem (read read_ptr)))
         - (write read_ptr (add (read read_ptr) 1))

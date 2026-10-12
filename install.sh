@@ -88,6 +88,26 @@ if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     export OPAMROOTISOK=1
 fi
 
+ensure_writable_uv_cache() {
+    local cache_dir="${UV_CACHE_DIR:-$HOME/.cache/uv}"
+
+    if mkdir -p "$cache_dir" 2>/dev/null && [[ -w "$cache_dir" ]]; then
+        export UV_CACHE_DIR="$cache_dir"
+        return 0
+    fi
+
+    local fallback
+    for fallback in "$SCRIPT_DIR/.uv-cache" "${TMPDIR:-/tmp}/uv-cache"; do
+        if mkdir -p "$fallback" 2>/dev/null && [[ -w "$fallback" ]]; then
+            export UV_CACHE_DIR="$fallback"
+            log_warning_once "uv-cache" "uv cache dir not writable; using $fallback instead."
+            return 0
+        fi
+    done
+
+    log_warning_once "uv-cache" "No writable uv cache directory found; uv may fail."
+}
+
 ensure_uv() {
     add_common_uv_paths() {
         local to_add=("$HOME/.cargo/bin" "$HOME/.local/bin")
@@ -98,6 +118,7 @@ ensure_uv() {
         done
     }
     add_common_uv_paths
+    ensure_writable_uv_cache
     if command -v uv &>/dev/null; then return 0; fi
     log_info "Installing uv..."
     command -v "$PYTHON" &>/dev/null || log_error "$PYTHON not found"
@@ -152,7 +173,7 @@ setup_venv() {
 }
 
 install_python_deps() {
-    log_info "Installing core Python dependencies..."
+    log_info "Installing Python dependencies..."
 
     local required=(
         "pyyaml>=6.0"
@@ -169,7 +190,8 @@ install_python_deps() {
         "httpx>=0.27"
     )
 
-    uv pip install "${required[@]}" "${optional[@]}" || \
+    uv pip install --python "$SCRIPT_DIR/.venv/bin/python" \
+        "${required[@]}" "${optional[@]}" || \
         log_error "Failed to install Python dependencies"
 
     log_info "Python dependencies installed."
@@ -296,7 +318,7 @@ install_rocq_mcp() {
 
     log_info "Installing rocq-mcp from source (editable mode)..."
     if command -v uv &>/dev/null; then
-        uv pip install -e "$ROCQ_MCP_DIR" || {
+        uv pip install --python "$SCRIPT_DIR/.venv/bin/python" -e "$ROCQ_MCP_DIR" || {
             log_error "uv pip install -e failed. Please install rocq-mcp manually."
         }
     else
@@ -381,7 +403,7 @@ install_acl2_mcp() {
 
     log_info "Installing acl2-mcp from source (editable mode)..."
     if command -v uv &>/dev/null; then
-        uv pip install -e "$ACL2_MCP_DIR" || {
+        uv pip install --python "$SCRIPT_DIR/.venv/bin/python" -e "$ACL2_MCP_DIR" || {
             log_warning "uv pip install -e failed. Trying pip..."
             pip install -e "$ACL2_MCP_DIR" || {
                 log_warning "pip install -e failed. Please install manually."

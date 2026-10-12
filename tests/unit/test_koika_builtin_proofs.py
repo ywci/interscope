@@ -37,7 +37,7 @@ def prover() -> KoikaProver:
         "proof": {},
     }
     with patch("isir.verification.proof.koika.prover.get_llm_client_from_config") as mock_llm:
-        mock_llm.return_value = object()  # dummy LLM client
+        mock_llm.return_value = object()
         return KoikaProver(config=config)
 
 
@@ -65,17 +65,13 @@ def test_overflow_proofs_do_not_use_bad_discriminate(prover: KoikaProver):
         "sub_overflow_implies_result_neq_diff_proved",
     ]:
         proof = _get_builtin_proof(prover, thm)
-        # The exact bad pattern "discriminate Hop." should be absent.
         assert "discriminate Hop." not in proof, (
             f"{thm} still contains the faulty `discriminate Hop.`; "
             "use `inversion Hop` or `rewrite Nat.eqb_eq` instead."
         )
-        # The legitimate base-case `discriminate Hvalid` (valid is false
-        # initially) should still be present.
         assert "discriminate Hvalid" in proof, (
             f"{thm} is missing the base‑case `discriminate Hvalid`."
         )
-        # One of the corrected handling patterns should be present.
         assert ("inversion Hop" in proof or "rewrite Nat.eqb_eq in Hop" in proof), (
             f"{thm} lacks a proper handling of the boolean equality `Hop`."
         )
@@ -84,12 +80,9 @@ def test_overflow_proofs_do_not_use_bad_discriminate(prover: KoikaProver):
 def test_zero_flag_proof_uses_braces_not_bullets(prover: KoikaProver):
     """The zero‑flag proof should separate subgoals with braces, not bullets."""
     proof = prover._zero_flag_proof()
-    # Check that explicit braces are used.
     assert "{" in proof and "}" in proof, (
         "Zero‑flag proof should use `{ ... }` for subgoal separation."
     )
-    # Ensure no line consists solely of a bullet character (a common cause
-    # of `Wrong bullet` / `Focus` errors).
     for line in proof.splitlines():
         stripped = line.strip()
         assert stripped not in ("-", "+", "*"), (

@@ -112,6 +112,20 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
                 f"Supported providers: {', '.join(sorted(supported))}"
             )
 
+        if provider in ("openai", "anthropic", "deepseek"):
+            from isir.backends.llm_client import resolve_api_key
+            if not resolve_api_key(provider, llm_cfg.get("api_key")):
+                env_name = {
+                    "openai": "OPENAI_API_KEY",
+                    "anthropic": "ANTHROPIC_API_KEY",
+                    "deepseek": "DEEPSEEK_API_KEY",
+                }[provider]
+                warnings.append(
+                    f"LLM provider '{provider}' requires an API key, but neither "
+                    f"'llm.api_key' nor the '{env_name}' environment variable is set.\n"
+                    f"Set {env_name} or llm.api_key in config.yaml."
+                )
+
     if perf_enabled:
         perf_cfg = config.get("proof", {}).get("perf", {})
         beam = perf_cfg.get("beam_size", 3)

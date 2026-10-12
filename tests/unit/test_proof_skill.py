@@ -91,7 +91,6 @@ class TestProofSkillACL2(unittest.TestCase):
         result = self.skill._prove_acl2(obligation, context)
         self.assertTrue(result.success)
         self.assertEqual(result.proof_script, "(defthm no_overflow_correct ...)")
-        # Verify call with exact hints and initial_script=None
         self.mock_prover.prove_theorem.assert_called_once_with(
             theorem_name="no_overflow_correct",
             statement="(implies (full st) (not (enqueue st)))",
@@ -105,7 +104,6 @@ class TestProofSkillACL2(unittest.TestCase):
         self.mock_prover.prove_theorem.return_value = ProofResult(success=True, proof_script="...")
         result = self.skill._prove_acl2(obligation, context)
         self.assertTrue(result.success)
-        # Verify call with statement=None, hints=None, initial_script=None
         self.mock_prover.prove_theorem.assert_called_once_with(
             theorem_name="no_overflow_correct",
             statement=None,

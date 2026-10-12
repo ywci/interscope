@@ -2,15 +2,9 @@
 #
 # Unit tests for the corrected built‑in proof of
 # `overflow_implies_result_neq_sum`.
-#
-# These tests verify that the built‑in proof script used by KoikaProver
-# for the ALU overflow property no longer contains the anti‑patterns that
-# caused failures in earlier runs.  They do NOT require a Coq installation
-# or an LLM; they inspect the proof string directly.
 
 import pytest
 from unittest.mock import patch
-
 from isir.verification.proof.koika.prover import KoikaProver
 from isir.verification.proof.koika.auto_patcher import (
     auto_patch,
@@ -48,27 +42,16 @@ def test_overflow_proof_has_no_bad_patterns(prover):
     """The built‑in overflow proof must not contain the known bad patterns."""
     proof = prover._overflow_sum_proof()
 
-    # 1. No deprecated Nat.mod_add
     assert "Nat.mod_add" not in proof
-
-    # 2. No `discriminate Hop` on boolean equality
     assert "discriminate Hop." not in proof
-
-    # 3. Proper handling of boolean equality is present
     assert ("inversion Hop" in proof) or ("rewrite Nat.eqb_eq in Hop" in proof)
-
-    # 4. The legitimate base-case `discriminate Hvalid` remains
     assert "discriminate Hvalid" in proof
 
-    # 5. No orphan bullets (lines that are only a bullet)
     for line in proof.splitlines():
         stripped = line.strip()
         assert stripped not in ("-", "+", "*"), f"Orphan bullet found: {stripped}"
 
-    # 6. Explicit braces are used for the inner step‑case sub‑goals
     assert "{" in proof and "}" in proof
-
-    # 7. Proof is well‑formed
     assert proof.strip().startswith("Proof.")
     assert "Qed." in proof
 

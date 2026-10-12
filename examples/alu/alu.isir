@@ -178,15 +178,12 @@ module:
           - "simpl"
           - "auto"
           - "lia"
-    # New proof obligations for the hard properties (Koika)
-    - property: overflow_implies_result_neq_sum
-      status: unproved
-      engine: theorem_proving
-      backend: koika
-    - property: sub_overflow_implies_result_neq_diff
-      status: unproved
-      engine: theorem_proving
-      backend: koika
+    # NOTE: overflow_implies_result_neq_sum / sub_overflow_implies_result_neq_diff
+    # are deliberately NOT theorem_proving obligations. Under the current
+    # lowering (bits<N> -> unbounded nat, add/sub -> Nat.+/-), result_reg is
+    # definitionally equal to add/sub(a_reg, b_reg), so "result != add(a,b)" is
+    # unsatisfiable. The definitional add_overflow_correct / sub_overflow_correct
+    # properties above express the intended overflow contract.
     # Existing simple ACL2 and model-checking obligations (unchanged)
     - property: result_reg_self
       status: unproved

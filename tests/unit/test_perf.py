@@ -46,7 +46,6 @@ class TestPERFConfig:
         assert config.primary_dimension == "subgoal_reduction"
         assert config.trace_alignment_weight == 0.6
         assert config.use_proof_library is False
-        # New fields from the enhancement
         assert config.temperature_decay == 0.0
         assert config.temperature_min == 0.1
         assert config.early_stop_patience == 0
