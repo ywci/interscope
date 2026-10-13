@@ -1,0 +1,49 @@
+isir_version: "0.1"
+module:
+  name: saturating_counter
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: inc
+      direction: input
+      type: "bool"
+    - name: dec
+      direction: input
+      type: "bool"
+  outputs:
+    - name: count
+      direction: output
+      type: "bits<4>"
+  state:
+    - name: count
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  rules:
+    - name: inc_step
+      condition: (and inc (not dec))
+      action:
+        - (write count (ite (lt (read count) 8) (add (read count) 1) (read count)))
+    - name: dec_step
+      condition: (and dec (not inc))
+      action:
+        - (write count (ite (gt (read count) 0) (sub (read count) 1) (read count)))
+  properties:
+    - name: count_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read count) 0) (le (read count) 8))
+  proof_obligations:
+    - property: count_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_in_range
+      engine: model_checking

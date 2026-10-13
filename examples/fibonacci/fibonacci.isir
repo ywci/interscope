@@ -1,0 +1,50 @@
+isir_version: "0.1"
+module:
+  name: fibonacci
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: advance
+      direction: input
+      type: "bool"
+  outputs:
+    - name: fib_prev
+      direction: output
+      type: "bits<16>"
+    - name: fib_curr
+      direction: output
+      type: "bits<16>"
+  state:
+    - name: fib_prev
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: fib_curr
+      kind: register
+      type: "bits<16>"
+      initial: 1
+  rules:
+    - name: advance
+      condition: advance
+      action:
+        - (write fib_prev (read fib_curr))
+        - (write fib_curr (add (read fib_prev) (read fib_curr)))
+  properties:
+    - name: fib_monotonic
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read fib_prev) (read fib_curr))
+  proof_obligations:
+    - property: fib_monotonic
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: fib_monotonic
+      engine: model_checking

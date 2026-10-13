@@ -1,0 +1,42 @@
+isir_version: "0.1"
+module:
+  name: mod_counter
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: enable
+      direction: input
+      type: "bool"
+  outputs:
+    - name: count
+      direction: output
+      type: "bits<4>"
+  state:
+    - name: count
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  rules:
+    - name: tick
+      condition: enable
+      action:
+        - (write count (mod (add (read count) 1) 16))
+  properties:
+    - name: count_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read count) 0) (lt (read count) 16))
+  proof_obligations:
+    - property: count_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_in_range
+      engine: model_checking

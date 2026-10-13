@@ -49,6 +49,9 @@ logger = get_logger(__name__)
 # ``congruence`` can "succeed" while leaving the goal open, which would make
 # ``first`` commit prematurely).
 RECURSIVE_SKELETON_LTAC = r"""
+Opaque Nat.modulo Nat.divmod.
+Hint Resolve eq_refl : core.
+
 Ltac skel_close :=
   simpl; first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
                | solve [congruence] | solve [contradiction] | solve [tauto]
@@ -59,7 +62,8 @@ Ltac skel n :=
   match n with
   | 0 => fail "skel depth exhausted"
   | S ?m =>
-      first [ skel_close
+      first [ solve [ eapply (Nat.mod_bound_pos _ _); lia ]
+            | skel_close
             | progress intros; skel m
             | progress (match goal with [ |- context[if negb ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
             | progress (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
@@ -67,6 +71,7 @@ Ltac skel n :=
             | progress (match goal with [ H : ?P, IH : ?P -> ?Q |- _ ] => specialize (IH H) end); skel m
             | progress (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end); skel m
             | progress (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end); skel m
+            | progress (match goal with [ |- context[?f ?x = true] ] => destruct (f x); simpl in * end); skel m
             | progress (match goal with [ H : Nat.ltb ?a ?b = true |- _ ] => apply Nat.ltb_lt in H end); skel m
             | progress (match goal with [ H : Nat.ltb ?a ?b = false |- _ ] => apply Nat.ltb_ge in H end); skel m
             | progress (match goal with [ H : Nat.leb ?a ?b = true |- _ ] => apply Nat.leb_le in H end); skel m

@@ -1,0 +1,63 @@
+isir_version: "0.1"
+module:
+  name: majority_voter
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: a
+      direction: input
+      type: "bool"
+    - name: b
+      direction: input
+      type: "bool"
+    - name: c
+      direction: input
+      type: "bool"
+  outputs:
+    - name: maj
+      direction: output
+      type: "bool"
+  state:
+    - name: x
+      kind: register
+      type: "bool"
+      initial: false
+    - name: y
+      kind: register
+      type: "bool"
+      initial: false
+    - name: z
+      kind: register
+      type: "bool"
+      initial: false
+    - name: maj
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: vote
+      condition: "true"
+      action:
+        - (write x a)
+        - (write y b)
+        - (write z c)
+        - (write maj (or (and a b) (or (and b c) (and a c))))
+  properties:
+    - name: maj_implies_x_or_y
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read maj) (or (read x) (read y)))
+  proof_obligations:
+    - property: maj_implies_x_or_y
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: maj_implies_x_or_y
+      engine: model_checking

@@ -1,0 +1,56 @@
+isir_version: "0.1"
+module:
+  name: sort2
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: a_in
+      direction: input
+      type: "bits<8>"
+    - name: b_in
+      direction: input
+      type: "bits<8>"
+    - name: load
+      direction: input
+      type: "bool"
+  outputs:
+    - name: lo
+      direction: output
+      type: "bits<8>"
+    - name: hi
+      direction: output
+      type: "bits<8>"
+  state:
+    - name: lo
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: hi
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  rules:
+    - name: sort
+      condition: load
+      action:
+        - (write lo (ite (le a_in b_in) a_in b_in))
+        - (write hi (ite (le a_in b_in) b_in a_in))
+  properties:
+    - name: sorted
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read lo) (read hi))
+  proof_obligations:
+    - property: sorted
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: sorted
+      engine: model_checking
