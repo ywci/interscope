@@ -567,7 +567,13 @@ install_koika() {
         log_warning "Check /tmp/koika_coq_build.log for details."
     fi
 
-    log_info "Skipping coq-lsp in the Kōika switch (would upgrade Coq 8.18 → 9.1)."
+    log_info "Installing coq-lsp (Coq 8.18-compatible) for interactive proofs..."
+    # coq-lsp versions are tagged +<coq-version>; 0.2.3+8.18 is the newest
+    # release compatible with Coq 8.18 (later releases require Coq 8.20/9.x,
+    # which would be silently upgraded if we installed the unpinned `coq-lsp`).
+    if ! opam install "coq-lsp.0.2.3+8.18" -y; then
+        log_warning "Failed to install coq-lsp 0.2.3+8.18. Interactive proofs (skeleton/PERF) may not work."
+    fi
 
     local BUILD_OCAML="_build/default/ocaml"
     local SITE_LIB

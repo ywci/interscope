@@ -1,0 +1,90 @@
+isir_version: "0.1"
+module:
+  name: stack
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: push
+      direction: input
+      type: "bool"
+    - name: pop
+      direction: input
+      type: "bool"
+    - name: data_in
+      direction: input
+      type: "bits<32>"
+  outputs:
+    - name: data_out
+      direction: output
+      type: "bits<32>"
+    - name: full
+      direction: output
+      type: "bool"
+    - name: empty
+      direction: output
+      type: "bool"
+  state:
+    - name: mem
+      kind: memory
+      type: { type: "memory", elem: "bits<32>", depth: 8 }
+    - name: sp
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: data_out
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: full
+      kind: register
+      type: "bool"
+      initial: false
+    - name: empty
+      kind: register
+      type: "bool"
+      initial: true
+  rules:
+    - name: push
+      condition: (and push (lt (read sp) 8))
+      action:
+        - (mem_write mem (read sp) data_in)
+        - (write sp (add (read sp) 1))
+    - name: pop
+      condition: (and pop (gt (read sp) 0))
+      action:
+        - (write data_out (mem_read mem (sub (read sp) 1)))
+        - (write sp (sub (read sp) 1))
+    - name: update_flags
+      condition: "true"
+      action:
+        - (write full (eq (read sp) 8))
+        - (write empty (eq (read sp) 0))
+  properties:
+    - name: sp_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read sp) 0) (le (read sp) 8))
+    - name: full_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read full) true) (eq (read full) false))
+    - name: empty_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read empty) true) (eq (read empty) false))
+  proof_obligations:
+    - property: sp_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: sp_in_range
+      engine: model_checking

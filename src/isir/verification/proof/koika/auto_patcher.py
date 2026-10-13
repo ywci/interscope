@@ -25,23 +25,12 @@ from isir.verification.proof.structural_validator import validate_structure
 logger = get_logger(__name__)
 
 DEPRECATED_NOTATIONS: Dict[str, str] = {
-    "Nat.mod_add": "Div0.mod_add",
-    "Nat.mod_mul": "Div0.mod_mul",
-    "Nat.mod_mod": "Div0.mod_mod",
-    "Nat.mod_same": "Div0.mod_same",
-    "Nat.mod_1_l": "Div0.mod_1_l",
-    "Nat.mod_1_r": "Div0.mod_1_r",
-    "Nat.mod_0_l": "Div0.mod_0_l",
-    "Nat.mod_0_r": "Div0.mod_0_r",
-    "Nat.add_mod": "Div0.add_mod",
-    "Nat.mul_mod": "Div0.mul_mod",
-    "Nat.sub_mod": "Div0.sub_mod",
-    "Nat.div_add": "Div0.div_add",
-    "Nat.div_mul": "Div0.div_mul",
-    "Nat.div_div": "Div0.div_div",
-    "Nat.div_same": "Div0.div_same",
-    "Nat.div_1_r": "Div0.div_1_r",
-    "Nat.div_1_l": "Div0.div_1_l",
+    # NOTE: we deliberately keep the deprecated `Nat.mod_*` / `Nat.div_*`
+    # lemmas as-is rather than rewriting them to `Div0.*`.  `Arith.Div0` is not
+    # importable in the supported Coq 8.18 toolchain, so the rewrite produced
+    # proofs referencing a non-existent module ("The reference Div0.div_1_r was
+    # not found").  The `Nat.*` lemmas still work (they merely emit deprecation
+    # warnings), so no replacement is safer than a broken one.
 }
 
 
@@ -49,11 +38,15 @@ def patch_deprecated_notations(script: str) -> str:
     """
     Replace deprecated lemma names with their modern equivalents.
 
+    Currently a no-op: the `Div0.*` replacements are intentionally disabled
+    because `Arith.Div0` is not importable in the supported Coq toolchain (see
+    ``DEPRECATED_NOTATIONS``).  The deprecated `Nat.*` lemmas are left intact.
+
     Args:
         script: Coq proof script.
 
     Returns:
-        Script with deprecated notations replaced.
+        The script unchanged.
     """
     if not script:
         return script

@@ -1,0 +1,73 @@
+isir_version: "0.1"
+module:
+  name: updown_counter
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: load_en
+      direction: input
+      type: "bool"
+    - name: load_value
+      direction: input
+      type: "bits<8>"
+    - name: up
+      direction: input
+      type: "bool"
+    - name: down
+      direction: input
+      type: "bool"
+  outputs:
+    - name: count
+      direction: output
+      type: "bits<8>"
+  state:
+    - name: count
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: max_value
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  rules:
+    - name: load
+      condition: load_en
+      action:
+        - (write count (read load_value))
+        - (write max_value (read load_value))
+    - name: inc
+      condition: (and up (and (not load_en) (lt (read count) (read max_value))))
+      action:
+        - (write count (add (read count) 1))
+    - name: dec
+      condition: (and down (and (not load_en) (gt (read count) 0)))
+      action:
+        - (write count (sub (read count) 1))
+  properties:
+    - name: count_le_max
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read count) (read max_value))
+    - name: count_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read count) 0)
+  proof_obligations:
+    - property: count_le_max
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_le_max
+      engine: model_checking

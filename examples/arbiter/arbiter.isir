@@ -1,0 +1,72 @@
+isir_version: "0.1"
+module:
+  name: arbiter
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req0
+      direction: input
+      type: "bool"
+    - name: req1
+      direction: input
+      type: "bool"
+    - name: req2
+      direction: input
+      type: "bool"
+    - name: req3
+      direction: input
+      type: "bool"
+  outputs:
+    - name: grant
+      direction: output
+      type: "bits<2>"
+    - name: valid
+      direction: output
+      type: "bool"
+  state:
+    - name: grant
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: valid
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: arbitrate
+      condition: "true"
+      action:
+        - (write grant
+            (ite (read req0) 0
+            (ite (read req1) 1
+            (ite (read req2) 2
+            (ite (read req3) 3 0)))))
+        - (write valid (or (read req0) (or (read req1) (or (read req2) (read req3)))))
+  properties:
+    - name: grant_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read grant) 0) (le (read grant) 3))
+    - name: valid_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read valid) true) (eq (read valid) false))
+  proof_obligations:
+    - property: grant_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: valid_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: grant_in_range
+      engine: model_checking

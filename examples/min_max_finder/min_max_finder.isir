@@ -1,0 +1,72 @@
+isir_version: "0.1"
+module:
+  name: min_max_finder
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: valid
+      direction: input
+      type: "bool"
+    - name: data
+      direction: input
+      type: "bits<16>"
+  outputs:
+    - name: min_val
+      direction: output
+      type: "bits<16>"
+    - name: max_val
+      direction: output
+      type: "bits<16>"
+  state:
+    - name: min_val
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: max_val
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: first
+      kind: register
+      type: "bool"
+      initial: true
+    - name: count
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  rules:
+    - name: update
+      condition: valid
+      action:
+        - (write min_val (ite (read first) data (ite (lt data (read min_val)) data (read min_val))))
+        - (write max_val (ite (read first) data (ite (gt data (read max_val)) data (read max_val))))
+        - (write count (add (read count) 1))
+        - (write first false)
+  properties:
+    - name: min_le_max
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read min_val) (read max_val))
+    - name: count_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read count) 0)
+  proof_obligations:
+    - property: min_le_max
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: min_le_max
+      engine: model_checking

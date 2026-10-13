@@ -1,0 +1,87 @@
+isir_version: "0.1"
+module:
+  name: divider
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+    - name: x
+      direction: input
+      type: "bits<16>"
+    - name: y
+      direction: input
+      type: "bits<16>"
+  outputs:
+    - name: quotient
+      direction: output
+      type: "bits<16>"
+    - name: remainder
+      direction: output
+      type: "bits<16>"
+    - name: done
+      direction: output
+      type: "bool"
+  state:
+    - name: divisor
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: quotient
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: remainder
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: done
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: load
+      condition: start
+      action:
+        - (write divisor (read y))
+        - (write quotient 0)
+        - (write remainder (read x))
+        - (write done false)
+    - name: subtract
+      condition: (and (not (read done)) (ge (read remainder) (read divisor)))
+      action:
+        - (write remainder (sub (read remainder) (read divisor)))
+        - (write quotient (add (read quotient) 1))
+    - name: finish
+      condition: (and (not (read done)) (lt (read remainder) (read divisor)))
+      action:
+        - (write done true)
+  properties:
+    - name: done_implies_remainder_lt_divisor
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read done) (lt (read remainder) (read divisor)))
+    - name: remainder_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read remainder) 0)
+  proof_obligations:
+    - property: done_implies_remainder_lt_divisor
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: remainder_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: done_implies_remainder_lt_divisor
+      engine: model_checking

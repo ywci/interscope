@@ -925,6 +925,17 @@ class LLMProofSkill(ProofSkill):
                 f"(depth {self._analysis.max_ite_depth}). "
                 "Consider using 'destruct' on the condition variables to split into cases."
             )
+        if self._analysis.num_step_constructors == 1 and self._analysis.max_ite_depth >= 1:
+            hints.append(
+                "The step relation contains an if-then-else whose condition is a "
+                "comparison (e.g. Nat.ltb / Nat.leb), possibly wrapped in `negb`. "
+                "After `inversion Hstep; subst; simpl`, if the goal still has an "
+                "`if ... then ... else ...`, destruct the *inner* comparison "
+                "(e.g. `destruct (Nat.ltb x 256) eqn:Hc` or `destruct (Nat.leb x y) eqn:Hc`), "
+                "then rewrite the boolean hypothesis to arithmetic with "
+                "`apply Nat.ltb_lt in Hc` / `Nat.ltb_ge` / `Nat.leb_le` / `Nat.leb_gt`, "
+                "and close each branch with `simpl; lia`."
+            )
         if self._analysis.suggests_lemma_introduction and self._analysis.duplicated_subexpressions:
             hints.append(
                 "Duplicated subexpressions detected: "

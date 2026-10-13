@@ -1,0 +1,87 @@
+isir_version: "0.1"
+module:
+  name: gcd
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+    - name: x
+      direction: input
+      type: "bits<16>"
+    - name: y
+      direction: input
+      type: "bits<16>"
+  outputs:
+    - name: result
+      direction: output
+      type: "bits<16>"
+    - name: done
+      direction: output
+      type: "bool"
+  state:
+    - name: a
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: b
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: done
+      kind: register
+      type: "bool"
+      initial: false
+    - name: result
+      kind: register
+      type: "bits<16>"
+      initial: 0
+  rules:
+    - name: load
+      condition: start
+      action:
+        - (write a (read x))
+        - (write b (read y))
+        - (write done false)
+    - name: step_a
+      condition: (and (not (read done)) (gt (read a) (read b)))
+      action:
+        - (write a (sub (read a) (read b)))
+    - name: step_b
+      condition: (and (not (read done)) (gt (read b) (read a)))
+      action:
+        - (write b (sub (read b) (read a)))
+    - name: finish
+      condition: (and (not (read done)) (eq (read a) (read b)))
+      action:
+        - (write done true)
+        - (write result (read a))
+  properties:
+    - name: operands_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read a) 0) (ge (read b) 0))
+    - name: done_implies_equal
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read done) (eq (read a) (read b)))
+  proof_obligations:
+    - property: done_implies_equal
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: operands_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: done_implies_equal
+      engine: model_checking

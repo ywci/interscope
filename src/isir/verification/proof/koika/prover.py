@@ -36,22 +36,58 @@ from isir.verification.proof.domain_tactics import apply_domain_tactics
 
 logger = get_logger(__name__)
 
+# Recursive, subgoal-aware proof skeleton.
+#
+# ``skel n`` is a depth-bounded proof *search* expressed as an Ltac tactic.
+# At each step it tries to close the current goal and, failing that, applies a
+# structural move (introduce hypotheses, destruct an ``if`` condition, invert a
+# ``step`` relation, rewrite a boolean comparison to arithmetic, simplify) and
+# then recurses on *every* generated sub-goal.  The ``first [...]`` combinator
+# provides backtracking, so a branch that opens the goal but cannot close it is
+# undone and the next branch is tried.  ``solve [...]`` around each closer is
+# essential: it forces a closer to *fully* close the goal (plain ``auto`` and
+# ``congruence`` can "succeed" while leaving the goal open, which would make
+# ``first`` commit prematurely).
+RECURSIVE_SKELETON_LTAC = r"""
+Ltac skel_close :=
+  simpl; first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
+               | solve [congruence] | solve [contradiction] | solve [tauto]
+               | solve [lia] | solve [nia] | solve [auto]
+               | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ] ].
+
+Ltac skel n :=
+  match n with
+  | 0 => fail "skel depth exhausted"
+  | S ?m =>
+      first [ skel_close
+            | progress intros; skel m
+            | progress (match goal with [ |- context[if negb ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
+            | progress (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
+            | progress (match goal with [ H : step _ _ _ |- _ ] => inversion H; subst; clear H; simpl end); skel m
+            | progress (match goal with [ H : ?P, IH : ?P -> ?Q |- _ ] => specialize (IH H) end); skel m
+            | progress (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end); skel m
+            | progress (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end); skel m
+            | progress (match goal with [ H : Nat.ltb ?a ?b = true |- _ ] => apply Nat.ltb_lt in H end); skel m
+            | progress (match goal with [ H : Nat.ltb ?a ?b = false |- _ ] => apply Nat.ltb_ge in H end); skel m
+            | progress (match goal with [ H : Nat.leb ?a ?b = true |- _ ] => apply Nat.leb_le in H end); skel m
+            | progress (match goal with [ H : Nat.leb ?a ?b = false |- _ ] => apply Nat.leb_gt in H end); skel m
+            | progress simpl; skel m ]
+  end.
+"""
+
 
 class KoikaProver:
     """Generic prover for Kōika/Coq theorems.
 
     The prover follows a strict escalation path:
     1. Already-proven check
-    2. Built-in deterministic proof (for known patterns)
-    3. Initial script verification (if provided)
-    4. Proof library (fast, config-controlled)
-    5. Built-in skeleton proofs (generic structural induction)
-    6. LLM skeleton reflection (tailored one-shot proof)
-    7. LLM-driven interactive tactic loop
-    8. coqc-based fallback verification
-    9. LLM full-proof generation with repair (using coqc for validation)
+    2. Initial script verification (if provided)
+    3. Proof library (fast, config-controlled)
+    4. Interactive proof (skeleton, reflection, LLM tactic loop)
+    5. coqc-based fallback verification
+    6. LLM full-proof generation with repair (using coqc for validation)
 
-    If `use_rocq_mcp` is false, steps 5–7 are skipped.
+    If `use_rocq_mcp` is false, step 4 is skipped.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -167,26 +203,6 @@ class KoikaProver:
             )
 
         return script
-
-    def prove_with_builtin_only(self, coq_file: Path, theorem_name: str) -> Optional[ProofResult]:
-        """Attempt only the built-in deterministic proof for a known theorem.
-
-        Returns a `ProofResult` on success, or `None` if the built-in proof
-        is not available or fails.
-        """
-        start_time = time.time()
-        proof_script = self._try_builtin_proof(coq_file, theorem_name)
-        if proof_script is not None:
-            duration = time.time() - start_time
-            logger.info("Built-in proof succeeded for '%s'.", theorem_name)
-            return ProofResult(
-                success=True,
-                proof_script=proof_script,
-                duration=duration,
-                backend="koika",
-                metadata={"automation": "builtin"}
-            )
-        return None
 
     def _prelude_is_valid(self) -> bool:
         """Test whether the current prelude can be compiled with coqc.
@@ -552,19 +568,6 @@ class KoikaProver:
                 metadata={"automation": "pre-proven"}
             )
 
-        # 0.5 Built-in deterministic proof for known patterns
-        builtin_proof = self._try_builtin_proof(coq_file, theorem_name)
-        if builtin_proof is not None:
-            duration = time.time() - start_time
-            logger.info("Built-in proof succeeded for '%s'.", theorem_name)
-            return ProofResult(
-                success=True,
-                proof_script=builtin_proof,
-                duration=duration,
-                backend="koika",
-                metadata={"automation": "builtin"}
-            )
-
         # 1. Initial script (if provided)
         if initial_script is not None:
             logger.info("Verifying provided initial script for '%s'.", theorem_name)
@@ -648,108 +651,6 @@ class KoikaProver:
             backend="koika",
             metadata={"automation": "none"}
         )
-
-    def _try_builtin_proof(self, coq_file: Path, theorem_name: str) -> Optional[str]:
-        builtin_scripts = {
-            "zero_flag_correct_proved": self._zero_flag_proof(),
-            "overflow_implies_result_neq_sum_proved": self._overflow_sum_proof(),
-            "sub_overflow_implies_result_neq_diff_proved": self._overflow_diff_proof(),
-        }
-        if theorem_name not in builtin_scripts:
-            return None
-
-        proof_script = builtin_scripts[theorem_name]
-        # Apply deterministic preparation pipeline.
-        proof_script = self._prepare_proof_script(proof_script, theorem_name)
-
-        logger.info("Attempting built-in proof for %s.", theorem_name)
-        try:
-            original_content = coq_file.read_text()
-        except Exception as e:
-            logger.error("Could not read Coq file for built-in proof: %s", e)
-            return None
-
-        thm_pattern = re.compile(
-            rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
-        )
-        match = thm_pattern.search(original_content)
-        if not match:
-            logger.error("Could not locate theorem '%s' in file.", theorem_name)
-            return None
-
-        full_block = match.group(0)
-        new_block = full_block.replace("Admitted.", proof_script)
-        new_content = original_content.replace(full_block, new_block, 1)
-        coq_file.write_text(new_content)
-
-        workspace = self._workspace_for(coq_file)
-        if self._compile_with_coqc(coq_file, workspace):
-            updated_content = coq_file.read_text()
-            if self._theorem_is_closed(updated_content, theorem_name):
-                logger.info("Built-in proof accepted for '%s'.", theorem_name)
-                return proof_script
-            else:
-                logger.warning("Built-in proof compiled but theorem not closed.")
-        else:
-            logger.warning("Built-in proof failed to compile.")
-
-        coq_file.write_text(original_content)  # revert
-        return None
-
-    def _zero_flag_proof(self) -> str:
-        return """Proof.
-  intros s inputs Hreach.
-  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].
-  { simpl. intros Hvalid. discriminate Hvalid. }
-  { inversion Hstep; subst; clear Hstep; simpl.
-    { intros Hvalid. apply IH. assumption. }
-    { intros Hvalid.
-      destruct (op_reg s' =? 0) eqn:Hop0.
-      { simpl. reflexivity. }
-      { destruct (op_reg s' =? 1) eqn:Hop1.
-        { simpl. reflexivity. }
-        { destruct (op_reg s' =? 2) eqn:Hop2.
-          { simpl. reflexivity. }
-          { simpl. reflexivity. } } } } }
-Qed."""
-
-    def _overflow_sum_proof(self) -> str:
-        return """Proof.
-  intros s inputs Hreach.
-  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].
-  { simpl. intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
-    discriminate Hvalid. }
-  { inversion Hstep; subst; clear Hstep; simpl.
-    { intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
-      simpl in Hop. inversion Hop. }
-    { intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
-      destruct (op_reg s' =? 0) eqn:Hop0.
-      { simpl in *. lia. }
-      { destruct (op_reg s' =? 1) eqn:Hop1.
-        { simpl in *. lia. }
-        { destruct (op_reg s' =? 2) eqn:Hop2.
-          { simpl in *. lia. }
-          { simpl in *. lia. } } } } } }
-Qed."""
-
-    def _overflow_diff_proof(self) -> str:
-        return """Proof.
-  intros s inputs Hreach.
-  induction Hreach as [| s' s'' inputs' Hreach' IH Hstep].
-  { simpl. intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
-    discriminate Hvalid. }
-  { inversion Hstep; subst; clear Hstep; simpl.
-    { intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
-      simpl in Hop. inversion Hop. }
-    { intros Hcond. destruct Hcond as [Hvalid [Hop Hoverflow]].
-      destruct (op_reg s' =? 0) eqn:Hop0.
-      { simpl in *. lia. }
-      { destruct (op_reg s' =? 1) eqn:Hop1.
-        { simpl in *. lia. }
-        { destruct (op_reg s' =? 2) eqn:Hop2.
-          { simpl in *. lia. }
-          { simpl in *. lia. } } } } } }
-Qed."""
 
     def _try_initial_script(
         self,
@@ -1138,13 +1039,20 @@ Qed."""
         applied_extra: List[str] = []
         default_tactics = [
             "repeat (match goal with H: ?L _ _ |- _ => try rewrite (H ?x ?y) end)",
-            "repeat (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:? end)",
-            f"try apply IH{reachable_hyp}.",
-            "repeat (match goal with "
+            "repeat (match goal with [ |- context[if negb ?b then _ else _] ] => destruct b eqn:?; simpl end)",
+            "repeat (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:?; simpl end)",
+            f"all: try apply IH{reachable_hyp}.",
+            "all: repeat (match goal with "
+            "| [ H : Nat.ltb ?a ?b = true |- _ ] => apply Nat.ltb_lt in H "
+            "| [ H : Nat.ltb ?a ?b = false |- _ ] => apply Nat.ltb_ge in H "
+            "| [ H : Nat.leb ?a ?b = true |- _ ] => apply Nat.leb_le in H "
+            "| [ H : Nat.leb ?a ?b = false |- _ ] => apply Nat.leb_gt in H "
+            "end)",
+            "all: (repeat (match goal with "
             "| [ |- context[slice (?x + ?k) ?h ?l] ] => rewrite (slice_low2 (?x + ?k)) "
             "| [ H : context[slice ?x ?h ?l] |- _ ] => rewrite (slice_low2 x) in H "
             "end); try (rewrite Nat.add_mod; rewrite (Nat.mod_same 4) by lia; "
-            "rewrite Nat.add_0_r; assumption); auto; try lia; try nia."
+            "rewrite Nat.add_0_r; assumption); auto; try lia; try nia)."
         ]
         step_tactics = self.skeleton_step_tactics if self.skeleton_step_tactics else default_tactics
 
@@ -1768,7 +1676,102 @@ Qed."""
                     results[idx] = {"success": False, "error": f"Worker exception: {e}", "proof_finished": False}
         return results
 
+    def _recursive_skeleton_proof(
+        self, coq_file: Path, theorem_name: str, max_depth: int = 50
+    ) -> Optional[str]:
+        """Deterministic, recursive, subgoal-aware skeleton proof.
+
+        This is a *batch* prover (validated by ``coqc``, not rocq-mcp): it
+        injects the recursive ``skel`` Ltac and a generic proof body that
+        inducts on reachability and then lets ``skel`` close each generated
+        sub-goal on demand (with backtracking).  On failure the original file
+        is restored and ``None`` is returned so later stages see a clean file.
+        """
+        coq_file = Path(coq_file).resolve()
+        try:
+            original = coq_file.read_text()
+        except Exception as e:
+            logger.warning("Recursive skeleton: could not read %s: %s", coq_file, e)
+            return None
+
+        theorem_pattern = re.compile(
+            rf"Theorem\s+{re.escape(theorem_name)}\s+.*?Admitted\.", re.DOTALL
+        )
+        match = theorem_pattern.search(original)
+        if not match:
+            logger.info(
+                "Recursive skeleton skipped: no Admitted block for '%s'.", theorem_name
+            )
+            return None
+
+        # Proof-body candidates, most specific first.  Constant-field invariants
+        # (`foo_const : forall s, reachable s -> foo s = c`) get a dedicated body:
+        # the IH must be applied to the *previous* state's reachability, and the
+        # resulting products `x * 0` rewritten.  If that body does not apply (the
+        # property may not depend on the constant fields), fall back to the
+        # generic recursive `skel` search.
+        const_lemmas = [
+            name for name in self._find_invariant_lemmas(coq_file)
+            if name.endswith("_const")
+        ]
+        candidates = []
+        if const_lemmas:
+            specs = "; ".join(f"specialize ({name} _ Hr)" for name in const_lemmas)
+            candidates.append(
+                "Proof.\n"
+                "  intros s inputs H.\n"
+                "  induction H.\n"
+                "  - simpl; lia.\n"
+                "  - intros.\n"
+                "    match goal with [ Hs : step _ _ _ |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
+                f"    match goal with [ Hr : reachable _ |- _ ] => ({specs}) end.\n"
+                "    all: (repeat (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end);\n"
+                "          repeat (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end);\n"
+                "          try assumption; try (simpl; lia); try nia).\n"
+                "Qed."
+            )
+        candidates.append(
+            "Proof.\n"
+            "  intros.\n"
+            f"  match goal with [ H : reachable _ |- _ ] => induction H; skel {max_depth} end.\n"
+            "Qed."
+        )
+
+        workspace = self._workspace_for(coq_file)
+        for proof in candidates:
+            new_block = match.group(0).replace("Admitted.", proof)
+            new_content = original.replace(match.group(0), new_block, 1)
+            if "Ltac skel_close" not in new_content:
+                new_content = new_content.replace(
+                    "(* PERF_Obligation",
+                    RECURSIVE_SKELETON_LTAC + "(* PERF_Obligation",
+                    1,
+                )
+            try:
+                coq_file.write_text(new_content, encoding="utf-8")
+            except Exception as e:
+                logger.warning("Recursive skeleton: could not write %s: %s", coq_file, e)
+                continue
+            if self._compile_with_coqc(coq_file, workspace):
+                updated = coq_file.read_text()
+                if self._theorem_is_closed(updated, theorem_name):
+                    logger.info("Recursive skeleton proof succeeded for '%s'.", theorem_name)
+                    return proof
+
+        try:
+            coq_file.write_text(original, encoding="utf-8")
+        except Exception:
+            pass
+        logger.info("Recursive skeleton proof did not close '%s'.", theorem_name)
+        return None
+
     def prove_with_skeleton_only(self, coq_file: Path, theorem_name: str) -> Optional[Dict[str, Any]]:
+        # 1. Deterministic recursive skeleton (no LLM, no rocq-mcp).
+        recursive = self._recursive_skeleton_proof(coq_file, theorem_name)
+        if recursive is not None:
+            return {"success": True, "proof_script": recursive, "skeleton_kind": "recursive"}
+
+        # 2. Interactive skeleton (rocq-mcp), then skeleton reflection.
         workspace = self._workspace_for(coq_file)
         self._ensure_project_file(workspace)
         if not self._compile_with_coqc(coq_file, workspace):

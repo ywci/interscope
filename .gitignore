@@ -62,6 +62,8 @@ _CoqProject
 *.vos
 *.vok
 *.aux
+.lia.cache
+.nia.cache
 *.d
 *.o
 *.cm*

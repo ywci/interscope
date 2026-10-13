@@ -1,0 +1,67 @@
+isir_version: "0.1"
+module:
+  name: priority_encoder
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: data
+      direction: input
+      type: "bits<8>"
+  outputs:
+    - name: enc
+      direction: output
+      type: "bits<3>"
+    - name: valid
+      direction: output
+      type: "bool"
+  state:
+    - name: enc
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: valid
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: encode
+      condition: "true"
+      action:
+        - (write enc
+            (ite (eq (slice (read data) 7 7) 1) 7
+            (ite (eq (slice (read data) 6 6) 1) 6
+            (ite (eq (slice (read data) 5 5) 1) 5
+            (ite (eq (slice (read data) 4 4) 1) 4
+            (ite (eq (slice (read data) 3 3) 1) 3
+            (ite (eq (slice (read data) 2 2) 1) 2
+            (ite (eq (slice (read data) 1 1) 1) 1
+            (ite (eq (slice (read data) 0 0) 1) 0 0)))))))))
+        - (write valid (neq (read data) 0))
+  properties:
+    - name: enc_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read enc) 0) (le (read enc) 7))
+    - name: valid_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read valid) true) (eq (read valid) false))
+  proof_obligations:
+    - property: enc_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: valid_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: enc_in_range
+      engine: model_checking

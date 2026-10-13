@@ -1,0 +1,87 @@
+isir_version: "0.1"
+module:
+  name: popcount
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+    - name: data
+      direction: input
+      type: "bits<8>"
+  outputs:
+    - name: count
+      direction: output
+      type: "bits<4>"
+    - name: done
+      direction: output
+      type: "bool"
+  state:
+    - name: value
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: count
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: index
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: done
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: load
+      condition: start
+      action:
+        - (write value (read data))
+        - (write count 0)
+        - (write index 0)
+        - (write done false)
+    - name: count_bit
+      condition: (and (not (read done)) (and (lt (read index) 8) (eq (mod (read value) 2) 1)))
+      action:
+        - (write count (add (read count) 1))
+        - (write value (div (read value) 2))
+        - (write index (add (read index) 1))
+    - name: shift_bit
+      condition: (and (not (read done)) (and (lt (read index) 8) (eq (mod (read value) 2) 0)))
+      action:
+        - (write value (div (read value) 2))
+        - (write index (add (read index) 1))
+    - name: finish
+      condition: (and (not (read done)) (ge (read index) 8))
+      action:
+        - (write done true)
+  properties:
+    - name: count_le_index
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read count) (read index))
+    - name: count_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read count) 0)
+  proof_obligations:
+    - property: count_le_index
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_le_index
+      engine: model_checking

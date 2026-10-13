@@ -1,0 +1,62 @@
+isir_version: "0.1"
+module:
+  name: saturating_adder
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: x
+      direction: input
+      type: "bits<8>"
+    - name: y
+      direction: input
+      type: "bits<8>"
+  outputs:
+    - name: result
+      direction: output
+      type: "bits<8>"
+    - name: overflow
+      direction: output
+      type: "bool"
+  state:
+    - name: result
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: overflow
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: add
+      condition: "true"
+      action:
+        - (write result (ite (ge (add x y) 256) 255 (add x y)))
+        - (write overflow (ge (add x y) 256))
+  properties:
+    - name: result_le_cap
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read result) 255)
+    - name: overflow_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read overflow) true) (eq (read overflow) false))
+  proof_obligations:
+    - property: result_le_cap
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: overflow_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: result_le_cap
+      engine: model_checking

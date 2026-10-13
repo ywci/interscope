@@ -79,6 +79,8 @@ run_clean() {
     find . -type f -name '*.vok' -delete || true
     find . -type f -name '*.glob' -delete || true
     find . -type f -name '*.aux' -delete || true
+    find . -type f -name '.lia.cache' -delete || true
+    find . -type f -name '.nia.cache' -delete || true
     find . -type f -name 'test.v' -delete || true
     find . -type f -name 'test.ml' -delete || true
     find . -type f -name 'test.mli' -delete || true
