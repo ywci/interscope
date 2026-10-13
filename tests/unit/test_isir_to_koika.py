@@ -250,3 +250,86 @@ def test_macron_koika_backend_accepted():
     koika_mod = isir_to_koika.convert(spec_mod)
     state_text = "\n".join(koika_mod.state_definitions)
     assert "Theorem test_prop_proved" in state_text
+
+
+def create_spec_with_combinational():
+    """Create a SpecModule with a combinational-equivalence property."""
+    spec_mod = isir.SpecModule(name="comb")
+
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+        isir.Interface(name="b", direction="input", data_type="bits<8>"),
+    ]
+
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="add_commutative",
+            kind="combinational",
+            expression={
+                "kind": "combinational",
+                "operand": "(add a b)",
+                "reference": "(add b a)",
+            }
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "add_commutative",
+        "status": "unproved",
+        "engine": "theorem_proving",
+        "backend": "koika"
+    })
+    return spec_mod
+
+
+def test_combinational_theorem_generation():
+    """Combinational properties lower to `forall inputs, impl = ref` (no reachable)."""
+    spec_mod = create_spec_with_combinational()
+    koika_mod = isir_to_koika.convert(spec_mod)
+
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Theorem add_commutative_proved" in state_text
+    assert "(* PERF_Combinational *)" in state_text
+    # Statement quantifies only over inputs and equates impl with reference.
+    assert "forall (inputs : inputs)" in state_text
+    assert "((a inputs) + (b inputs))" in state_text
+    assert "((b inputs) + (a inputs))" in state_text
+    # Combinational theorems must not carry a reachability hypothesis.
+    theorem_block = state_text.split("Theorem add_commutative_proved")[1].split("Admitted.")[0]
+    assert "reachable" not in theorem_block
+
+
+def test_combinational_boolean_reference():
+    """A boolean golden reference lowers to a Coq `true`/`false` literal."""
+    spec_mod = isir.SpecModule(name="comb_bool")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="f", kind="register", data_type="bool", initial=False)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="en", direction="input", data_type="bool")
+    ]
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="excluded_middle",
+            kind="combinational",
+            expression={
+                "kind": "combinational",
+                "operand": "(or en (not en))",
+                "reference": True,
+            }
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "excluded_middle",
+        "status": "unproved",
+        "engine": "theorem_proving",
+        "backend": "koika"
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Theorem excluded_middle_proved" in state_text
+    assert "(orb (en inputs) (negb (en inputs)))" in state_text
+    assert "= true" in state_text

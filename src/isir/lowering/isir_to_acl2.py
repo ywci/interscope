@@ -336,6 +336,12 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             logger.warning(f"No property found for proof obligation '{prop_name}'")
             continue
 
+        # Combinational equivalence is currently only supported by the
+        # Koika/Coq backend; skip it here rather than emitting an incorrect
+        # ACL2 safety theorem.
+        if prop_op.kind == "combinational" or prop_op.expression.get("kind") == "combinational":
+            continue
+
         try:
             operand = prop_op.expression.get("operand", None)
             if operand:

@@ -206,14 +206,19 @@ def _parse_directive(data: Dict[str, Any]) -> Directive:
 
 def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
     kind = _require(data, "kind", "temporal expression")
-    if kind not in ("always", "eventually", "until"):
-        raise ISIRParseError(f"Invalid temporal expression kind '{kind}'. Must be always, eventually, or until.")
+    if kind not in ("always", "eventually", "until", "combinational"):
+        raise ISIRParseError(
+            f"Invalid temporal expression kind '{kind}'. Must be always, eventually, until, or combinational."
+        )
+    if kind == "combinational" and data.get("reference") is None:
+        raise ISIRParseError("Combinational property requires a 'reference' golden expression.")
     return TemporalExpr(
         kind=kind,
         operand=data.get("operand"),
         left=data.get("left"),
         right=data.get("right"),
-        bound=data.get("bound")
+        bound=data.get("bound"),
+        reference=data.get("reference")
     )
 
 

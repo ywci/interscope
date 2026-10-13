@@ -446,6 +446,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
     state_defs.append("Require Import Arith.PeanoNat.")
     state_defs.append("Require Import Lists.List.")
     state_defs.append("Require Import Bool.Bool.")
+    state_defs.append("Require Import Btauto.")
     state_defs.append("Require Import Lia.")
     state_defs.append("Require Import Psatz.")
     state_defs.append("Import ListNotations.")
@@ -599,6 +600,38 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         prop_op = next((p for p in spec_module.property_ops if p.prop_name == prop_name), None)
         if not prop_op:
             logger.warning(f"No property found for proof obligation '{prop_name}'")
+            continue
+
+        expr_kind = prop_op.expression.get("kind", "always")
+        if expr_kind == "combinational":
+            # Combinational equivalence: prove the implementation equals a golden
+            # reference for *all* inputs (no reachability/state involved).
+            impl_raw = prop_op.expression.get("operand")
+            ref_raw = prop_op.expression.get("reference")
+            try:
+                impl_parsed = parse_sexpr(impl_raw) if isinstance(impl_raw, str) else impl_raw
+            except ExprError:
+                impl_parsed = None
+            try:
+                ref_parsed = parse_sexpr(ref_raw) if isinstance(ref_raw, str) else ref_raw
+            except ExprError:
+                ref_parsed = None
+            if impl_parsed is None or ref_parsed is None:
+                logger.warning(f"Could not parse combinational expressions for '{prop_name}'")
+                continue
+            impl_coq = _expr_to_coq(impl_parsed, state_types, input_types, memory_names, as_prop=False)
+            ref_coq = _expr_to_coq(ref_parsed, state_types, input_types, memory_names, as_prop=False)
+            theorem_name = f"{prop_name}_proved"
+            theorem_stmt = f"forall (inputs : inputs), ({impl_coq}) = ({ref_coq})"
+
+            if state_defs and state_defs[-1] != "":
+                state_defs.append("")
+            state_defs.append(f"(* PERF_Obligation: {prop_name} *)")
+            state_defs.append("(* PERF_Combinational *)")
+            state_defs.append(f"Theorem {theorem_name} : {theorem_stmt}.")
+            state_defs.append("Admitted.  (* placeholder – use isir verify to attempt proof *)")
+            state_defs.append("")
+            logger.info(f"Added combinational theorem {theorem_name} to Coq file")
             continue
 
         operand = prop_op.expression.get("operand", "True")

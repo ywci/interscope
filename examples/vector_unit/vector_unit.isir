@@ -1,0 +1,112 @@
+isir_version: "0.1"
+module:
+  name: vector_unit
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: a
+      direction: input
+      type: "bits<32>"
+    - name: b
+      direction: input
+      type: "bits<32>"
+    - name: mask
+      direction: input
+      type: "bits<4>"
+    - name: en
+      direction: input
+      type: "bool"
+  outputs:
+    - name: lane0
+      direction: output
+      type: "bits<8>"
+    - name: lane1
+      direction: output
+      type: "bits<8>"
+    - name: lane2
+      direction: output
+      type: "bits<8>"
+    - name: lane3
+      direction: output
+      type: "bits<8>"
+    - name: sum
+      direction: output
+      type: "bits<16>"
+  state:
+    - name: lane0
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: lane1
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: lane2
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: lane3
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: sum
+      kind: register
+      type: "bits<16>"
+      initial: 0
+  rules:
+    - name: vadd_masked
+      condition: en
+      action:
+        - (write lane0 (ite (slice mask 0 0) (add (slice a 7 0) (slice b 7 0)) (read lane0)))
+        - (write lane1 (ite (slice mask 1 1) (add (slice a 15 8) (slice b 15 8)) (read lane1)))
+        - (write lane2 (ite (slice mask 2 2) (add (slice a 23 16) (slice b 23 16)) (read lane2)))
+        - (write lane3 (ite (slice mask 3 3) (add (slice a 31 24) (slice b 31 24)) (read lane3)))
+        - (write sum (add (add (slice a 7 0) (slice a 15 8)) (add (slice a 23 16) (slice a 31 24))))
+  properties:
+    - name: pairwise_reduction_correct
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (add (add (slice a 7 0) (slice a 15 8)) (add (slice a 23 16) (slice a 31 24)))
+        reference: (add (add (add (slice a 7 0) (slice a 15 8)) (slice a 23 16)) (slice a 31 24))
+    - name: lane_add_commutative
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (add (slice a 7 0) (slice b 7 0))
+        reference: (add (slice b 7 0) (slice a 7 0))
+    - name: lane_mul_distributive
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (mul (slice a 7 0) (add (slice b 7 0) (slice b 15 8)))
+        reference: (add (mul (slice a 7 0) (slice b 7 0)) (mul (slice a 7 0) (slice b 15 8)))
+    - name: enable_excluded_middle
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (or en (not en))
+        reference: true
+  proof_obligations:
+    - property: pairwise_reduction_correct
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: lane_add_commutative
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: lane_mul_distributive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: enable_excluded_middle
+      status: unproved
+      engine: theorem_proving
+      backend: koika

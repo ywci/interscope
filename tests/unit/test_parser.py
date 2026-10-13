@@ -158,6 +158,65 @@ def test_with_proof_obligation():
     path.unlink()
 
 
+def test_combinational_property_parsing():
+    data = {
+        "isir_version": "0.1",
+        "module": {
+            "name": "comb",
+            "clocks": [{"name": "clk", "edge": "posedge"}],
+            "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
+            "state": [{"name": "acc", "kind": "register", "type": "bits<8>"}],
+            "rules": [{"name": "upd", "condition": "true", "action": ["(write acc (add (read a) (read b))"]}],
+            "inputs": [{"name": "a", "direction": "input", "type": "bits<8>"},
+                       {"name": "b", "direction": "input", "type": "bits<8>"}],
+            "properties": [
+                {
+                    "name": "add_commutative",
+                    "kind": "combinational",
+                    "expression": {
+                        "kind": "combinational",
+                        "operand": "(add a b)",
+                        "reference": "(add b a)"
+                    }
+                }
+            ]
+        }
+    }
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
+    prop = spec.module.properties[0]
+    assert prop.kind == "combinational"
+    assert prop.expression.kind == "combinational"
+    assert prop.expression.operand == "(add a b)"
+    assert prop.expression.reference == "(add b a)"
+    path.unlink()
+
+
+def test_combinational_property_requires_reference():
+    data = {
+        "isir_version": "0.1",
+        "module": {
+            "name": "comb",
+            "clocks": [{"name": "clk", "edge": "posedge"}],
+            "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
+            "state": [{"name": "acc", "kind": "register", "type": "bits<8>"}],
+            "rules": [{"name": "upd", "condition": "true", "action": ["(write acc (add (read a) (read b))"]}],
+            "inputs": [{"name": "a", "direction": "input", "type": "bits<8>"}],
+            "properties": [
+                {
+                    "name": "bad_comb",
+                    "kind": "combinational",
+                    "expression": {"kind": "combinational", "operand": "(add a a)"}
+                }
+            ]
+        }
+    }
+    path = write_temp_isir(data)
+    with pytest.raises(ISIRParseError):
+        parse_isir(path)
+    path.unlink()
+
+
 def test_missing_isir_version():
     data = {
         "module": {"name": "test", "clocks": [], "resets": [], "state": [], "rules": []}

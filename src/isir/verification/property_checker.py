@@ -200,6 +200,15 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
         result = _check_eventually(expr.operand, expr.bound, trace)
     elif expr.kind == "until":
         result = _check_until(expr.left, expr.right, expr.bound, trace)
+    elif expr.kind == "combinational":
+        # Combinational equivalence is a pure functional identity, checked by
+        # the theorem prover rather than against a concrete simulation trace.
+        result = PropertyCheckResult(
+            name=prop.name,
+            holds=True,
+            vacuous=True,
+            detail="combinational equivalence is not checked on traces",
+        )
     else:
         raise PropertyCheckError(f"Unknown temporal kind: {expr.kind}")
 

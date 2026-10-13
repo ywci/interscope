@@ -55,7 +55,7 @@ Hint Resolve eq_refl : core.
 Ltac skel_close :=
   simpl; first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
                | solve [congruence] | solve [contradiction] | solve [tauto]
-               | solve [lia] | solve [nia] | solve [auto]
+               | solve [btauto] | solve [lia] | solve [nia] | solve [auto]
                | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ] ].
 
 Ltac skel n :=
@@ -1719,28 +1719,40 @@ class KoikaProver:
             name for name in self._find_invariant_lemmas(coq_file)
             if name.endswith("_const")
         ]
+        # Combinational-equivalence theorems quantify only over `inputs`
+        # (no `reachable`/`step`), so they get a pure `skel` body rather than
+        # the reachability induction.
+        is_combinational = "reachable" not in match.group(0)
         candidates = []
-        if const_lemmas:
-            specs = "; ".join(f"specialize ({name} _ Hr)" for name in const_lemmas)
+        if is_combinational:
             candidates.append(
                 "Proof.\n"
-                "  intros s inputs H.\n"
-                "  induction H.\n"
-                "  - simpl; lia.\n"
-                "  - intros.\n"
-                "    match goal with [ Hs : step _ _ _ |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
-                f"    match goal with [ Hr : reachable _ |- _ ] => ({specs}) end.\n"
-                "    all: (repeat (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end);\n"
-                "          repeat (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end);\n"
-                "          try assumption; try (simpl; lia); try nia).\n"
+                "  intros.\n"
+                f"  skel {max_depth}.\n"
                 "Qed."
             )
-        candidates.append(
-            "Proof.\n"
-            "  intros.\n"
-            f"  match goal with [ H : reachable _ |- _ ] => induction H; skel {max_depth} end.\n"
-            "Qed."
-        )
+        else:
+            if const_lemmas:
+                specs = "; ".join(f"specialize ({name} _ Hr)" for name in const_lemmas)
+                candidates.append(
+                    "Proof.\n"
+                    "  intros s inputs H.\n"
+                    "  induction H.\n"
+                    "  - simpl; lia.\n"
+                    "  - intros.\n"
+                    "    match goal with [ Hs : step _ _ _ |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
+                    f"    match goal with [ Hr : reachable _ |- _ ] => ({specs}) end.\n"
+                    "    all: (repeat (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end);\n"
+                    "          repeat (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end);\n"
+                    "          try assumption; try (simpl; lia); try nia).\n"
+                    "Qed."
+                )
+            candidates.append(
+                "Proof.\n"
+                "  intros.\n"
+                f"  match goal with [ H : reachable _ |- _ ] => induction H; skel {max_depth} end.\n"
+                "Qed."
+            )
 
         workspace = self._workspace_for(coq_file)
         for proof in candidates:

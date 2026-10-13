@@ -73,7 +73,8 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
                 'operand': expr.operand,
                 'left': getattr(expr, 'left', None),
                 'right': getattr(expr, 'right', None),
-                'bound': getattr(expr, 'bound', None)
+                'bound': getattr(expr, 'bound', None),
+                'reference': getattr(expr, 'reference', None)
             },
             assumes=prop.assumes,
             guarantees=prop.guarantees
