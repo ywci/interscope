@@ -603,6 +603,36 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             continue
 
         expr_kind = prop_op.expression.get("kind", "always")
+        if expr_kind == "transition":
+            # Transitional property: after any step, the next state satisfies
+            # the operand.  `read X` refers to the *next* state's field X.
+            operand_raw = prop_op.expression.get("operand")
+            try:
+                operand_parsed = parse_sexpr(operand_raw) if isinstance(operand_raw, str) else operand_raw
+            except ExprError:
+                operand_parsed = None
+            if operand_parsed is None:
+                logger.warning(f"Could not parse transition operand for '{prop_name}'")
+                continue
+            coq_operand = _expr_to_coq(
+                operand_parsed, state_types, input_types, memory_names, as_prop=True, state_var="s'"
+            )
+            theorem_name = f"{prop_name}_proved"
+            theorem_stmt = (
+                f"forall (s : state) (inputs : inputs) (s' : state), "
+                f"step s inputs s' -> {coq_operand}"
+            )
+
+            if state_defs and state_defs[-1] != "":
+                state_defs.append("")
+            state_defs.append(f"(* PERF_Obligation: {prop_name} *)")
+            state_defs.append("(* PERF_Transition *)")
+            state_defs.append(f"Theorem {theorem_name} : {theorem_stmt}.")
+            state_defs.append("Admitted.  (* placeholder – use isir verify to attempt proof *)")
+            state_defs.append("")
+            logger.info(f"Added transition theorem {theorem_name} to Coq file")
+            continue
+
         if expr_kind == "combinational":
             # Combinational equivalence: prove the implementation equals a golden
             # reference for *all* inputs (no reachability/state involved).

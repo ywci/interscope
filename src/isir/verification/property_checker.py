@@ -209,6 +209,15 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
             vacuous=True,
             detail="combinational equivalence is not checked on traces",
         )
+    elif expr.kind == "transition":
+        # Transitional properties relate a state to its successor; they are
+        # checked by the theorem prover over the step relation, not on a trace.
+        result = PropertyCheckResult(
+            name=prop.name,
+            holds=True,
+            vacuous=True,
+            detail="transition property is not checked on traces",
+        )
     else:
         raise PropertyCheckError(f"Unknown temporal kind: {expr.kind}")
 

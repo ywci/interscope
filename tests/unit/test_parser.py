@@ -192,6 +192,59 @@ def test_combinational_property_parsing():
     path.unlink()
 
 
+def test_transition_property_parsing():
+    data = {
+        "isir_version": "0.1",
+        "module": {
+            "name": "trans",
+            "clocks": [{"name": "clk", "edge": "posedge"}],
+            "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
+            "state": [{"name": "acc", "kind": "register", "type": "bits<8>"}],
+            "rules": [{"name": "upd", "condition": "true", "action": ["(write acc (add (read a) (read b))"]}],
+            "inputs": [{"name": "a", "direction": "input", "type": "bits<8>"},
+                       {"name": "b", "direction": "input", "type": "bits<8>"}],
+            "properties": [
+                {
+                    "name": "acc_updates_to_sum",
+                    "kind": "transition",
+                    "expression": {
+                        "kind": "transition",
+                        "operand": "(eq (read acc) (add a b))"
+                    }
+                }
+            ]
+        }
+    }
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
+    prop = spec.module.properties[0]
+    assert prop.kind == "transition"
+    assert prop.expression.kind == "transition"
+    assert prop.expression.operand == "(eq (read acc) (add a b))"
+    path.unlink()
+
+
+def test_transition_property_requires_operand():
+    data = {
+        "isir_version": "0.1",
+        "module": {
+            "name": "trans",
+            "clocks": [{"name": "clk", "edge": "posedge"}],
+            "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
+            "state": [{"name": "acc", "kind": "register", "type": "bits<8>"}],
+            "rules": [{"name": "upd", "condition": "true", "action": ["(write acc (add (read a) (read b))"]}],
+            "inputs": [{"name": "a", "direction": "input", "type": "bits<8>"}],
+            "properties": [
+                {"name": "bad_trans", "kind": "transition", "expression": {"kind": "transition"}}
+            ]
+        }
+    }
+    path = write_temp_isir(data)
+    with pytest.raises(ISIRParseError):
+        parse_isir(path)
+    path.unlink()
+
+
 def test_combinational_property_requires_reference():
     data = {
         "isir_version": "0.1",

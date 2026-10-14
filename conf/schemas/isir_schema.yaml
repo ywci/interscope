@@ -157,12 +157,12 @@ properties:
           required: [ name, kind, expression ]
           properties:
             name: { type: string }
-            kind: { enum: [ safety, liveness, invariant, combinational ] }
+            kind: { enum: [ safety, liveness, invariant, combinational, transition ] }
             expression:
               type: object
               required: [ kind ]
               properties:
-                kind: { enum: [ always, eventually, until, combinational ] }
+                kind: { enum: [ always, eventually, until, combinational, transition ] }
                 operand: { type: [ string, array ] }
                 left: { type: [ string, array ] }
                 right: { type: [ string, array ] }

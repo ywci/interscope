@@ -63,10 +63,10 @@ module:
     - name: vadd_masked
       condition: en
       action:
-        - (write lane0 (ite (slice mask 0 0) (add (slice a 7 0) (slice b 7 0)) (read lane0)))
-        - (write lane1 (ite (slice mask 1 1) (add (slice a 15 8) (slice b 15 8)) (read lane1)))
-        - (write lane2 (ite (slice mask 2 2) (add (slice a 23 16) (slice b 23 16)) (read lane2)))
-        - (write lane3 (ite (slice mask 3 3) (add (slice a 31 24) (slice b 31 24)) (read lane3)))
+        - (write lane0 (ite (eq (slice mask 0 0) 1) (add (slice a 7 0) (slice b 7 0)) (read lane0)))
+        - (write lane1 (ite (eq (slice mask 1 1) 1) (add (slice a 15 8) (slice b 15 8)) (read lane1)))
+        - (write lane2 (ite (eq (slice mask 2 2) 1) (add (slice a 23 16) (slice b 23 16)) (read lane2)))
+        - (write lane3 (ite (eq (slice mask 3 3) 1) (add (slice a 31 24) (slice b 31 24)) (read lane3)))
         - (write sum (add (add (slice a 7 0) (slice a 15 8)) (add (slice a 23 16) (slice a 31 24))))
   properties:
     - name: pairwise_reduction_correct
@@ -93,6 +93,25 @@ module:
         kind: combinational
         operand: (or en (not en))
         reference: true
+    - name: masked_add_lane0_correct
+      kind: transition
+      expression:
+        kind: transition
+        operand: (implies (eq (slice mask 0 0) 1)
+                         (eq (read lane0) (add (slice a 7 0) (slice b 7 0))))
+    - name: masked_add_lane3_correct
+      kind: transition
+      expression:
+        kind: transition
+        operand: (implies (eq (slice mask 3 3) 1)
+                         (eq (read lane3) (add (slice a 31 24) (slice b 31 24))))
+    - name: sum_updates_to_reduction
+      kind: transition
+      expression:
+        kind: transition
+        operand: (eq (read sum)
+                     (add (add (slice a 7 0) (slice a 15 8))
+                          (add (slice a 23 16) (slice a 31 24))))
   proof_obligations:
     - property: pairwise_reduction_correct
       status: unproved
@@ -107,6 +126,18 @@ module:
       engine: theorem_proving
       backend: koika
     - property: enable_excluded_middle
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: masked_add_lane0_correct
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: masked_add_lane3_correct
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: sum_updates_to_reduction
       status: unproved
       engine: theorem_proving
       backend: koika

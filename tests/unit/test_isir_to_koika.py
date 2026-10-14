@@ -301,6 +301,62 @@ def test_combinational_theorem_generation():
     assert "reachable" not in theorem_block
 
 
+def create_spec_with_transition():
+    """Create a SpecModule with a transitional property."""
+    spec_mod = isir.SpecModule(name="trans")
+
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+        isir.Interface(name="b", direction="input", data_type="bits<8>"),
+    ]
+    spec_mod.rule_ops.append(
+        isir.SpecRuleOp(
+            rule_name="add",
+            condition="true",
+            actions=["(write acc (add (read a) (read b)))"]
+        )
+    )
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="acc_updates_to_sum",
+            kind="transition",
+            expression={
+                "kind": "transition",
+                "operand": "(eq (read acc) (add a b))",
+            }
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "acc_updates_to_sum",
+        "status": "unproved",
+        "engine": "theorem_proving",
+        "backend": "koika"
+    })
+    return spec_mod
+
+
+def test_transition_theorem_generation():
+    """Transition properties lower to `step s inputs s' -> P(s', inputs)`."""
+    spec_mod = create_spec_with_transition()
+    koika_mod = isir_to_koika.convert(spec_mod)
+
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Theorem acc_updates_to_sum_proved" in state_text
+    assert "(* PERF_Transition *)" in state_text
+    assert "forall (s : state) (inputs : inputs) (s' : state)" in state_text
+    assert "step s inputs s' ->" in state_text
+    # The operand's `read acc` must reference the *next* state s'.
+    assert "(acc s')" in state_text
+    # Inputs stay quantified over the transition's inputs.
+    assert "((a inputs) + (b inputs))" in state_text
+    # Transition theorems carry no reachability hypothesis.
+    theorem_block = state_text.split("Theorem acc_updates_to_sum_proved")[1].split("Admitted.")[0]
+    assert "reachable" not in theorem_block
+
+
 def test_combinational_boolean_reference():
     """A boolean golden reference lowers to a Coq `true`/`false` literal."""
     spec_mod = isir.SpecModule(name="comb_bool")

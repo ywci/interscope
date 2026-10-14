@@ -50,6 +50,7 @@ logger = get_logger(__name__)
 # ``first`` commit prematurely).
 RECURSIVE_SKELETON_LTAC = r"""
 Opaque Nat.modulo Nat.divmod.
+Opaque slice.
 Hint Resolve eq_refl : core.
 
 Ltac skel_close :=
