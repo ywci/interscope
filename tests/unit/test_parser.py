@@ -245,6 +245,62 @@ def test_transition_property_requires_operand():
     path.unlink()
 
 
+def test_independence_property_parsing():
+    data = {
+        "isir_version": "0.1",
+        "module": {
+            "name": "indep",
+            "clocks": [{"name": "clk", "edge": "posedge"}],
+            "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
+            "state": [{"name": "acc", "kind": "register", "type": "bits<8>"}],
+            "rules": [{"name": "upd", "condition": "true", "action": ["(write acc (slice a 7 0)"]}],
+            "inputs": [{"name": "a", "direction": "input", "type": "bits<32>"},
+                       {"name": "mask", "direction": "input", "type": "bits<4>"}],
+            "properties": [
+                {
+                    "name": "reduction_independent_of_mask",
+                    "kind": "independence",
+                    "expression": {
+                        "kind": "independence",
+                        "operand": "(slice a 7 0)",
+                        "independent_of": ["mask"]
+                    }
+                }
+            ]
+        }
+    }
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
+    prop = spec.module.properties[0]
+    assert prop.kind == "independence"
+    assert prop.expression.kind == "independence"
+    assert prop.expression.operand == "(slice a 7 0)"
+    assert prop.expression.independent_of == ["mask"]
+    path.unlink()
+
+
+def test_independence_property_requires_independent_of():
+    data = {
+        "isir_version": "0.1",
+        "module": {
+            "name": "indep",
+            "clocks": [{"name": "clk", "edge": "posedge"}],
+            "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
+            "state": [{"name": "acc", "kind": "register", "type": "bits<8>"}],
+            "rules": [{"name": "upd", "condition": "true", "action": ["(write acc (slice a 7 0)"]}],
+            "inputs": [{"name": "a", "direction": "input", "type": "bits<32>"}],
+            "properties": [
+                {"name": "bad_indep", "kind": "independence",
+                 "expression": {"kind": "independence", "operand": "(slice a 7 0)"}}
+            ]
+        }
+    }
+    path = write_temp_isir(data)
+    with pytest.raises(ISIRParseError):
+        parse_isir(path)
+    path.unlink()
+
+
 def test_combinational_property_requires_reference():
     data = {
         "isir_version": "0.1",

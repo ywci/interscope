@@ -218,6 +218,15 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
             vacuous=True,
             detail="transition property is not checked on traces",
         )
+    elif expr.kind == "independence":
+        # Independence (relational non-interference) relates two executions;
+        # it is checked by the theorem prover, not against a single trace.
+        result = PropertyCheckResult(
+            name=prop.name,
+            holds=True,
+            vacuous=True,
+            detail="independence property is not checked on traces",
+        )
     else:
         raise PropertyCheckError(f"Unknown temporal kind: {expr.kind}")
 

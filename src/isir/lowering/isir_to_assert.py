@@ -136,9 +136,10 @@ def convert(spec_module: isir.SpecModule) -> asserts.AssertModule:
         kind = prop_op.kind                            # safety / liveness / invariant / combinational
         expr_dict = prop_op.expression                 # dict with kind, operand, left, right, bound
 
-        # Combinational-equivalence and transitional properties are handled by
-        # the theorem prover; they have no SVA/assert counterpart.
-        if kind in ("combinational", "transition") or expr_dict.get("kind") in ("combinational", "transition"):
+        # Combinational-equivalence, transitional, and independence properties
+        # are handled by the theorem prover; they have no SVA/assert counterpart.
+        _skip = ("combinational", "transition", "independence")
+        if kind in _skip or expr_dict.get("kind") in _skip:
             continue
 
         # Convert temporal expression – this may return an AssertAlwaysOp for

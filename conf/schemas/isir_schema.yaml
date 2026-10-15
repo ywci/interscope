@@ -157,17 +157,18 @@ properties:
           required: [ name, kind, expression ]
           properties:
             name: { type: string }
-            kind: { enum: [ safety, liveness, invariant, combinational, transition ] }
+            kind: { enum: [ safety, liveness, invariant, combinational, transition, independence ] }
             expression:
               type: object
               required: [ kind ]
               properties:
-                kind: { enum: [ always, eventually, until, combinational, transition ] }
+                kind: { enum: [ always, eventually, until, combinational, transition, independence ] }
                 operand: { type: [ string, array ] }
                 left: { type: [ string, array ] }
                 right: { type: [ string, array ] }
                 bound: { type: integer }
                 reference: { type: [ string, array, boolean, integer ] }
+                independent_of: { type: array, items: { type: string } }
             assumes: { type: array, items: { type: [ string, array ] } }
             guarantees: { type: array, items: { type: [ string, array ] } }
             proof_status: { enum: [ unproved, proved, counterexample ] }

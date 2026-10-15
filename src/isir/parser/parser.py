@@ -206,21 +206,28 @@ def _parse_directive(data: Dict[str, Any]) -> Directive:
 
 def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
     kind = _require(data, "kind", "temporal expression")
-    if kind not in ("always", "eventually", "until", "combinational", "transition"):
+    if kind not in ("always", "eventually", "until", "combinational", "transition", "independence"):
         raise ISIRParseError(
-            f"Invalid temporal expression kind '{kind}'. Must be always, eventually, until, combinational, or transition."
+            f"Invalid temporal expression kind '{kind}'. Must be always, eventually, until, combinational, transition, or independence."
         )
     if kind == "combinational" and data.get("reference") is None:
         raise ISIRParseError("Combinational property requires a 'reference' golden expression.")
     if kind == "transition" and data.get("operand") is None:
         raise ISIRParseError("Transition property requires an 'operand' over the next state.")
+    if kind == "independence":
+        if data.get("operand") is None:
+            raise ISIRParseError("Independence property requires an 'operand' expression.")
+        independent_of = data.get("independent_of")
+        if not isinstance(independent_of, list) or not independent_of:
+            raise ISIRParseError("Independence property requires a non-empty 'independent_of' list of input names.")
     return TemporalExpr(
         kind=kind,
         operand=data.get("operand"),
         left=data.get("left"),
         right=data.get("right"),
         bound=data.get("bound"),
-        reference=data.get("reference")
+        reference=data.get("reference"),
+        independent_of=data.get("independent_of")
     )
 
 

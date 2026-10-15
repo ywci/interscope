@@ -357,6 +357,57 @@ def test_transition_theorem_generation():
     assert "reachable" not in theorem_block
 
 
+def create_spec_with_independence():
+    """Create a SpecModule with an independence (non-interference) property."""
+    spec_mod = isir.SpecModule(name="indep")
+
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<32>"),
+        isir.Interface(name="mask", direction="input", data_type="bits<4>"),
+    ]
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="reduction_independent_of_mask",
+            kind="independence",
+            expression={
+                "kind": "independence",
+                "operand": "(add (slice a 7 0) (slice a 15 8))",
+                "independent_of": ["mask"],
+            }
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "reduction_independent_of_mask",
+        "status": "unproved",
+        "engine": "theorem_proving",
+        "backend": "koika"
+    })
+    return spec_mod
+
+
+def test_independence_theorem_generation():
+    """Independence lowers to `forall inputs inputs', (agreements) -> E = E'`."""
+    spec_mod = create_spec_with_independence()
+    koika_mod = isir_to_koika.convert(spec_mod)
+
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Theorem reduction_independent_of_mask_proved" in state_text
+    assert "(* PERF_Independence *)" in state_text
+    assert "forall (inputs inputs' : inputs)" in state_text
+    # Agreement hypothesis for the non-independent input `a`.
+    assert "(a inputs) = (a inputs') ->" in state_text
+    # Both unprimed and primed occurrences of the operand.
+    assert "(slice (a inputs) 7 0)" in state_text
+    assert "(slice (a inputs') 7 0)" in state_text
+    # No reachability/step in the statement.
+    theorem_block = state_text.split("Theorem reduction_independent_of_mask_proved")[1].split("Admitted.")[0]
+    assert "reachable" not in theorem_block
+    assert "step" not in theorem_block
+
+
 def test_combinational_boolean_reference():
     """A boolean golden reference lowers to a Coq `true`/`false` literal."""
     spec_mod = isir.SpecModule(name="comb_bool")

@@ -336,10 +336,11 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             logger.warning(f"No property found for proof obligation '{prop_name}'")
             continue
 
-        # Combinational equivalence and transitional properties are currently
-        # only supported by the Koika/Coq backend; skip them here rather than
-        # emitting an incorrect ACL2 safety theorem.
-        if prop_op.kind in ("combinational", "transition") or prop_op.expression.get("kind") in ("combinational", "transition"):
+        # Combinational equivalence, transitional, and independence properties
+        # are currently only supported by the Koika/Coq backend; skip them here
+        # rather than emitting an incorrect ACL2 safety theorem.
+        _skip = ("combinational", "transition", "independence")
+        if prop_op.kind in _skip or prop_op.expression.get("kind") in _skip:
             continue
 
         try:

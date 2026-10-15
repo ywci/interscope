@@ -112,6 +112,20 @@ module:
         operand: (eq (read sum)
                      (add (add (slice a 7 0) (slice a 15 8))
                           (add (slice a 23 16) (slice a 31 24))))
+    - name: reduction_independent_of_mask
+      kind: independence
+      expression:
+        kind: independence
+        operand: (add (add (slice a 7 0) (slice a 15 8))
+                     (add (slice a 23 16) (slice a 31 24)))
+        independent_of: [mask]
+    - name: reduction_independent_of_b
+      kind: independence
+      expression:
+        kind: independence
+        operand: (add (add (slice a 7 0) (slice a 15 8))
+                     (add (slice a 23 16) (slice a 31 24)))
+        independent_of: [b]
   proof_obligations:
     - property: pairwise_reduction_correct
       status: unproved
@@ -138,6 +152,14 @@ module:
       engine: theorem_proving
       backend: koika
     - property: sum_updates_to_reduction
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: reduction_independent_of_mask
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: reduction_independent_of_b
       status: unproved
       engine: theorem_proving
       backend: koika

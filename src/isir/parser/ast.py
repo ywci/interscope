@@ -128,12 +128,13 @@ class Directive:
 @dataclass
 class TemporalExpr:
     """Temporal property expression."""
-    kind: str  # "always", "eventually", "until", "combinational", "transition"
+    kind: str  # "always", "eventually", "until", "combinational", "transition", "independence"
     operand: Optional[Union[str, List]] = None  # for always/eventually; implementation for combinational
     left: Optional[Union[str, List]] = None  # for until
     right: Optional[Union[str, List]] = None  # for until
     bound: Optional[int] = None
     reference: Optional[Union[str, List]] = None  # golden reference for combinational equivalence
+    independent_of: Optional[List[str]] = None  # inputs the operand is independent of (independence)
 
 
 @dataclass

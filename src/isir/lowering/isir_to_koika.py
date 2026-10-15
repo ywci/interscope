@@ -70,7 +70,8 @@ def _type_of_expr(expr: Any, state_types: Dict[str, str],
 
 def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                  input_types: Dict[str, str], memory_names: List[str],
-                 as_prop: bool = True, state_var: str = "s") -> str:
+                 as_prop: bool = True, state_var: str = "s",
+                 inputs_var: str = "inputs") -> str:
     if isinstance(expr, bool):
         if as_prop:
             return "True" if expr else "False"
@@ -86,7 +87,7 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                 return f"({base} = true)"
             return base
         if expr in input_types:
-            base = f"({expr} inputs)"
+            base = f"({expr} {inputs_var})"
             if input_types[expr] == "bool" and as_prop:
                 return f"({base} = true)"
             return base
@@ -102,8 +103,8 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     if op in ('add', 'sub', 'mul', 'div', 'mod'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
-        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var)
-        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var)
+        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var)
+        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var)
         omap = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': 'mod'}
         return f"({a} {omap[op]} {b})"
 
@@ -114,10 +115,10 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                 raise ExprError("not expects 1 argument")
             a_type = _type_of_expr(args[0], state_types, input_types, memory_names)
             if as_prop:
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var)
                 return f"(~ {a})"
             else:
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var)
                 if a_type == "bool":
                     return f"(negb {a})"
                 else:
@@ -125,8 +126,8 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         elif op == 'implies':
             if len(args) != 2:
                 raise ExprError("implies expects 2 arguments")
-            a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var)
-            b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var)
+            a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var)
+            b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var, inputs_var)
             return f"({a} -> {b})"
         else:
             if len(args) != 2:
@@ -134,15 +135,15 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
             a_type = _type_of_expr(args[0], state_types, input_types, memory_names)
             b_type = _type_of_expr(args[1], state_types, input_types, memory_names)
             if as_prop and a_type == "bool" and b_type == "bool":
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var)
-                b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var)
+                b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var, inputs_var)
                 if op == 'and':
                     return f"({a} /\\ {b})"
                 else:
                     return f"({a} \\/ {b})"
             else:
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var)
-                b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var)
+                b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var)
                 if a_type == "bool" and b_type == "bool":
                     if op == 'and':
                         return f"(andb {a} {b})"
@@ -158,8 +159,8 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'le', 'ge'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
-        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var)
-        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var)
+        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var)
+        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var)
         left_type = _type_of_expr(args[0], state_types, input_types, memory_names)
         right_type = _type_of_expr(args[1], state_types, input_types, memory_names)
         is_bool_cmp = (left_type == "bool" and right_type == "bool")
@@ -197,18 +198,18 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     elif op == 'ite':
         if len(args) != 3:
             raise ExprError("ite expects 3 arguments")
-        cond = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var)
-        then_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var)
-        else_expr = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var)
+        cond = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var)
+        then_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var)
+        else_expr = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var)
         return f"(if {cond} then {then_expr} else {else_expr})"
 
     # slice
     elif op == 'slice':
         if len(args) != 3:
             raise ExprError("slice expects 3 arguments: expr high low")
-        val = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var)
-        high = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var)
-        low = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var)
+        val = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var)
+        high = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var)
+        low = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var)
         return f"(slice {val} {high} {low})"
 
     # read
@@ -224,7 +225,7 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                 return f"({base} = true)"
             return base
         if name in input_types:
-            base = f"({name} inputs)"
+            base = f"({name} {inputs_var})"
             if input_types[name] == "bool" and as_prop:
                 return f"({base} = true)"
             return base
@@ -239,7 +240,7 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         mem_name = args[0]
         if not isinstance(mem_name, str):
             raise ExprError("mem_read expects memory name string")
-        addr_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var)
+        addr_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var)
         return f"(nth_default 0 ({mem_name} {state_var}) {addr_expr})"
 
     # mem_write (action)
@@ -631,6 +632,46 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             state_defs.append("Admitted.  (* placeholder – use isir verify to attempt proof *)")
             state_defs.append("")
             logger.info(f"Added transition theorem {theorem_name} to Coq file")
+            continue
+
+        if expr_kind == "independence":
+            # Relational (non-interference) property: the operand expression is
+            # independent of the listed inputs.  Prove over two input records
+            # that agree on every input *not* in `independent_of`.
+            operand_raw = prop_op.expression.get("operand")
+            independent_of = prop_op.expression.get("independent_of") or []
+            try:
+                operand_parsed = parse_sexpr(operand_raw) if isinstance(operand_raw, str) else operand_raw
+            except ExprError:
+                operand_parsed = None
+            if operand_parsed is None:
+                logger.warning(f"Could not parse independence operand for '{prop_name}'")
+                continue
+
+            independent_set = set(independent_of)
+            agreements = []
+            for inp in spec_module.inputs:
+                if inp.name not in independent_set:
+                    agreements.append(f"({inp.name} inputs) = ({inp.name} inputs')")
+            lhs_coq = _expr_to_coq(operand_parsed, state_types, input_types, memory_names, as_prop=False)
+            rhs_coq = _expr_to_coq(
+                operand_parsed, state_types, input_types, memory_names, as_prop=False, inputs_var="inputs'"
+            )
+
+            theorem_name = f"{prop_name}_proved"
+            agreement_str = " -> ".join(agreements)
+            theorem_stmt = (
+                f"forall (inputs inputs' : inputs), {agreement_str} -> ({lhs_coq}) = ({rhs_coq})"
+            )
+
+            if state_defs and state_defs[-1] != "":
+                state_defs.append("")
+            state_defs.append(f"(* PERF_Obligation: {prop_name} *)")
+            state_defs.append("(* PERF_Independence *)")
+            state_defs.append(f"Theorem {theorem_name} : {theorem_stmt}.")
+            state_defs.append("Admitted.  (* placeholder – use isir verify to attempt proof *)")
+            state_defs.append("")
+            logger.info(f"Added independence theorem {theorem_name} to Coq file")
             continue
 
         if expr_kind == "combinational":
