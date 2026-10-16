@@ -38,6 +38,13 @@ module:
       kind: register
       type: "bool"
       initial: false
+
+  functions:
+    - name: prio_grant
+      params: [{name: r0, type: "bool"}, {name: r1, type: "bool"}, {name: r2, type: "bool"}, {name: r3, type: "bool"}]
+      return: "bits<2>"
+      body: (ite r0 0 (ite r1 1 (ite r2 2 (ite r3 3 0))))
+
   rules:
     - name: arbitrate
       condition: "true"
@@ -59,12 +66,23 @@ module:
       expression:
         kind: always
         operand: (or (eq (read valid) true) (eq (read valid) false))
+    - name: grant_correct
+      kind: transition
+      expression:
+        kind: transition
+        rule: arbitrate
+        operand: (and (eq (read grant) (prio_grant req0 req1 req2 req3))
+                      (eq (read valid) (or req0 (or req1 (or req2 req3)))))
   proof_obligations:
     - property: grant_in_range
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: valid_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: grant_correct
       status: unproved
       engine: theorem_proving
       backend: koika

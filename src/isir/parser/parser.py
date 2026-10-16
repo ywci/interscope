@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 from isir.parser.ast import (
     Clock, ComponentInstance, Directive, Evidence, EvidenceRef, Fairness,
-    Interface, Metadata, Module, Parameter, Property, ProofObligation,
-    ProofObligationFeedback, Reset, Rule, Schedule, ISIR, State,
-    TemporalExpr, UserType, Candidate, OneOf,
+    Function, FunctionParam, Axiom, Invariant, Interface, Metadata, Module,
+    Parameter, Property, ProofObligation, ProofObligationFeedback, Reset, Rule,
+    Schedule, ISIR, State, TemporalExpr, UserType, Candidate, OneOf,
 )
 from isir.utils.logger import get_logger
 
@@ -206,14 +206,16 @@ def _parse_directive(data: Dict[str, Any]) -> Directive:
 
 def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
     kind = _require(data, "kind", "temporal expression")
-    if kind not in ("always", "eventually", "until", "combinational", "transition", "independence"):
+    if kind not in ("always", "eventually", "until", "combinational", "transition", "independence", "after"):
         raise ISIRParseError(
-            f"Invalid temporal expression kind '{kind}'. Must be always, eventually, until, combinational, transition, or independence."
+            f"Invalid temporal expression kind '{kind}'. Must be always, eventually, until, combinational, transition, independence, or after."
         )
     if kind == "combinational" and data.get("reference") is None:
         raise ISIRParseError("Combinational property requires a 'reference' golden expression.")
     if kind == "transition" and data.get("operand") is None:
         raise ISIRParseError("Transition property requires an 'operand' over the next state.")
+    if kind == "after" and data.get("bound") is None:
+        raise ISIRParseError("Bounded (after) property requires a numeric 'bound'.")
     if kind == "independence":
         if data.get("operand") is None:
             raise ISIRParseError("Independence property requires an 'operand' expression.")
@@ -227,7 +229,8 @@ def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
         right=data.get("right"),
         bound=data.get("bound"),
         reference=data.get("reference"),
-        independent_of=data.get("independent_of")
+        independent_of=data.get("independent_of"),
+        rule=data.get("rule")
     )
 
 
@@ -257,6 +260,42 @@ def _parse_fairness(data: Dict[str, Any]) -> Fairness:
         name=_require(data, "name", "fairness"),
         type=_require(data, "type", "fairness"),
         condition=_require(data, "condition", "fairness")
+    )
+
+
+def _parse_function(data: Dict[str, Any]) -> Function:
+    params = []
+    for p in data.get("params", []):
+        if not isinstance(p, dict) or "name" not in p or "type" not in p:
+            raise ISIRParseError("Function params must be mappings with 'name' and 'type'.")
+        params.append(FunctionParam(name=p["name"], type=p["type"]))
+    return Function(
+        name=_require(data, "name", "function"),
+        params=params,
+        return_type=data.get("return", "bits<1>"),
+        body=data.get("body"),
+        recursive=bool(data.get("recursive", False)),
+        measure=data.get("measure")
+    )
+
+
+def _parse_axiom(data: Dict[str, Any]) -> Axiom:
+    forall_vars = []
+    for p in data.get("forall", []):
+        if not isinstance(p, dict) or "name" not in p or "type" not in p:
+            raise ISIRParseError("Axiom 'forall' binders must be mappings with 'name' and 'type'.")
+        forall_vars.append(FunctionParam(name=p["name"], type=p["type"]))
+    return Axiom(
+        name=_require(data, "name", "axiom"),
+        forall_vars=forall_vars,
+        statement=_require(data, "statement", "axiom")
+    )
+
+
+def _parse_invariant(data: Dict[str, Any]) -> Invariant:
+    return Invariant(
+        name=_require(data, "name", "invariant"),
+        operand=_require(data, "operand", "invariant")
     )
 
 
@@ -407,6 +446,9 @@ def _parse_module(data: Dict[str, Any]) -> Module:
         rules=[_parse_rule(r) for r in data.get("rules", [])],
         directives=[_parse_directive(d) for d in data.get("directives", [])],
         properties=[_parse_property(p) for p in data.get("properties", [])],
+        functions=[_parse_function(f) for f in data.get("functions", [])],
+        axioms=[_parse_axiom(a) for a in data.get("axioms", [])],
+        invariants=[_parse_invariant(i) for i in data.get("invariants", [])],
         schedule=_parse_schedule(data["schedule"]) if "schedule" in data else None,
         fairness=[_parse_fairness(f) for f in data.get("fairness", [])],
         proof_obligations=[_parse_proof_obligation(po) for po in data.get("proof_obligations", [])],

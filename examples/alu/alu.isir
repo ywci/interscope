@@ -14,7 +14,7 @@ module:
   inputs:
     - name: op
       direction: input
-      type: "bits<2>"
+      type: "bits<3>"
       protocol: fixed_cycle
     - name: a
       direction: input
@@ -58,7 +58,7 @@ module:
       initial: false
     - name: op_reg
       kind: register
-      type: "bits<2>"
+      type: "bits<3>"
       initial: 0
     - name: a_reg
       kind: register
@@ -86,7 +86,14 @@ module:
             (ite (eq (read op_reg) 0) (add (read a_reg) (read b_reg))
             (ite (eq (read op_reg) 1) (sub (read a_reg) (read b_reg))
             (ite (eq (read op_reg) 2) (and (read a_reg) (read b_reg))
-                 (or (read a_reg) (read b_reg))))))
+            (ite (eq (read op_reg) 3) (or (read a_reg) (read b_reg))
+            (ite (eq (read op_reg) 4)
+                 (ite (eq (read a_reg) (read b_reg)) 0
+                      (ite (lt (read a_reg) (read b_reg)) 1 2))
+            (ite (eq (read op_reg) 5) (xor (read a_reg) (read b_reg))
+            (ite (eq (read op_reg) 6) (shl (read a_reg) (slice (read b_reg) 2 0))
+            (ite (eq (read op_reg) 7) (shr (read a_reg) (slice (read b_reg) 2 0))
+                 0)))))))))
         - (write overflow_reg
             (ite (eq (read op_reg) 0)
                  (and (eq (slice (read a_reg) 7 7) (slice (read b_reg) 7 7))
@@ -99,7 +106,14 @@ module:
             (eq (ite (eq (read op_reg) 0) (add (read a_reg) (read b_reg))
                 (ite (eq (read op_reg) 1) (sub (read a_reg) (read b_reg))
                 (ite (eq (read op_reg) 2) (and (read a_reg) (read b_reg))
-                     (or (read a_reg) (read b_reg)))))
+                (ite (eq (read op_reg) 3) (or (read a_reg) (read b_reg))
+                (ite (eq (read op_reg) 4)
+                     (ite (eq (read a_reg) (read b_reg)) 0
+                          (ite (lt (read a_reg) (read b_reg)) 1 2))
+                (ite (eq (read op_reg) 5) (xor (read a_reg) (read b_reg))
+                (ite (eq (read op_reg) 6) (shl (read a_reg) (slice (read b_reg) 2 0))
+                (ite (eq (read op_reg) 7) (shr (read a_reg) (slice (read b_reg) 2 0))
+                     0))))))))
                 0))
         - (write valid true)
 
@@ -167,6 +181,65 @@ module:
         kind: always
         operand: (or (eq (read valid) true) (eq (read valid) false))
 
+    # --- combinational correctness (golden reference per opcode) ---
+    # Each operand mirrors the `execute` rule's result datapath with the
+    # opcode pinned to a literal; the reference is the golden expression.
+    - name: add_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 0 0) (add a b) (ite (eq 0 1) (sub a b) (ite (eq 0 2) (and a b) (ite (eq 0 3) (or a b) (ite (eq 0 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 0 5) (xor a b) (ite (eq 0 6) (shl a (slice b 2 0)) (ite (eq 0 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (add a b)
+
+    - name: sub_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 1 0) (add a b) (ite (eq 1 1) (sub a b) (ite (eq 1 2) (and a b) (ite (eq 1 3) (or a b) (ite (eq 1 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 1 5) (xor a b) (ite (eq 1 6) (shl a (slice b 2 0)) (ite (eq 1 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (sub a b)
+
+    - name: and_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 2 0) (add a b) (ite (eq 2 1) (sub a b) (ite (eq 2 2) (and a b) (ite (eq 2 3) (or a b) (ite (eq 2 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 2 5) (xor a b) (ite (eq 2 6) (shl a (slice b 2 0)) (ite (eq 2 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (and a b)
+
+    - name: or_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 3 0) (add a b) (ite (eq 3 1) (sub a b) (ite (eq 3 2) (and a b) (ite (eq 3 3) (or a b) (ite (eq 3 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 3 5) (xor a b) (ite (eq 3 6) (shl a (slice b 2 0)) (ite (eq 3 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (or a b)
+
+    - name: cmp_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 4 0) (add a b) (ite (eq 4 1) (sub a b) (ite (eq 4 2) (and a b) (ite (eq 4 3) (or a b) (ite (eq 4 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 4 5) (xor a b) (ite (eq 4 6) (shl a (slice b 2 0)) (ite (eq 4 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (ite (eq a b) 0 (ite (lt a b) 1 2))
+
+    - name: xor_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 5 0) (add a b) (ite (eq 5 1) (sub a b) (ite (eq 5 2) (and a b) (ite (eq 5 3) (or a b) (ite (eq 5 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 5 5) (xor a b) (ite (eq 5 6) (shl a (slice b 2 0)) (ite (eq 5 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (xor a b)
+
+    - name: shl_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 6 0) (add a b) (ite (eq 6 1) (sub a b) (ite (eq 6 2) (and a b) (ite (eq 6 3) (or a b) (ite (eq 6 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 6 5) (xor a b) (ite (eq 6 6) (shl a (slice b 2 0)) (ite (eq 6 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (shl a (slice b 2 0))
+
+    - name: shr_correctness
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (ite (eq 7 0) (add a b) (ite (eq 7 1) (sub a b) (ite (eq 7 2) (and a b) (ite (eq 7 3) (or a b) (ite (eq 7 4) (ite (eq a b) 0 (ite (lt a b) 1 2)) (ite (eq 7 5) (xor a b) (ite (eq 7 6) (shl a (slice b 2 0)) (ite (eq 7 7) (shr a (slice b 2 0)) 0))))))))
+        reference: (shr a (slice b 2 0))
+
   proof_obligations:
     - property: zero_flag_correct
       status: unproved
@@ -178,6 +251,38 @@ module:
           - "simpl"
           - "auto"
           - "lia"
+    - property: add_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: sub_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: and_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: or_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: cmp_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: xor_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: shl_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: shr_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     # NOTE: overflow_implies_result_neq_sum / sub_overflow_implies_result_neq_diff
     # are deliberately NOT theorem_proving obligations. Under the current
     # lowering (bits<N> -> unbounded nat, add/sub -> Nat.+/-), result_reg is

@@ -1,0 +1,149 @@
+isir_version: "0.1"
+module:
+  name: div
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+    - name: dividend
+      direction: input
+      type: "bits<16>"
+    - name: divisor
+      direction: input
+      type: "bits<16>"
+  outputs:
+    - name: quotient
+      direction: output
+      type: "bits<16>"
+    - name: remainder
+      direction: output
+      type: "bits<16>"
+    - name: done
+      direction: output
+      type: "bool"
+  state:
+    - name: rem
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: quot
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: divisor_reg
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: dividend_init
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: count
+      kind: register
+      type: "bits<5>"
+      initial: 0
+    - name: done
+      kind: register
+      type: "bool"
+      initial: false
+    - name: quotient
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: remainder
+      kind: register
+      type: "bits<16>"
+      initial: 0
+  rules:
+    - name: load
+      condition: start
+      action:
+        - (write rem 0)
+        - (write quot (read dividend))
+        - (write divisor_reg (read divisor))
+        - (write dividend_init (read dividend))
+        - (write count 16)
+        - (write done false)
+    - name: sub_step
+      condition: (and (not (read done))
+                      (and (gt (read count) 0)
+                           (ge (add (mul (read rem) 2) (slice (read quot) 15 15))
+                               (read divisor_reg))))
+      action:
+        - (write rem (sub (add (mul (read rem) 2) (slice (read quot) 15 15))
+                          (read divisor_reg)))
+        - (write quot (add (mul (read quot) 2) 1))
+        - (write count (sub (read count) 1))
+    - name: shift_step
+      condition: (and (not (read done))
+                      (and (gt (read count) 0)
+                           (lt (add (mul (read rem) 2) (slice (read quot) 15 15))
+                               (read divisor_reg))))
+      action:
+        - (write rem (add (mul (read rem) 2) (slice (read quot) 15 15)))
+        - (write quot (mul (read quot) 2))
+        - (write count (sub (read count) 1))
+    - name: finish
+      condition: (and (not (read done)) (eq (read count) 0))
+      action:
+        - (write done true)
+        - (write quotient (read quot))
+        - (write remainder (read rem))
+  properties:
+    - name: count_in_range
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read count) 0) (le (read count) 16))
+    - name: rem_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read rem) 0)
+    - name: quot_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read quot) 0)
+    - name: done_implies_count_zero
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read done) (eq (read count) 0))
+    - name: remainder_lt_divisor
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (gt (read divisor_reg) 0)
+                         (lt (read rem) (read divisor_reg)))
+  proof_obligations:
+    - property: count_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rem_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: quot_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: done_implies_count_zero
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: remainder_lt_divisor
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_in_range
+      engine: model_checking

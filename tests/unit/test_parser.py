@@ -326,6 +326,43 @@ def test_combinational_property_requires_reference():
     path.unlink()
 
 
+def test_functions_and_axioms_parsing():
+    data = {
+        "isir_version": "0.1",
+        "module": {
+            "name": "fpu",
+            "clocks": [{"name": "clk", "edge": "posedge"}],
+            "resets": [{"name": "rst", "polarity": "active_high", "async": False, "affects": "all"}],
+            "state": [{"name": "acc", "kind": "register", "type": "bits<16>"}],
+            "rules": [{"name": "upd", "condition": "true", "action": ["(write acc (abstract_finite_add a b)"]}],
+            "inputs": [{"name": "a", "direction": "input", "type": "bits<16>"},
+                       {"name": "b", "direction": "input", "type": "bits<16>"}],
+            "functions": [
+                {"name": "abstract_finite_add",
+                 "params": [{"name": "x", "type": "bits<16>"}, {"name": "y", "type": "bits<16>"}],
+                 "return": "bits<16>"}
+            ],
+            "axioms": [
+                {"name": "finite_add_commutative",
+                 "forall": [{"name": "x", "type": "bits<16>"}, {"name": "y", "type": "bits<16>"}],
+                 "statement": "(eq (abstract_finite_add x y) (abstract_finite_add y x))"}
+            ]
+        }
+    }
+    path = write_temp_isir(data)
+    spec = parse_isir(path)
+    fn = spec.module.functions[0]
+    assert fn.name == "abstract_finite_add"
+    assert fn.params[0].name == "x"
+    assert fn.params[0].type == "bits<16>"
+    assert fn.return_type == "bits<16>"
+    ax = spec.module.axioms[0]
+    assert ax.name == "finite_add_commutative"
+    assert ax.forall_vars[0].name == "x"
+    assert ax.statement == "(eq (abstract_finite_add x y) (abstract_finite_add y x))"
+    path.unlink()
+
+
 def test_missing_isir_version():
     data = {
         "module": {"name": "test", "clocks": [], "resets": [], "state": [], "rules": []}

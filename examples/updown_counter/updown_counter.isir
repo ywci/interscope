@@ -60,12 +60,32 @@ module:
       expression:
         kind: always
         operand: (ge (read count) 0)
+    - name: inc_increments
+      kind: transition
+      expression:
+        kind: transition
+        rule: inc
+        operand: (eq (read count) (add (prev count) 1))
+    - name: dec_decrements
+      kind: transition
+      expression:
+        kind: transition
+        rule: dec
+        operand: (eq (read count) (sub (prev count) 1))
   proof_obligations:
     - property: count_le_max
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: count_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: inc_increments
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: dec_decrements
       status: unproved
       engine: theorem_proving
       backend: koika

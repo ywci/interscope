@@ -33,8 +33,18 @@ module:
       expression:
         kind: always
         operand: (and (ge (read count) 0) (lt (read count) 16))
+    - name: tick_wraps_mod_16
+      kind: transition
+      expression:
+        kind: transition
+        rule: tick
+        operand: (eq (read count) (mod (add (prev count) 1) 16))
   proof_obligations:
     - property: count_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: tick_wraps_mod_16
       status: unproved
       engine: theorem_proving
       backend: koika

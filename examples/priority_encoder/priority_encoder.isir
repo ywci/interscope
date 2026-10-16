@@ -29,6 +29,20 @@ module:
       kind: register
       type: "bool"
       initial: false
+
+  functions:
+    - name: prio_enc
+      params: [{name: d, type: "bits<8>"}]
+      return: "bits<3>"
+      body: (ite (eq (slice d 7 7) 1) 7
+            (ite (eq (slice d 6 6) 1) 6
+            (ite (eq (slice d 5 5) 1) 5
+            (ite (eq (slice d 4 4) 1) 4
+            (ite (eq (slice d 3 3) 1) 3
+            (ite (eq (slice d 2 2) 1) 2
+            (ite (eq (slice d 1 1) 1) 1
+            (ite (eq (slice d 0 0) 1) 0 0))))))))
+
   rules:
     - name: encode
       condition: "true"
@@ -54,12 +68,23 @@ module:
       expression:
         kind: always
         operand: (or (eq (read valid) true) (eq (read valid) false))
+    - name: enc_correct
+      kind: transition
+      expression:
+        kind: transition
+        rule: encode
+        operand: (and (eq (read enc) (prio_enc data))
+                      (eq (read valid) (neq data 0)))
   proof_obligations:
     - property: enc_in_range
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: valid_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: enc_correct
       status: unproved
       engine: theorem_proving
       backend: koika

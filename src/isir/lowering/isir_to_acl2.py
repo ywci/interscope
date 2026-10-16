@@ -62,14 +62,41 @@ def _expr_to_acl2(expr: Any,
     args = expr[1:]
 
     # Arithmetic operators
-    if op in ('add', 'sub', 'mul', 'div', 'mod'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
         a = _expr_to_acl2(args[0], state_indices, memory_names, inputs)
         b = _expr_to_acl2(args[1], state_indices, memory_names, inputs)
+        if op == 'shl':
+            return f"(ash {a} {b})"
+        if op == 'shr':
+            return f"(ash {a} (- {b}))"
+        if op == 'gcd':
+            return f"(gcd {a} {b})"
         acl2_op_map = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': 'mod'}
         acl2_op = acl2_op_map[op]
         return f"({acl2_op} {a} {b})"
+
+    # sum: n-ary reduction with +
+    if op == 'sum':
+        if len(args) == 0:
+            raise ExprError("sum expects at least 1 argument")
+        if len(args) == 1:
+            return _expr_to_acl2(args[0], state_indices, memory_names, inputs)
+        acl2_args = [_expr_to_acl2(a, state_indices, memory_names, inputs) for a in args]
+        result = acl2_args[-1]
+        for a in reversed(acl2_args[:-1]):
+            result = f"(+ {a} {result})"
+        return result
+
+    # concat (high field, low field of explicit width)
+    elif op == 'concat':
+        if len(args) != 3:
+            raise ExprError("concat expects 3 arguments: high low low_width")
+        high = _expr_to_acl2(args[0], state_indices, memory_names, inputs)
+        low = _expr_to_acl2(args[1], state_indices, memory_names, inputs)
+        width = _expr_to_acl2(args[2], state_indices, memory_names, inputs)
+        return f"(logapp {width} {low} {high})"
 
     # Logical operators
     elif op == 'and':
@@ -84,6 +111,12 @@ def _expr_to_acl2(expr: Any,
         a = _expr_to_acl2(args[0], state_indices, memory_names, inputs)
         b = _expr_to_acl2(args[1], state_indices, memory_names, inputs)
         return f"(or {a} {b})"
+    elif op == 'xor':
+        if len(args) != 2:
+            raise ExprError("xor expects 2 arguments")
+        a = _expr_to_acl2(args[0], state_indices, memory_names, inputs)
+        b = _expr_to_acl2(args[1], state_indices, memory_names, inputs)
+        return f"(xor {a} {b})"
     elif op == 'not':
         if len(args) != 1:
             raise ExprError("not expects 1 argument")

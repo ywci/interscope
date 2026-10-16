@@ -49,9 +49,19 @@ module:
       expression:
         kind: always
         operand: (ge (read acc) 0)
+    - name: accumulate_mac
+      kind: transition
+      expression:
+        kind: transition
+        rule: accumulate
+        operand: (eq (read acc) (add (prev acc) (mul a b)))
 
   proof_obligations:
     - property: acc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: accumulate_mac
       status: unproved
       engine: theorem_proving
       backend: koika

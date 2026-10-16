@@ -43,6 +43,21 @@ module:
       kind: register
       type: "bits<16>"
       initial: 0
+
+  # Subtractive Euclidean algorithm as a recursive semantic model.  Its
+  # one-step facts (e.g. gcd_sub (a-b) b = gcd_sub a b when a > b) are
+  # definitional unfoldings of the well-founded recursion.
+  functions:
+    - name: gcd_sub
+      params: [{name: a, type: "bits<16>"}, {name: b, type: "bits<16>"}]
+      return: "bits<16>"
+      recursive: true
+      measure: (add a b)
+      body: (ite (eq a 0) b
+            (ite (eq b 0) a
+            (ite (gt a b) (gcd_sub (sub a b) b)
+                 (gcd_sub a (sub b a)))))
+
   rules:
     - name: load
       condition: start
@@ -74,12 +89,61 @@ module:
       expression:
         kind: always
         operand: (implies (read done) (eq (read a) (read b)))
+    - name: done_implies_result_eq_a
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read done) (eq (read result) (read a)))
+    - name: gcd_commutes
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (gcd x y)
+        reference: (gcd y x)
+    - name: gcd_diag
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (gcd x x)
+        reference: x
+    - name: gcd_sub_computes
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (gcd_sub 10 6 4)
+        reference: 2
+    - name: gcd_sub_step
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (gcd_sub 10 6 4)
+        reference: (gcd_sub 9 2 4)
   proof_obligations:
     - property: done_implies_equal
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: done_implies_result_eq_a
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: operands_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: gcd_commutes
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: gcd_diag
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: gcd_sub_computes
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: gcd_sub_step
       status: unproved
       engine: theorem_proving
       backend: koika

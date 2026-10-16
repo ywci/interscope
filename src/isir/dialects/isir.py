@@ -147,6 +147,9 @@ class SpecModule:
     rule_ops: List[SpecRuleOp] = field(default_factory=list)
     property_ops: List[SpecPropertyOp] = field(default_factory=list)
     directive_ops: List[SpecDirectiveOp] = field(default_factory=list)
+    functions: List[Dict[str, Any]] = field(default_factory=list)
+    axioms: List[Dict[str, Any]] = field(default_factory=list)
+    invariants: List[Dict[str, Any]] = field(default_factory=list)
     schedule_op: Optional[SpecScheduleOp] = None
     proof_obligations: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)

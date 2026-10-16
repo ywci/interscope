@@ -40,8 +40,30 @@ module:
       expression:
         kind: always
         operand: (and (ge (read count) 0) (le (read count) 8))
+    - name: inc_saturates_at_8
+      kind: transition
+      expression:
+        kind: transition
+        rule: inc_step
+        operand: (eq (read count)
+                     (ite (lt (prev count) 8) (add (prev count) 1) (prev count)))
+    - name: dec_saturates_at_0
+      kind: transition
+      expression:
+        kind: transition
+        rule: dec_step
+        operand: (eq (read count)
+                     (ite (gt (prev count) 0) (sub (prev count) 1) (prev count)))
   proof_obligations:
     - property: count_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: inc_saturates_at_8
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: dec_saturates_at_0
       status: unproved
       engine: theorem_proving
       backend: koika

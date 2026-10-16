@@ -1,0 +1,220 @@
+isir_version: "0.1"
+module:
+  name: fpu
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: a
+      direction: input
+      type: "bits<16>"
+    - name: b
+      direction: input
+      type: "bits<16>"
+  outputs:
+    - name: result
+      direction: output
+      type: "bits<16>"
+  state:
+    - name: result
+      kind: register
+      type: "bits<16>"
+      initial: 0
+
+  # --------------------------------------------------------------------------
+  # bfloat16 special-value predicates and helpers (concrete, defined functions).
+  #   layout: [ sign (1) | exponent (8) | mantissa (7) ], bias 127
+  #   exp all-ones = 255;  +inf = 0x7F80 = 32640;  quiet NaN = 0x7FC0 = 32704
+  # --------------------------------------------------------------------------
+  functions:
+    - name: is_nan
+      params: [{name: x, type: "bits<16>"}]
+      return: "bool"
+      body: (and (eq (slice x 14 7) 255) (neq (slice x 6 0) 0))
+    - name: is_inf
+      params: [{name: x, type: "bits<16>"}]
+      return: "bool"
+      body: (and (eq (slice x 14 7) 255) (eq (slice x 6 0) 0))
+    - name: is_zero
+      params: [{name: x, type: "bits<16>"}]
+      return: "bool"
+      body: (eq (slice x 14 0) 0)
+    - name: sign
+      params: [{name: x, type: "bits<16>"}]
+      return: "bits<1>"
+      body: (slice x 15 15)
+    - name: sign_xor
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<1>"
+      body: (ite (eq (sign x) (sign y)) 0 1)
+    - name: quiet_nan
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+      body: (or x 64)
+    - name: signed_infinity
+      params: [{name: s, type: "bits<1>"}]
+      return: "bits<16>"
+      body: (concat s 32640 15)
+    - name: signed_zero
+      params: [{name: s, type: "bits<1>"}]
+      return: "bits<16>"
+      body: (concat s 0 15)
+
+    # --- finite (non-special) operations: uninterpreted, laws via axioms ---
+    - name: abstract_finite_add
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+    - name: abstract_finite_mul
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+    - name: abstract_finite_div
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+    - name: abstract_finite_sqrt
+      params: [{name: x, type: "bits<16>"}]
+      return: "bits<16>"
+    - name: flip_sign_bit
+      params: [{name: x, type: "bits<16>"}]
+      return: "bits<16>"
+
+    # --- the five FPU operations (defined functions over special values) ---
+    - name: fadd
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+      body: (ite (or (is_nan x) (is_nan y)) (quiet_nan x y)
+            (ite (and (is_inf x) (and (is_inf y) (neq (sign x) (sign y)))) 32704
+            (ite (is_inf x) x
+            (ite (is_inf y) y
+            (ite (and (is_zero x) (and (is_zero y) (eq (sign x) (sign y)))) x
+            (ite (and (is_zero x) (is_zero y)) 0
+                 (abstract_finite_add x y)))))))
+    - name: fsub
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+      body: (fadd x (flip_sign_bit y))
+    - name: fmul
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+      body: (ite (or (is_nan x) (is_nan y)) (quiet_nan x y)
+            (ite (or (and (is_inf x) (is_zero y)) (and (is_zero x) (is_inf y))) 32704
+            (ite (or (is_inf x) (is_inf y)) (signed_infinity (sign_xor x y))
+            (ite (or (is_zero x) (is_zero y)) (signed_zero (sign_xor x y))
+                 (abstract_finite_mul x y)))))
+    - name: fdiv
+      params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      return: "bits<16>"
+      body: (ite (or (is_nan x) (is_nan y)) (quiet_nan x y)
+            (ite (or (and (is_inf x) (is_inf y)) (and (is_zero x) (is_zero y))) 32704
+            (ite (is_inf x) (signed_infinity (sign_xor x y))
+            (ite (is_inf y) (signed_zero (sign_xor x y))
+            (ite (is_zero y) (signed_infinity (sign_xor x y))
+            (ite (is_zero x) (signed_zero (sign_xor x y))
+                 (abstract_finite_div x y)))))))
+    - name: fsqrt
+      params: [{name: x, type: "bits<16>"}]
+      return: "bits<16>"
+      body: (ite (is_nan x) (quiet_nan x x)
+            (ite (and (is_inf x) (eq (sign x) 1)) 32704
+            (ite (is_inf x) x
+            (ite (is_zero x) x
+            (ite (eq (sign x) 1) 32704
+                 (abstract_finite_sqrt x))))))
+
+  axioms:
+    - name: finite_add_commutative
+      forall: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      statement: (eq (abstract_finite_add x y) (abstract_finite_add y x))
+    - name: finite_mul_commutative
+      forall: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
+      statement: (eq (abstract_finite_mul x y) (abstract_finite_mul y x))
+    - name: flip_sign_involution
+      forall: [{name: x, type: "bits<16>"}]
+      statement: (eq (flip_sign_bit (flip_sign_bit x)) x)
+
+  rules:
+    - name: compute
+      condition: "true"
+      action:
+        - (write result (fadd a b))
+
+  properties:
+    # --- structural / algebraic (provable by Kōika) ---
+    - name: fsub_equals_negated_fadd
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (fsub a b)
+        reference: (fadd a (flip_sign_bit b))
+    - name: flip_sign_involutive
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (flip_sign_bit (flip_sign_bit a))
+        reference: a
+    - name: add_commutes
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (abstract_finite_add a b)
+        reference: (abstract_finite_add b a)
+    - name: mul_commutes
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (abstract_finite_mul a b)
+        reference: (abstract_finite_mul b a)
+
+    # --- concrete bfloat16 special-value bit patterns ---
+    - name: signed_infinity_pattern
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (concat (sign a) 32640 15)
+        reference: (add (mul (sign a) 32768) 32640)
+    - name: signed_zero_pattern
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (mul (sign a) 32768)
+        reference: (concat (sign a) 0 15)
+    - name: quiet_nan_pattern
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (or 32640 64)
+        reference: 32704
+
+  proof_obligations:
+    - property: fsub_equals_negated_fadd
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: flip_sign_involutive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: add_commutes
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: mul_commutes
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: signed_infinity_pattern
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: signed_zero_pattern
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: quiet_nan_pattern
+      status: unproved
+      engine: theorem_proving
+      backend: koika

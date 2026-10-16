@@ -32,6 +32,13 @@ module:
       kind: register
       type: "bool"
       initial: false
+
+  functions:
+    - name: saturate
+      params: [{name: sum, type: "bits<8>"}, {name: cap, type: "bits<8>"}]
+      return: "bits<8>"
+      body: (ite (ge sum (add cap 1)) cap sum)
+
   rules:
     - name: add
       condition: "true"
@@ -49,12 +56,23 @@ module:
       expression:
         kind: always
         operand: (or (eq (read overflow) true) (eq (read overflow) false))
+    - name: result_is_min
+      kind: transition
+      expression:
+        kind: transition
+        rule: add
+        operand: (and (eq (read result) (saturate (add x y) 255))
+                      (eq (read overflow) (ge (add x y) 256)))
   proof_obligations:
     - property: result_le_cap
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: overflow_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: result_is_min
       status: unproved
       engine: theorem_proving
       backend: koika

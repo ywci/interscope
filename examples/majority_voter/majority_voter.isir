@@ -40,6 +40,13 @@ module:
       kind: register
       type: "bool"
       initial: false
+
+  functions:
+    - name: majority
+      params: [{name: p, type: "bool"}, {name: q, type: "bool"}, {name: r, type: "bool"}]
+      return: "bool"
+      body: (or (and p q) (or (and q r) (and p r)))
+
   rules:
     - name: vote
       condition: "true"
@@ -54,8 +61,18 @@ module:
       expression:
         kind: always
         operand: (implies (read maj) (or (read x) (read y)))
+    - name: maj_correct
+      kind: transition
+      expression:
+        kind: transition
+        rule: vote
+        operand: (eq (read maj) (majority a b c))
   proof_obligations:
     - property: maj_implies_x_or_y
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: maj_correct
       status: unproved
       engine: theorem_proving
       backend: koika

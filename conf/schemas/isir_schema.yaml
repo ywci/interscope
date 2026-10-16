@@ -157,18 +157,19 @@ properties:
           required: [ name, kind, expression ]
           properties:
             name: { type: string }
-            kind: { enum: [ safety, liveness, invariant, combinational, transition, independence ] }
+            kind: { enum: [ safety, liveness, invariant, combinational, transition, independence, bounded ] }
             expression:
               type: object
               required: [ kind ]
               properties:
-                kind: { enum: [ always, eventually, until, combinational, transition, independence ] }
+                kind: { enum: [ always, eventually, until, combinational, transition, independence, after ] }
                 operand: { type: [ string, array ] }
                 left: { type: [ string, array ] }
                 right: { type: [ string, array ] }
                 bound: { type: integer }
                 reference: { type: [ string, array, boolean, integer ] }
                 independent_of: { type: array, items: { type: string } }
+                rule: { type: string }
             assumes: { type: array, items: { type: [ string, array ] } }
             guarantees: { type: array, items: { type: [ string, array ] } }
             proof_status: { enum: [ unproved, proved, counterexample ] }
@@ -206,6 +207,49 @@ properties:
             name: { type: string }
             type: { enum: [ weak, strong ] }
             condition: { type: [ string, array ] }
+      functions:
+        type: array
+        items:
+          type: object
+          required: [ name ]
+          properties:
+            name: { type: string }
+            params:
+              type: array
+              items:
+                type: object
+                required: [ name, type ]
+                properties:
+                  name: { type: string }
+                  type: { type: string }
+            return: { type: string }
+            body: { type: [ string, array ] }
+            recursive: { type: boolean }
+            measure: { type: [ string, array ] }
+      axioms:
+        type: array
+        items:
+          type: object
+          required: [ name, statement ]
+          properties:
+            name: { type: string }
+            forall:
+              type: array
+              items:
+                type: object
+                required: [ name, type ]
+                properties:
+                  name: { type: string }
+                  type: { type: string }
+            statement: { type: [ string, array ] }
+      invariants:
+        type: array
+        items:
+          type: object
+          required: [ name, operand ]
+          properties:
+            name: { type: string }
+            operand: { type: [ string, array ] }
       proof_obligations:
         type: array
         items:

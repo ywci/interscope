@@ -408,6 +408,86 @@ def test_independence_theorem_generation():
     assert "step" not in theorem_block
 
 
+def test_xor_lowering_nat_and_bool():
+    """`xor` lowers to Nat.lxor for nat operands and xorb for bool operands."""
+    spec_mod = isir.SpecModule(name="xor_test")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+        isir.Interface(name="b", direction="input", data_type="bits<8>"),
+        isir.Interface(name="x", direction="input", data_type="bool"),
+        isir.Interface(name="y", direction="input", data_type="bool"),
+    ]
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="nat_xor_self_zero",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(xor a a)", "reference": 0},
+        )
+    )
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="bool_xor_commutative",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(xor x y)", "reference": "(xor y x)"},
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "nat_xor_self_zero", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+    spec_mod.proof_obligations.append({
+        "property": "bool_xor_commutative", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "(Nat.lxor (a inputs) (a inputs))" in state_text
+    assert "(xorb (x inputs) (y inputs))" in state_text
+
+
+def test_shift_lowering():
+    """`shl`/`shr` lower to Nat.shiftl/Nat.shiftr."""
+    spec_mod = isir.SpecModule(name="shift_test")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+        isir.Interface(name="b", direction="input", data_type="bits<8>"),
+    ]
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="shl_shiftl",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(shl a (slice b 2 0))", "reference": "(shl a (slice b 2 0))"},
+        )
+    )
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="shr_shiftr",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(shr a (slice b 2 0))", "reference": "(shr a (slice b 2 0))"},
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "shl_shiftl", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+    spec_mod.proof_obligations.append({
+        "property": "shr_shiftr", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "(Nat.shiftl (a inputs) (slice (b inputs) 2 0))" in state_text
+    assert "(Nat.shiftr (a inputs) (slice (b inputs) 2 0))" in state_text
+
+
 def test_combinational_boolean_reference():
     """A boolean golden reference lowers to a Coq `true`/`false` literal."""
     spec_mod = isir.SpecModule(name="comb_bool")
@@ -440,3 +520,291 @@ def test_combinational_boolean_reference():
     assert "Theorem excluded_middle_proved" in state_text
     assert "(orb (en inputs) (negb (en inputs)))" in state_text
     assert "= true" in state_text
+
+
+def test_functions_and_axioms_lowering():
+    """Functions lower to Parameter, axioms to Axiom + Hint Resolve."""
+    spec_mod = isir.SpecModule(name="fpu")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<16>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<16>"),
+        isir.Interface(name="b", direction="input", data_type="bits<16>"),
+    ]
+    spec_mod.functions.append({
+        "name": "abstract_finite_add",
+        "params": [{"name": "x", "type": "bits<16>"}, {"name": "y", "type": "bits<16>"}],
+        "return": "bits<16>",
+    })
+    spec_mod.axioms.append({
+        "name": "finite_add_commutative",
+        "forall": [{"name": "x", "type": "bits<16>"}, {"name": "y", "type": "bits<16>"}],
+        "statement": "(eq (abstract_finite_add x y) (abstract_finite_add y x))",
+    })
+    spec_mod.rule_ops.append(
+        isir.SpecRuleOp(rule_name="upd", condition="true", actions=["(write acc (abstract_finite_add a b))"])
+    )
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="add_commutes",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(abstract_finite_add a b)", "reference": "(abstract_finite_add b a)"},
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "add_commutes", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Parameter abstract_finite_add : nat -> nat -> nat." in state_text
+    assert "Axiom finite_add_commutative : forall (x : nat) (y : nat)," in state_text
+    assert "Hint Resolve finite_add_commutative : core." in state_text
+    assert "(abstract_finite_add (a inputs) (b inputs))" in state_text
+
+
+def test_concat_and_bitset_lowering():
+    """concat lowers to high*2^w+low (precomputed shift); bitset clears+sets."""
+    spec_mod = isir.SpecModule(name="concat_test")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="r", kind="register", data_type="bits<16>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="sign", direction="input", data_type="bits<1>"),
+    ]
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="concat_def",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(concat sign 32640 15)", "reference": "(add (mul sign 32768) 32640)"},
+        )
+    )
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="bitset_def",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(bitset 32640 6 6 1)", "reference": 32704},
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "concat_def", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+    spec_mod.proof_obligations.append({
+        "property": "bitset_def", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    # concat with literal width precomputes 2^15 = 32768.
+    assert "((sign inputs) * 32768 + 32640)" in state_text
+    # bitset emits the clear/set form (slice * 2^low).
+    assert "(32640 - (slice 32640 6 6) * 64 + 1 * 64)" in state_text
+
+
+def test_defined_function_lowering():
+    """A function with a body lowers to Definition; without body to Parameter."""
+    spec_mod = isir.SpecModule(name="deffn")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="r", kind="register", data_type="bool", initial=False)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<16>"),
+    ]
+    spec_mod.functions.append({
+        "name": "is_nan",
+        "params": [{"name": "x", "type": "bits<16>"}],
+        "return": "bool",
+        "body": "(and (eq (slice x 14 7) 255) (neq (slice x 6 0) 0))",
+    })
+    spec_mod.functions.append({
+        "name": "abstract_add",
+        "params": [{"name": "x", "type": "bits<16>"}, {"name": "y", "type": "bits<16>"}],
+        "return": "bits<16>",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Definition is_nan (x : nat) : bool := (andb (Nat.eqb (slice x 14 7) 255)" in state_text
+    assert "Parameter abstract_add : nat -> nat -> nat." in state_text
+
+
+def test_per_rule_transition_scoping():
+    """A transition property with `rule:` scopes to that rule's step."""
+    spec_mod = isir.SpecModule(name="scoped")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="x", kind="register", data_type="bits<8>", initial=0)
+    )
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="y", kind="register", data_type="bits<8>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+    ]
+    spec_mod.rule_ops.append(
+        isir.SpecRuleOp(rule_name="load", condition="true", actions=["(write x (read a))"])
+    )
+    spec_mod.rule_ops.append(
+        isir.SpecRuleOp(rule_name="mac", condition="true", actions=["(write y (add (read y) (read x)))"])
+    )
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="load_correct",
+            kind="transition",
+            expression={"kind": "transition", "rule": "load", "operand": "(eq (read x) a)"},
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "load_correct", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    theorem_block = state_text.split("Theorem load_correct_proved")[1].split("Admitted.")[0]
+    # Scoped to `load`: no `s'` binder and no `step` relation.
+    assert "forall (s : state) (inputs : inputs), True ->" in theorem_block
+    assert "step s inputs s'" not in theorem_block
+    assert "(x (mkState" in theorem_block
+
+
+def test_combinational_assumes_lowering():
+    """A combinational property with `assumes` lowers to an implication over inputs."""
+    spec_mod = isir.SpecModule(name="bounded")
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+        isir.Interface(name="b", direction="input", data_type="bits<8>"),
+    ]
+    spec_mod.functions.append({
+        "name": "mul_exact",
+        "params": [{"name": "x", "type": "bits<8>"}, {"name": "y", "type": "bits<8>"}],
+        "return": "bits<16>",
+        "body": "(mul x y)",
+    })
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="unsigned_max_bound",
+            kind="combinational",
+            expression={"kind": "combinational", "operand": "(le (mul_exact a b) (mul 255 255))", "reference": "true"},
+            assumes=["(and (le a 255) (le b 255))"],
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "unsigned_max_bound", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    theorem_block = state_text.split("Theorem unsigned_max_bound_proved")[1].split("Admitted.")[0]
+    assert "forall (inputs : inputs)" in theorem_block
+    assert "((a inputs) <= 255) /\\ ((b inputs) <= 255)" in theorem_block
+    assert "->" in theorem_block
+    assert "Nat.leb (mul_exact (a inputs) (b inputs)) (255 * 255)" in theorem_block
+
+
+def test_sum_operator_lowering():
+    """The `sum` operator lowers to a left-associative `+` reduction."""
+    from isir.lowering.isir_to_koika import _expr_to_coq, _type_of_expr
+    e = ["sum", ["mul", "a", "b"], ["mul", "c", "d"], 5]
+    it = {"a": "nat", "b": "nat", "c": "nat", "d": "nat"}
+    out = _expr_to_coq(e, {}, it, [])
+    assert out == "(((a inputs) * (b inputs)) + (((c inputs) * (d inputs)) + 5))"
+    assert _type_of_expr(e, {}, it, []) == "nat"
+    # single-argument sum collapses
+    assert _expr_to_coq(["sum", "a"], {}, it, []) == "(a inputs)"
+
+
+def test_after_k_steps_lowering():
+    """A bounded (`after`) property lowers to a stepn-k theorem over the initial state."""
+    spec_mod = isir.SpecModule(name="bounded")
+    spec_mod.inputs = [
+        isir.Interface(name="inc", direction="input", data_type="bool"),
+    ]
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="count", kind="register", data_type="bits<4>", initial=0)
+    )
+    spec_mod.rule_ops.append(
+        isir.SpecRuleOp(rule_name="inc", condition="true", actions=["(write count (add (read count) 1))"])
+    )
+    spec_mod.property_ops.append(
+        isir.SpecPropertyOp(
+            prop_name="count_nonneg_after_3",
+            kind="bounded",
+            expression={"kind": "after", "bound": 3, "operand": "(ge (read count) 0)"},
+        )
+    )
+    spec_mod.proof_obligations.append({
+        "property": "count_nonneg_after_3", "status": "unproved",
+        "engine": "theorem_proving", "backend": "koika",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Inductive stepn : nat -> state -> state -> Prop :=" in state_text
+    theorem_block = state_text.split("Theorem count_nonneg_after_3_proved")[1].split("Admitted.")[0]
+    assert "forall (s : state), stepn 3 initial_state s ->" in theorem_block
+
+
+def test_gcd_operator_lowering():
+    """The `gcd` operator lowers to Nat.gcd."""
+    from isir.lowering.isir_to_koika import _expr_to_coq, _type_of_expr
+    e = ["gcd", "a", "b"]
+    it = {"a": "nat", "b": "nat"}
+    assert _expr_to_coq(e, {}, it, []) == "(Nat.gcd (a inputs) (b inputs))"
+    assert _type_of_expr(e, {}, it, []) == "nat"
+
+
+def test_recursive_function_lowering():
+    """A recursive function lowers to a structural fuel-based Coq Fixpoint."""
+    spec_mod = isir.SpecModule(name="recfn")
+    spec_mod.inputs = [
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+        isir.Interface(name="b", direction="input", data_type="bits<8>"),
+    ]
+    spec_mod.functions.append({
+        "name": "gcd_sub",
+        "params": [{"name": "a", "type": "bits<8>"}, {"name": "b", "type": "bits<8>"}],
+        "return": "bits<8>",
+        "recursive": True,
+        "measure": "(add a b)",
+        "body": "(ite (eq a 0) b (ite (eq b 0) a (ite (gt a b) (gcd_sub (sub a b) b) (gcd_sub a (sub b a)))))",
+    })
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Fixpoint gcd_sub (fuel : nat) (a : nat) (b : nat) : nat :=" in state_text
+    assert "match fuel with 0 => 0 | S fuel' =>" in state_text
+    # self-call recurses on the fuel predecessor, not a bare `gcd_sub a b`
+    assert "(gcd_sub fuel' (a - b) b)" in state_text
+    # function params must NOT be lowered as inputs (no `(a inputs)` in the body)
+    assert "(a inputs)" not in state_text
+
+
+def test_prev_operator_in_transition():
+    """`prev` in a per-rule transition references the old state."""
+    from isir.lowering.isir_to_koika import _expr_to_coq
+    e = ["eq", ["read", "count"], ["add", ["prev", "count"], 1]]
+    it = {"inc": "bool"}
+    st = {"count": "nat"}
+    out = _expr_to_coq(e, st, it, [], as_prop=True, state_var="(mkState 0)", prev_state_var="s")
+    assert "(count (mkState 0))" in out
+    assert "(count s)" in out
+
+
+def test_invariants_section_lowering():
+    """A user-declared invariant lowers to Lemma + Hint Resolve over reachable states."""
+    spec_mod = isir.SpecModule(name="inv")
+    spec_mod.inputs = [isir.Interface(name="inc", direction="input", data_type="bool")]
+    spec_mod.state_ops.append(isir.SpecStateOp(state_name="count", kind="register", data_type="bits<4>", initial=0))
+    spec_mod.rule_ops.append(isir.SpecRuleOp(rule_name="inc", condition="(and inc (lt (read count) 15))", actions=["(write count (add (read count) 1))"]))
+    spec_mod.invariants.append({"name": "count_le_15", "operand": "(le (read count) 15)"})
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    assert "Lemma count_le_15 : forall s, reachable s -> ((count s) <= 15)." in state_text
+    assert "Hint Resolve count_le_15 : core." in state_text
+    assert "Hint Constructors reachable step : core." in state_text

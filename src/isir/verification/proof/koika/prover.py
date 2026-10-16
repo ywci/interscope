@@ -51,13 +51,17 @@ logger = get_logger(__name__)
 RECURSIVE_SKELETON_LTAC = r"""
 Opaque Nat.modulo Nat.divmod.
 Opaque slice.
+Opaque Nat.mul.
+Opaque Nat.leb Nat.ltb.
 Hint Resolve eq_refl : core.
 
 Ltac skel_close :=
   simpl; first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
                | solve [congruence] | solve [contradiction] | solve [tauto]
-               | solve [btauto] | solve [lia] | solve [nia] | solve [auto]
-               | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ] ].
+               | solve [btauto] | solve [lia] | solve [nia] | solve [auto] | solve [eauto]
+               | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ]
+               | solve [ apply Nat.leb_le; auto ]
+               | solve [ match goal with [ |- context[slice ?x ?h ?l] ] => pose proof (slice_upper_bound x h l) end; simpl in *; lia ] ].
 
 Ltac skel n :=
   match n with
@@ -66,9 +70,13 @@ Ltac skel n :=
       first [ solve [ eapply (Nat.mod_bound_pos _ _); lia ]
             | skel_close
             | progress intros; skel m
+            | progress (match goal with [ H : _ /\ _ |- _ ] => destruct H end); skel m
             | progress (match goal with [ |- context[if negb ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
             | progress (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
-            | progress (match goal with [ H : step _ _ _ |- _ ] => inversion H; subst; clear H; simpl end); skel m
+            | progress (match goal with [ H : step _ ?ins _ |- _ ] =>
+                  try (pose proof (assume_inputs ins) as Hin);
+                  inversion H; subst; clear H; simpl end); skel m
+            | progress (match goal with [ H : stepn _ _ _ |- _ ] => inversion H; subst; clear H; simpl end); skel m
             | progress (match goal with [ H : ?P, IH : ?P -> ?Q |- _ ] => specialize (IH H) end); skel m
             | progress (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end); skel m
             | progress (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end); skel m
@@ -136,6 +144,7 @@ class KoikaProver:
         self.skeleton_step_tactics: List[str] = prove_cfg.get("skeleton_step_tactics", [])
 
         self.max_repair = config.get("proof", {}).get("max_repair_attempts", 5)
+        self.max_bmc_depth = config.get("proof", {}).get("invariant_bmc_depth", 3)
         self.coqc_path = shutil.which("coqc") or "coqc"
         self.use_proof_library = config.get("provers", {}).get("koika", {}).get(
             "use_proof_library", True
@@ -556,6 +565,9 @@ class KoikaProver:
         # Inject standard prelude before anything else (safe).
         self._ensure_prelude(coq_file)
 
+        # Prove user-declared loop invariants first so properties can use them.
+        self._prove_invariant_lemmas(coq_file)
+
         hints = structural_hints or self.structural_hints
         if hints:
             logger.debug("Structural hints: %s", hints)
@@ -635,6 +647,20 @@ class KoikaProver:
             )
 
         # 5. LLM full-proof generation (with structural hints, coqc validation)
+        #    First, try LLM-proposed loop invariants to unblock the skeleton.
+        proposed = self._propose_invariants(coq_file, theorem_name)
+        if proposed:
+            recursive = self._recursive_skeleton_proof(coq_file, theorem_name)
+            if recursive is not None:
+                duration = time.time() - start_time
+                return ProofResult(
+                    success=True,
+                    proof_script=recursive,
+                    duration=duration,
+                    backend="koika",
+                    metadata={"automation": "llm_invariant"}
+                )
+
         proof_script = self._attempt_llm_proof_generation(
             coq_file, theorem_name, structural_hints=hints, initial_script=initial_script
         )
@@ -1545,7 +1571,7 @@ class KoikaProver:
 
     def _theorem_is_closed(self, content: str, theorem_name: str) -> bool:
         pattern = re.compile(
-            rf"Theorem\s+{re.escape(theorem_name)}\s+.*?Qed\.", re.DOTALL
+            rf"(?:Theorem|Lemma)\s+{re.escape(theorem_name)}\s+.*?Qed\.", re.DOTALL
         )
         match = pattern.search(content)
         if not match:
@@ -1701,7 +1727,7 @@ class KoikaProver:
             return None
 
         theorem_pattern = re.compile(
-            rf"Theorem\s+{re.escape(theorem_name)}\s+.*?Admitted\.", re.DOTALL
+            rf"(?:Theorem|Lemma)\s+{re.escape(theorem_name)}\s+.*?Admitted\.", re.DOTALL
         )
         match = theorem_pattern.search(original)
         if not match:
@@ -1760,9 +1786,11 @@ class KoikaProver:
             new_block = match.group(0).replace("Admitted.", proof)
             new_content = original.replace(match.group(0), new_block, 1)
             if "Ltac skel_close" not in new_content:
+                # Inject after `step`/`reachable` (needed by skel) but before the
+                # invariant lemmas and properties that use it.
                 new_content = new_content.replace(
-                    "(* PERF_Obligation",
-                    RECURSIVE_SKELETON_LTAC + "(* PERF_Obligation",
+                    "Hint Constructors reachable step : core.",
+                    "Hint Constructors reachable step : core.\n\n" + RECURSIVE_SKELETON_LTAC,
                     1,
                 )
             try:
@@ -1782,6 +1810,330 @@ class KoikaProver:
             pass
         logger.info("Recursive skeleton proof did not close '%s'.", theorem_name)
         return None
+
+    def _prove_invariant_lemmas(self, coq_file: Path) -> None:
+        """Prove every user-declared loop invariant (Lemma ... Admitted.) first.
+
+        Invariants are ordinary `forall s, reachable s -> P s` statements, so
+        the generic reachability-induction body closes them.  They are then
+        available via `Hint Resolve` for the properties that use them.
+        """
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return
+        names = re.findall(r"Lemma\s+(\w+)\s+:\s+forall s,\s+reachable s\s*->", content)
+        for name in names:
+            self._recursive_skeleton_proof(coq_file, name, max_depth=60)
+
+    def _propose_invariants(self, coq_file: Path, theorem_name: str) -> List[str]:
+        """Ask the LLM to propose loop invariants for a stuck theorem.
+
+        Each proposed ``Lemma name : forall s, reachable s -> P s.`` is injected
+        (Admitted) and proven by the deterministic skeleton; only the ones that
+        actually close (Qed.) are kept as ``Hint Resolve`` hints.  Returns the
+        names of the proven invariants.
+        """
+        if self.llm is None:
+            return []
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return []
+
+        thm = re.search(
+            rf"(?:Theorem|Lemma)\s+{re.escape(theorem_name)}\s+.*?Admitted\.", content, re.DOTALL
+        )
+        if not thm:
+            return []
+        statement = thm.group(0)
+        context = content[:thm.start()]
+
+        # Constraint extraction: find the target function and its initial
+        # registers in the theorem's conclusion, to seed a preservation template.
+        seed = self._extract_preservation_seed(statement)
+
+        prompt = (
+            "You are proving Coq theorems about a hardware design formalized as a "
+            "small-step semantics (`step : state -> inputs -> state -> Prop`) with "
+            "a reachability predicate `reachable : state -> Prop`. A theorem is "
+            "stuck and needs *loop invariants*: state properties P such that "
+            "`forall s, reachable s -> P s` holds inductively.\n\n"
+            "The design (state record, functions, step constructors, and "
+            "reachable) is defined in this Coq context:\n\n"
+            f"```coq\n{context}\n```\n\n"
+            "The stuck theorem is:\n\n"
+            f"```coq\n{statement}\n```\n\n"
+        )
+        if seed is not None:
+            fn, inits = seed
+            init_args = " ".join(f"({r} s)" for r in inits)
+            prompt += (
+                f"The theorem's result is computed by the function `{fn}` from the "
+                f"latched initial registers {inits}.  Therefore, propose a "
+                f"*preservation* invariant of the form:\n\n"
+                f"Lemma <name> : forall s, reachable s -> {fn} (w1 s) (w2 s) = {fn} {init_args}.\n\n"
+                f"where `w1`, `w2` are the *working* registers that the rules "
+                f"transform until `done` (find them from the step constructors).\n\n"
+            )
+        prompt += (
+            "Propose loop invariants that would help prove this theorem.  Return "
+            "ONLY the invariant lemmas, one per line, in this exact form:\n\n"
+            "Lemma <name> : forall s, reachable s -> <proposition over the state>.\n\n"
+            "Use the state projections as in the context (e.g. `(count s)`, "
+            "`Nat.gcd (a s) (b s)`).  Do not include proofs, comments, or any "
+            "other text."
+        )
+
+        workspace = self._workspace_for(coq_file)
+        error_feedback = ""
+        for attempt in range(self.max_repair):
+            final_prompt = prompt
+            if error_feedback:
+                final_prompt = (
+                    prompt
+                    + f"\n\nYour previous proposal failed to type-check:\n{error_feedback}\n"
+                    + "Fix the type/scope errors and re-propose ONLY the corrected lemmas."
+                )
+            try:
+                response = self.llm.generate(final_prompt)
+            except Exception as e:
+                logger.warning("LLM invariant proposal failed for '%s': %s", theorem_name, e)
+                return []
+
+            proven = []
+            type_errors = []
+            for line in response.splitlines():
+                line = line.strip().rstrip(".")
+                m = re.match(
+                    r"Lemma\s+(\w+)\s*:\s*forall\s+s\s*,\s*reachable\s+s\s*->\s*(.+)$",
+                    line,
+                )
+                if not m:
+                    continue
+                name, operand = m.group(1), m.group(2).strip()
+                # Guard against the LLM echoing `Admitted.` or a proof.
+                if "Admitted" in operand or "Proof" in operand:
+                    continue
+                self._inject_invariant(coq_file, name, operand)
+                # 0. type-check: reject ill-typed proposals (feed back for repair).
+                if not self._compile_with_coqc(coq_file, workspace):
+                    err = self._capture_coqc_error(coq_file, workspace)
+                    type_errors.append((name, err))
+                    self._remove_invariant(coq_file, name)
+                    continue
+                # 1. BMC base-case filter: reject invariants false at initial_state.
+                if not self._invariant_base_case_holds(coq_file, name, operand):
+                    logger.info("Rejected invariant '%s': false at initial_state.", name)
+                    self._remove_invariant(coq_file, name)
+                    continue
+                # 2. BMC depth-1 filter: reject invariants broken by a single rule.
+                failing_rules = self._invariant_step_feedback(coq_file, name, operand)
+                if failing_rules:
+                    logger.info(
+                        "Rejected invariant '%s': broken by rules %s.", name, failing_rules
+                    )
+                    self._remove_invariant(coq_file, name)
+                    continue
+                # 2b. BMC depth-k filter (symbolic, via stepn): reject invariants
+                # that hold initially and for one step but fail after k steps.
+                rejected_depth = None
+                for d in range(2, self.max_bmc_depth + 1):
+                    if not self._invariant_depth_holds(coq_file, name, operand, d):
+                        rejected_depth = d
+                        break
+                if rejected_depth is not None:
+                    logger.info(
+                        "Rejected invariant '%s': false after %d steps.", name, rejected_depth
+                    )
+                    self._remove_invariant(coq_file, name)
+                    continue
+                # 3. full induction proof.
+                if self._recursive_skeleton_proof(coq_file, name, max_depth=60) is not None:
+                    proven.append(name)
+                    logger.info("LLM-proposed invariant '%s' proven for '%s'.", name, theorem_name)
+                else:
+                    self._remove_invariant(coq_file, name)
+
+            if proven:
+                return proven
+            if type_errors:
+                error_feedback = type_errors[-1][1]
+                logger.info("Retrying invariant proposal after type errors (attempt %d).", attempt + 1)
+                continue
+            return []
+
+        return []
+
+    def _extract_preservation_seed(self, statement: str) -> Optional[Tuple[str, List[str]]]:
+        """Extract (function, initial-registers) from a theorem's conclusion.
+
+        Finds a function applied to state projections ``F (x s) (y s)`` (the
+        usual shape of a result ``= F(init...)``) and returns ``F`` plus the
+        register names, for seeding a preservation-template prompt.
+        """
+        m = re.search(
+            r"([A-Za-z_][\w.]*)\s*\(\s*(\w+)\s+s\s*\)\s*\(\s*(\w+)\s+s\s*\)",
+            statement,
+        )
+        if m:
+            return m.group(1), [m.group(2), m.group(3)]
+        m = re.search(r"([A-Za-z_][\w.]*)\s*\(\s*(\w+)\s+s\s*\)", statement)
+        if m:
+            return m.group(1), [m.group(2)]
+        return None
+
+    def _invariant_base_case_holds(self, coq_file: Path, name: str, operand: str) -> bool:
+        """BMC pre-filter: does the invariant hold at the initial state?
+
+        Substitutes `initial_state` for the state variable and evaluates the
+        resulting closed proposition with `vm_compute`.  Returns False when the
+        base case is refutable (a concrete counterexample).
+        """
+        p_initial = re.sub(r"\((\w+)\s+s\)", r"(\1 initial_state)", operand)
+        check = (
+            f"\nLemma {name}__base : {p_initial}.\n"
+            f"Proof. simpl. first [ reflexivity | lia ]. Qed.\n"
+        )
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return False
+        tmp_file = coq_file.with_name(coq_file.stem + "_basecheck.v")
+        try:
+            tmp_file.write_text(content + "\n" + check, encoding="utf-8")
+        except Exception:
+            return False
+        workspace = self._workspace_for(coq_file)
+        ok = self._compile_with_coqc(tmp_file, workspace)
+        try:
+            tmp_file.unlink()
+        except Exception:
+            pass
+        return ok
+
+    def _invariant_step_feedback(self, coq_file: Path, name: str, operand: str) -> List[str]:
+        """BMC depth-1 filter: which rules break the invariant in a single step?
+
+        For each ``step_R : forall s inputs, cond -> step s inputs (next)`` it
+        checks ``cond -> P(next)`` with the skeleton.  Returns the rule names
+        whose single-step case fails (a concrete counterexample after one step).
+        """
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return []
+
+        ctor_pattern = re.compile(
+            r"\| (step_\w+) : forall s inputs,\s*(.*?)\s*->\s*step s inputs \((.*?)\)\n",
+            re.DOTALL,
+        )
+        failing = []
+        for m in ctor_pattern.finditer(content):
+            rule, cond, new_state = m.group(1), m.group(2).strip(), m.group(3).strip()
+            p_next = re.sub(
+                r"\((\w+)\s+s\)",
+                lambda mm: f"({mm.group(1)} ({new_state}))",
+                operand,
+            )
+            check_name = f"{name}__step_{rule}"
+            self._inject_check_lemma(coq_file, check_name, cond, p_next)
+            ok = self._recursive_skeleton_proof(coq_file, check_name, max_depth=40) is not None
+            self._remove_check_lemma(coq_file, check_name)
+            if not ok:
+                failing.append(rule)
+        return failing
+
+    def _invariant_depth_holds(self, coq_file: Path, name: str, operand: str, depth: int) -> bool:
+        """BMC depth-k filter: does P hold for every state reachable in exactly `depth` steps?
+
+        Uses the `stepn` relation symbolically (no input enumeration): the check
+        ``forall s, stepn depth initial_state s -> P s`` is proven by the
+        skeleton's `stepn` inversion.  Returns False when a depth-`depth`
+        counterexample exists.
+        """
+        check_name = f"{name}__depth_{depth}"
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return True
+        block = (
+            f"\nLemma {check_name} : forall (s : state), stepn {depth} initial_state s -> {operand}.\n"
+            f"Admitted.\n"
+        )
+        try:
+            coq_file.write_text(content + "\n" + block, encoding="utf-8")
+        except Exception:
+            return True
+        ok = self._recursive_skeleton_proof(coq_file, check_name, max_depth=60) is not None
+        self._remove_check_lemma(coq_file, check_name)
+        return ok
+
+    def _inject_check_lemma(self, coq_file: Path, name: str, cond: str, p_next: str) -> None:
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return
+        block = (
+            f"\nLemma {name} : forall (s : state) (inputs : inputs), {cond} -> {p_next}.\n"
+            f"Admitted.\n"
+        )
+        try:
+            coq_file.write_text(content + "\n" + block, encoding="utf-8")
+        except Exception:
+            pass
+
+    def _remove_check_lemma(self, coq_file: Path, name: str) -> None:
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return
+        content = re.sub(
+            rf"Lemma\s+{re.escape(name)}\s+.*?Admitted\.\n?",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        try:
+            coq_file.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
+
+    def _inject_invariant(self, coq_file: Path, name: str, operand: str) -> None:
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return
+        block = (
+            f"Lemma {name} : forall s, reachable s -> {operand}.\n"
+            f"Admitted.\n"
+            f"Hint Resolve {name} : core.\n"
+        )
+        marker = "Hint Constructors reachable step : core."
+        if marker in content:
+            content = content.replace(marker, marker + "\n\n" + block, 1)
+        else:
+            content = block + "\n" + content
+        try:
+            coq_file.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
+
+    def _remove_invariant(self, coq_file: Path, name: str) -> None:
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return
+        content = re.sub(
+            rf"Lemma\s+{re.escape(name)}\s+:.*?Hint Resolve {re.escape(name)} : core\.\n?",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        try:
+            coq_file.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
 
     def prove_with_skeleton_only(self, coq_file: Path, theorem_name: str) -> Optional[Dict[str, Any]]:
         # 1. Deterministic recursive skeleton (no LLM, no rocq-mcp).

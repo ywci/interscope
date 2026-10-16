@@ -42,6 +42,28 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
         fairness=_convert_fairness(getattr(ast_module, 'fairness', []))
     )
 
+    # Uninterpreted functions and axioms (lowered to Coq Parameter/Axiom)
+    for f in getattr(ast_module, 'functions', []):
+        spec_mod.functions.append({
+            'name': f.name,
+            'params': [{'name': p.name, 'type': p.type} for p in getattr(f, 'params', [])],
+            'return': f.return_type,
+            'body': getattr(f, 'body', None),
+            'recursive': bool(getattr(f, 'recursive', False)),
+            'measure': getattr(f, 'measure', None),
+        })
+    for a in getattr(ast_module, 'axioms', []):
+        spec_mod.axioms.append({
+            'name': a.name,
+            'forall': [{'name': v.name, 'type': v.type} for v in getattr(a, 'forall_vars', [])],
+            'statement': a.statement,
+        })
+    for inv in getattr(ast_module, 'invariants', []):
+        spec_mod.invariants.append({
+            'name': inv.name,
+            'operand': inv.operand,
+        })
+
     # State elements
     for state in getattr(ast_module, 'state', []):
         spec_mod.state_ops.append(SpecStateOp(
@@ -75,7 +97,8 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
                 'right': getattr(expr, 'right', None),
                 'bound': getattr(expr, 'bound', None),
                 'reference': getattr(expr, 'reference', None),
-                'independent_of': getattr(expr, 'independent_of', None)
+                'independent_of': getattr(expr, 'independent_of', None),
+                'rule': getattr(expr, 'rule', None)
             },
             assumes=prop.assumes,
             guarantees=prop.guarantees

@@ -46,6 +46,13 @@ module:
       expression:
         kind: always
         operand: (implies (not (eq (read count) 15)) (not (read overflow_flag)))
+    - name: count_increments
+      kind: transition
+      expression:
+        kind: transition
+        rule: increment
+        operand: (and (eq (read count) (add (prev count) 1))
+                      (eq (read overflow_flag) (eq (prev count) 15)))
   proof_obligations:
     - property: counter_bound
       status: unproved
@@ -55,6 +62,10 @@ module:
       status: unproved
       engine: theorem_proving
       backend: acl2
+    - property: count_increments
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: counter_bound
       engine: model_checking
     - property: no_overflow_when_not_full

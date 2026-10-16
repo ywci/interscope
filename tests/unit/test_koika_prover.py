@@ -385,3 +385,166 @@ class TestRepair:
         )
         assert success is False
         assert repaired == "Proof. auto. Qed."
+
+
+def test_propose_invariants_mechanism(tmp_path):
+    """LLM-proposed invariants are injected, proven, and returned."""
+    from pathlib import Path
+    from isir.parser.parser import parse_isir
+    from isir.lowering.ast_to_isir import convert_ast_to_isir_module
+    from isir.lowering.isir_to_koika import convert as kconvert
+    from isir.verification.proof.koika.prover import KoikaProver
+
+    class MockLLM:
+        def __init__(self, resp):
+            self.resp = resp
+        def generate(self, prompt):
+            return self.resp
+
+    isir_src = '''
+isir_version: "0.1"
+module:
+  name: inv_test
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: inc, direction: input, type: "bool"}]
+  state: [{name: count, kind: register, type: "bits<4>", initial: 0}]
+  rules:
+    - name: increment
+      condition: (and inc (lt (read count) 15))
+      action: [(write count (add (read count) 1))]
+  properties:
+    - name: count_le_15_prop
+      kind: safety
+      expression: {kind: always, operand: (le (read count) 15)}
+  proof_obligations:
+    - {property: count_le_15_prop, status: unproved, engine: theorem_proving, backend: koika}
+'''
+    isir_file = tmp_path / "inv_test.isir"
+    isir_file.write_text(isir_src)
+    m = convert_ast_to_isir_module(parse_isir(isir_file).module)
+    km = kconvert(m)
+    coq_file = tmp_path / "inv_test.v"
+    coq_file.write_text("\n".join(km.state_definitions))
+
+    prover = KoikaProver(config={"proof": {}, "provider": "deepseek", "model": "deepseek-chat"})
+    prover.llm = MockLLM("Lemma count_le_15 : forall s, reachable s -> (count s) <= 15.")
+    try:
+        proven = prover._propose_invariants(coq_file, "count_le_15_prop_proved")
+        assert proven == ["count_le_15"]
+        content = coq_file.read_text()
+        assert "Lemma count_le_15 : forall s, reachable s -> (count s) <= 15." in content
+        assert "Hint Resolve count_le_15 : core." in content
+    finally:
+        prover.close()
+
+
+def test_propose_invariants_rejects_false_base_case(tmp_path):
+    """A false invariant (violated at initial_state) is rejected before proving."""
+    from pathlib import Path
+    from isir.parser.parser import parse_isir
+    from isir.lowering.ast_to_isir import convert_ast_to_isir_module
+    from isir.lowering.isir_to_koika import convert as kconvert
+    from isir.verification.proof.koika.prover import KoikaProver
+
+    class MockLLM:
+        def __init__(self, resp):
+            self.resp = resp
+        def generate(self, prompt):
+            return self.resp
+
+    isir_src = '''
+isir_version: "0.1"
+module:
+  name: inv_test
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: inc, direction: input, type: "bool"}]
+  state: [{name: count, kind: register, type: "bits<4>", initial: 0}]
+  rules:
+    - name: increment
+      condition: (and inc (lt (read count) 15))
+      action: [(write count (add (read count) 1))]
+  properties:
+    - name: count_le_15_prop
+      kind: safety
+      expression: {kind: always, operand: (le (read count) 15)}
+  proof_obligations:
+    - {property: count_le_15_prop, status: unproved, engine: theorem_proving, backend: koika}
+'''
+    isir_file = tmp_path / "inv_test.isir"
+    isir_file.write_text(isir_src)
+    m = convert_ast_to_isir_module(parse_isir(isir_file).module)
+    km = kconvert(m)
+    coq_file = tmp_path / "inv_test.v"
+    coq_file.write_text("\n".join(km.state_definitions))
+
+    prover = KoikaProver(config={"proof": {}, "provider": "deepseek", "model": "deepseek-chat"})
+    prover.llm = MockLLM("Lemma count_eq_15 : forall s, reachable s -> (count s) = 15.")
+    try:
+        proven = prover._propose_invariants(coq_file, "count_le_15_prop_proved")
+        assert proven == []  # rejected (0 = 15 is false)
+    finally:
+        prover.close()
+
+
+def test_propose_invariants_rejects_false_after_step(tmp_path):
+    """An invariant true at initial_state but false after one step is rejected."""
+    from pathlib import Path
+    from isir.parser.parser import parse_isir
+    from isir.lowering.ast_to_isir import convert_ast_to_isir_module
+    from isir.lowering.isir_to_koika import convert as kconvert
+    from isir.verification.proof.koika.prover import KoikaProver
+
+    class MockLLM:
+        def __init__(self, resp):
+            self.resp = resp
+        def generate(self, prompt):
+            return self.resp
+
+    isir_src = '''
+isir_version: "0.1"
+module:
+  name: inv_test
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: inc, direction: input, type: "bool"}]
+  state: [{name: count, kind: register, type: "bits<4>", initial: 0}]
+  rules:
+    - name: increment
+      condition: (and inc (lt (read count) 15))
+      action: [(write count (add (read count) 1))]
+  properties:
+    - name: count_le_15_prop
+      kind: safety
+      expression: {kind: always, operand: (le (read count) 15)}
+  proof_obligations:
+    - {property: count_le_15_prop, status: unproved, engine: theorem_proving, backend: koika}
+'''
+    isir_file = tmp_path / "inv_test.isir"
+    isir_file.write_text(isir_src)
+    m = convert_ast_to_isir_module(parse_isir(isir_file).module)
+    km = kconvert(m)
+    coq_file = tmp_path / "inv_test.v"
+    coq_file.write_text("\n".join(km.state_definitions))
+
+    prover = KoikaProver(config={"proof": {}, "provider": "deepseek", "model": "deepseek-chat"})
+    prover.llm = MockLLM("Lemma count_eq_0 : forall s, reachable s -> (count s) = 0.")
+    try:
+        proven = prover._propose_invariants(coq_file, "count_le_15_prop_proved")
+        assert proven == []  # true at initial (0=0) but false after increment (1=0)
+    finally:
+        prover.close()
+
+
+def test_extract_preservation_seed():
+    """Constraint extraction finds the target function and initial registers."""
+    from isir.verification.proof.koika.prover import KoikaProver
+    prover = KoikaProver(config={"proof": {}, "provider": "deepseek", "model": "deepseek-chat"})
+    try:
+        st = "Theorem x : forall (s : state) (inputs : inputs), reachable s -> ((done s) = true -> (result s) = Nat.gcd (x0 s) (y0 s)). Admitted."
+        assert prover._extract_preservation_seed(st) == ("Nat.gcd", ["x0", "y0"])
+        st2 = "Theorem x : forall (s : state) (inputs : inputs), reachable s -> ((count s) <= 15). Admitted."
+        assert prover._extract_preservation_seed(st2) is None
+    finally:
+        prover.close()

@@ -48,6 +48,39 @@ class Parameter:
 
 
 @dataclass
+class FunctionParam:
+    """A named, typed parameter of a function/axiom binder."""
+    name: str
+    type: str
+
+
+@dataclass
+class Function:
+    """A function declaration (uninterpreted if `body` is None, else defined)."""
+    name: str
+    params: List[FunctionParam] = field(default_factory=list)
+    return_type: str = "bits<1>"
+    body: Optional[Union[str, List]] = None
+    recursive: bool = False  # lower to Coq Fixpoint instead of Definition
+    measure: Optional[Union[str, List]] = None  # well-founded measure for Program Fixpoint
+
+
+@dataclass
+class Axiom:
+    """An assumed law (forall statement) over functions."""
+    name: str
+    forall_vars: List[FunctionParam] = field(default_factory=list)
+    statement: Union[str, List] = "true"
+
+
+@dataclass
+class Invariant:
+    """A user-declared loop invariant (state property proven by induction)."""
+    name: str
+    operand: Union[str, List] = "true"
+
+
+@dataclass
 class Clock:
     """Clock definition."""
     name: str
@@ -135,6 +168,7 @@ class TemporalExpr:
     bound: Optional[int] = None
     reference: Optional[Union[str, List]] = None  # golden reference for combinational equivalence
     independent_of: Optional[List[str]] = None  # inputs the operand is independent of (independence)
+    rule: Optional[str] = None  # scope a transition property to a specific rule
 
 
 @dataclass
@@ -322,6 +356,9 @@ class Module:
     rules: List[Rule] = field(default_factory=list)
     directives: List[Directive] = field(default_factory=list)
     properties: List[Property] = field(default_factory=list)
+    functions: List[Function] = field(default_factory=list)
+    axioms: List[Axiom] = field(default_factory=list)
+    invariants: List[Invariant] = field(default_factory=list)
     schedule: Optional[Schedule] = None
     fairness: List[Fairness] = field(default_factory=list)
     proof_obligations: List[ProofObligation] = field(default_factory=list)
