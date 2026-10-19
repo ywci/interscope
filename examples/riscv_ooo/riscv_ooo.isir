@@ -1,0 +1,239 @@
+isir_version: "0.1"
+module:
+  name: riscv_ooo
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: instr
+      direction: input
+      type: "bits<32>"
+  outputs:
+    - name: result
+      direction: output
+      type: "bits<32>"
+  state:
+    # Reorder buffer (2 entries): instruction + valid + done flags.
+    - name: rob0_instr
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: rob0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rob0_done
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rob1_instr
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: rob1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rob1_done
+      kind: register
+      type: "bool"
+      initial: false
+    # head/tail pointers (false = entry 0, true = entry 1).
+    - name: head
+      kind: register
+      type: "bool"
+      initial: false
+    - name: tail
+      kind: register
+      type: "bool"
+      initial: false
+    # Committed architectural result + PC.
+    - name: arch
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: PC
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    # Branch prediction unit: 2-bit counter + flush flag.
+    - name: ctr
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: flush
+      kind: register
+      type: "bool"
+      initial: false
+
+  functions:
+    - name: is_branch
+      params: [{name: i, type: "bits<32>"}]
+      return: "bool"
+      body: (eq (slice i 6 0) 0b1100011)
+    - name: branch_target
+      params: [{name: i, type: "bits<32>"}, {name: pc, type: "bits<32>"}]
+      return: "bits<32>"
+      body: (add pc (mul (slice i 31 20) 4))
+    - name: predict_taken
+      params: [{name: i, type: "bits<32>"}, {name: c, type: "bits<2>"}]
+      return: "bool"
+      body: (ge c 2)
+    - name: actual_taken
+      params: [{name: i, type: "bits<32>"}]
+      return: "bool"
+      body: (eq (slice i 14 12) 0)
+    - name: mispredicted
+      params: [{name: i, type: "bits<32>"}, {name: c, type: "bits<2>"}]
+      return: "bool"
+      body: (and (is_branch i) (neq (predict_taken i c) (actual_taken i)))
+
+  rules:
+    # Issue: allocate a free ROB entry and let the BPU redirect the PC.
+    - name: issue0
+      condition: (and (not (read tail)) (not (read flush)))
+      action:
+        - (write rob0_instr (read instr))
+        - (write rob0_valid true)
+        - (write rob0_done false)
+        - (write tail true)
+        - (write PC
+            (ite (and (is_branch (read instr)) (predict_taken (read instr) (read ctr)))
+                 (branch_target (read instr) (read PC))
+                 (add (read PC) 4)))
+    - name: issue1
+      condition: (and (read tail) (not (read flush)))
+      action:
+        - (write rob1_instr (read instr))
+        - (write rob1_valid true)
+        - (write rob1_done false)
+        - (write tail false)
+        - (write PC
+            (ite (and (is_branch (read instr)) (predict_taken (read instr) (read ctr)))
+                 (branch_target (read instr) (read PC))
+                 (add (read PC) 4)))
+
+    # Execute: either ROB entry can complete first (out-of-order).
+    - name: exec0
+      condition: (and (read rob0_valid) (not (read rob0_done)))
+      action:
+        - (write rob0_done true)
+    - name: exec1
+      condition: (and (read rob1_valid) (not (read rob1_done)))
+      action:
+        - (write rob1_done true)
+
+    # Commit: retire the head entry in-order, detect misprediction, update ctr.
+    - name: commit0
+      condition: (and (and (not (read head)) (read rob0_valid)) (read rob0_done))
+      action:
+        - (write arch (read rob0_instr))
+        - (write rob0_valid false)
+        - (write head true)
+        - (write flush (mispredicted (read rob0_instr) (read ctr)))
+        - (write ctr
+            (ite (is_branch (read rob0_instr))
+                 (ite (lt (read ctr) 3) (add (read ctr) 1) (read ctr))
+                 (read ctr)))
+    - name: commit1
+      condition: (and (and (read head) (read rob1_valid)) (read rob1_done))
+      action:
+        - (write arch (read rob1_instr))
+        - (write rob1_valid false)
+        - (write head false)
+        - (write flush (mispredicted (read rob1_instr) (read ctr)))
+        - (write ctr
+            (ite (is_branch (read rob1_instr))
+                 (ite (lt (read ctr) 3) (add (read ctr) 1) (read ctr))
+                 (read ctr)))
+
+    # Flush recovery: on a flush, clear the younger (non-head) ROB entry.
+    - name: recover
+      condition: (read flush)
+      action:
+        - (write flush false)
+        - (write rob1_valid false)
+        - (write rob0_valid (ite (read head) (read rob0_valid) false))
+
+  properties:
+    # --- structural: pointers and flags are well-typed ---
+    - name: head_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read head) true) (eq (read head) false))
+    - name: tail_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read tail) true) (eq (read tail) false))
+    - name: ctr_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read ctr) 3)
+
+    # --- out-of-order execution: exec1 completes regardless of rob0 ---
+    - name: exec1_independent
+      kind: transition
+      expression:
+        kind: transition
+        rule: exec1
+        operand: (eq (read rob1_done) true)
+
+    # --- in-order retirement: commit1 only fires when the head is entry 1 ---
+    - name: commit_in_order
+      kind: transition
+      expression:
+        kind: transition
+        rule: commit1
+        operand: (eq (prev head) true)
+
+    # --- branch prediction unit ---
+    - name: branch_detected
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (is_branch instr)
+        reference: (eq (slice instr 6 0) 0b1100011)
+    - name: flush_detected
+      kind: transition
+      expression:
+        kind: transition
+        rule: commit0
+        operand: (eq (read flush) (mispredicted (prev rob0_instr) (prev ctr)))
+
+  proof_obligations:
+    - property: head_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: tail_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: ctr_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: exec1_independent
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: commit_in_order
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: branch_detected
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: flush_detected
+      status: unproved
+      engine: theorem_proving
+      backend: koika

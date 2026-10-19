@@ -130,7 +130,12 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
             _expr_to_coq(a, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
             for a in args
         ]
-        return f"({op} " + " ".join(coq_args) + ")"
+        result = f"({op} " + " ".join(coq_args) + ")"
+        # A bool-returning function used as a proposition must be reflected to
+        # a Coq Prop via `= true`.
+        if as_prop and function_types.get(op) == "bool":
+            return f"({result} = true)"
+        return result
 
     # Arithmetic
     if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd'):
@@ -414,7 +419,10 @@ def _build_sequential_step(ordered_rules, registers, memories, state_types, inpu
                 cond_parsed = parse_sexpr(rule.condition)
                 cond_str = _expr_to_coq(cond_parsed, state_types, input_types, memory_names, as_prop=True, state_var=current_var, function_types=function_types)
             except ExprError as e:
-                logger.warning(f"Rule '{rule.rule_name}' condition parse error: {e}. Using 'True'.")
+                raise ExprError(
+                    f"Rule '{rule.rule_name}' has an invalid condition "
+                    f"{rule.condition!r}: {e}"
+                ) from e
         if cond_str != "True":
             conds.append(cond_str)
         updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var=current_var, function_types=function_types)
@@ -658,6 +666,52 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
     state_defs.append("  reflexivity.")
     state_defs.append("Qed.")
     state_defs.append("")
+    state_defs.append("(* Utility: adding a multiple of 4 does not change the value modulo 4 *)")
+    state_defs.append("Lemma add_mul4_mod4 (x y : nat) : (x + y * 4) mod 4 = x mod 4.")
+    state_defs.append("Proof.")
+    state_defs.append("  rewrite Nat.add_mod by lia.")
+    state_defs.append("  rewrite (Nat.mod_mul y 4) by lia.")
+    state_defs.append("  rewrite Nat.add_0_r.")
+    state_defs.append("  rewrite (Nat.mod_mod x 4) by lia.")
+    state_defs.append("  reflexivity.")
+    state_defs.append("Qed.")
+    state_defs.append("")
+    state_defs.append("(* MMU: 12-bit page offset and 20-bit page number slices *)")
+    state_defs.append("Lemma slice_low12 (x : nat) : slice x 11 0 = x mod 4096.")
+    state_defs.append("Proof.")
+    state_defs.append("  unfold slice; rewrite Nat.div_1_r.")
+    state_defs.append("  change (2 ^ (11 - 0 + 1)) with 4096; reflexivity.")
+    state_defs.append("Qed.")
+    state_defs.append("")
+    state_defs.append("Lemma slice_hi12 (x : nat) : slice x 31 12 = (x / 4096) mod (2 ^ 20).")
+    state_defs.append("Proof.")
+    state_defs.append("  unfold slice; reflexivity.")
+    state_defs.append("Qed.")
+    state_defs.append("")
+    state_defs.append("(* MMU: translation preserves the offset and truncates the page number *)")
+    state_defs.append("Lemma mmu_offset_preserved (va ppn : nat) : slice (ppn * 4096 + slice va 11 0) 11 0 = slice va 11 0.")
+    state_defs.append("Proof.")
+    state_defs.append("  intros; rewrite !slice_low12.")
+    state_defs.append("  rewrite Nat.add_mod by lia.")
+    state_defs.append("  rewrite (Nat.mod_mul ppn 4096) by lia.")
+    state_defs.append("  rewrite Nat.add_0_l.")
+    state_defs.append("  rewrite !Nat.mod_mod by lia.")
+    state_defs.append("  reflexivity.")
+    state_defs.append("Qed.")
+    state_defs.append("")
+    state_defs.append("Lemma mmu_ppn_truncated (va ppn : nat) : slice (ppn * 4096 + slice va 11 0) 31 12 = ppn mod (2 ^ 20).")
+    state_defs.append("Proof.")
+    state_defs.append("  intros; rewrite slice_hi12, slice_low12.")
+    state_defs.append("  rewrite Nat.add_comm.")
+    state_defs.append("  rewrite (Nat.div_add (va mod 4096) ppn 4096) by lia.")
+    state_defs.append("  rewrite (Nat.div_small (va mod 4096) 4096) by (apply Nat.mod_upper_bound; lia).")
+    state_defs.append("  rewrite Nat.add_0_l.")
+    state_defs.append("  reflexivity.")
+    state_defs.append("Qed.")
+    state_defs.append("")
+    state_defs.append("Hint Rewrite slice_low2 add4_mod4 add_mul4_mod4 slice_low12 slice_hi12 : core.")
+    state_defs.append("Hint Resolve mmu_offset_preserved mmu_ppn_truncated : core.")
+    state_defs.append("")
     state_defs.append("(* Utility: boolean equality reflecting Nat.eqb *)")
     state_defs.append("Lemma eqb_true_iff : forall a b : nat, (a =? b) = true <-> a = b.")
     state_defs.append("Proof.")
@@ -764,7 +818,10 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                     cond_parsed = parse_sexpr(rule.condition)
                     cond_str = _expr_to_coq(cond_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types)
                 except ExprError as e:
-                    logger.warning(f"Rule '{rule.rule_name}' condition parse error: {e}. Using 'True'.")
+                    raise ExprError(
+                        f"Rule '{rule.rule_name}' has an invalid condition "
+                        f"{rule.condition!r}: {e}"
+                    ) from e
             updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s", function_types=function_types)
             new_state = _mk_state_expr(registers, memories, updates, "s")
             ctor_name = f"step_{rule.rule_name}"

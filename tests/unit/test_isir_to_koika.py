@@ -808,3 +808,40 @@ def test_invariants_section_lowering():
     assert "Lemma count_le_15 : forall s, reachable s -> ((count s) <= 15)." in state_text
     assert "Hint Resolve count_le_15 : core." in state_text
     assert "Hint Constructors reachable step : core." in state_text
+
+
+def test_malformed_rule_condition_raises():
+    """A 3-argument `and` in a rule condition must raise, not silently become True."""
+    from isir.utils.expr import ExprError
+    spec_mod = isir.SpecModule(name="badcond")
+    spec_mod.inputs = [isir.Interface(name="a", direction="input", data_type="bool"),
+                       isir.Interface(name="b", direction="input", data_type="bool"),
+                       isir.Interface(name="c", direction="input", data_type="bool")]
+    spec_mod.state_ops.append(isir.SpecStateOp(state_name="x", kind="register", data_type="bits<4>", initial=0))
+    spec_mod.rule_ops.append(isir.SpecRuleOp(
+        rule_name="bad",
+        condition="(and a b c)",   # 3-arg and is invalid
+        actions=["(write x (add (read x) 1))"],
+    ))
+    with pytest.raises(ExprError, match="invalid condition"):
+        isir_to_koika.convert(spec_mod)
+
+
+def test_bool_function_call_in_prop_context():
+    """A bool-returning function used as a proposition lowers to `= true`."""
+    from isir.utils.expr import parse_sexpr
+    st = {"x": "nat"}
+    it = {"a": "bits<8>"}
+    ftypes = {"is_zero": "bool"}
+    # `implies (is_zero a) ...` — is_zero returns bool, must reflect to Prop.
+    out = isir_to_koika._expr_to_coq(
+        parse_sexpr("(implies (is_zero a) (eq (read x) 0))"),
+        st, it, [], as_prop=True, function_types=ftypes,
+    )
+    assert "(is_zero (a inputs)) = true" in out
+    # In a value context (as_prop=False) the bool stays as-is.
+    out2 = isir_to_koika._expr_to_coq(
+        parse_sexpr("(is_zero a)"),
+        st, it, [], as_prop=False, function_types=ftypes,
+    )
+    assert out2.strip() == "(is_zero (a inputs))"

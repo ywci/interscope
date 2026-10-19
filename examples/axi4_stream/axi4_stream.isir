@@ -1,0 +1,127 @@
+isir_version: "0.1"
+module:
+  name: axi4_stream
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: tdata_in
+      direction: input
+      type: "bits<32>"
+    - name: tvalid_in
+      direction: input
+      type: "bool"
+    - name: tlast_in
+      direction: input
+      type: "bool"
+    - name: tready_out
+      direction: input
+      type: "bool"
+  outputs:
+    - name: tvalid_out
+      direction: output
+      type: "bool"
+    - name: tdata_out
+      direction: output
+      type: "bits<32>"
+    - name: tlast_out
+      direction: output
+      type: "bool"
+  state:
+    # 1-deep stream FIFO: `full` = the sink has a beat (source TVALID).
+    - name: full
+      kind: register
+      type: "bool"
+      initial: false
+    - name: data
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: last
+      kind: register
+      type: "bool"
+      initial: false
+
+  functions:
+    - name: handshake
+      params: [{name: v, type: "bool"}, {name: r, type: "bool"}]
+      return: "bool"
+      body: (and v r)
+
+  rules:
+    # One AXI4-Stream cycle: accept a beat when empty (sink ready = !full),
+    # hold the beat until the downstream is ready (source valid = full).
+    - name: step
+      condition: "true"
+      action:
+        - (write full (ite (read full) (not tready_out) tvalid_in))
+        - (write data (ite (read full) (read data) tdata_in))
+        - (write last (ite (read full) (read last) tlast_in))
+
+  properties:
+    - name: full_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read full) true) (eq (read full) false))
+    - name: source_holds_valid_until_ready
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (prev full) (eq tready_out false)) (eq (read full) true))
+    - name: source_holds_data_until_ready
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (prev full) (eq tready_out false)) (eq (read data) (prev data)))
+    - name: sink_accepts_when_empty
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (not (prev full)) tvalid_in) (eq (read full) true))
+    - name: data_latches_on_accept
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (not (prev full)) tvalid_in) (eq (read data) tdata_in))
+    - name: tlast_latches_on_accept
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (not (prev full)) tvalid_in) (eq (read last) tlast_in))
+
+  proof_obligations:
+    - property: full_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: source_holds_valid_until_ready
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: source_holds_data_until_ready
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: sink_accepts_when_empty
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: data_latches_on_accept
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: tlast_latches_on_accept
+      status: unproved
+      engine: theorem_proving
+      backend: koika

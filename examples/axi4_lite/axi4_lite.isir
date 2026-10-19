@@ -1,0 +1,204 @@
+isir_version: "0.1"
+module:
+  name: axi4_lite
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    # Write address channel
+    - name: awaddr
+      direction: input
+      type: "bits<2>"
+    - name: awvalid
+      direction: input
+      type: "bool"
+    # Write data channel
+    - name: wdata
+      direction: input
+      type: "bits<32>"
+    - name: wvalid
+      direction: input
+      type: "bool"
+    # Write response channel
+    - name: bready
+      direction: input
+      type: "bool"
+    # Read address channel
+    - name: araddr
+      direction: input
+      type: "bits<2>"
+    - name: arvalid
+      direction: input
+      type: "bool"
+    # Read data channel
+    - name: rready
+      direction: input
+      type: "bool"
+  outputs:
+    - name: bvalid
+      direction: output
+      type: "bool"
+    - name: rvalid
+      direction: output
+      type: "bool"
+    - name: rdata
+      direction: output
+      type: "bits<32>"
+  state:
+    # AXI4-Lite slave register file (4 registers).
+    - name: reg0
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: reg1
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: reg2
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: reg3
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    # Write / read response valid flags and read data.
+    - name: bvalid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rvalid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rdata
+      kind: register
+      type: "bits<32>"
+      initial: 0
+
+  functions:
+    - name: read_reg
+      params: [{name: a, type: "bits<2>"}, {name: r0, type: "bits<32>"}, {name: r1, type: "bits<32>"}, {name: r2, type: "bits<32>"}, {name: r3, type: "bits<32>"}]
+      return: "bits<32>"
+      body: (ite (eq a 0) r0 (ite (eq a 1) r1 (ite (eq a 2) r2 r3)))
+
+  rules:
+    # One AXI4-Lite cycle: the slave is always ready, so a transfer occurs on
+    # `valid`; it latches writes, clears responses on handshake, and serves reads.
+    - name: step
+      condition: "true"
+      action:
+        # Register write: AW+W handshake writes wdata to reg[awaddr].
+        - (write reg0 (ite (and (and awvalid wvalid) (eq awaddr 0)) wdata (read reg0)))
+        - (write reg1 (ite (and (and awvalid wvalid) (eq awaddr 1)) wdata (read reg1)))
+        - (write reg2 (ite (and (and awvalid wvalid) (eq awaddr 2)) wdata (read reg2)))
+        - (write reg3 (ite (and (and awvalid wvalid) (eq awaddr 3)) wdata (read reg3)))
+        # Write response: a write sets B; otherwise a B handshake clears it.
+        - (write bvalid
+            (ite (and awvalid wvalid) true
+                 (ite (and (read bvalid) bready) false (read bvalid))))
+        # Read: latch the read data on AR, clear the response on the R handshake.
+        - (write rdata (ite arvalid (read_reg araddr (read reg0) (read reg1) (read reg2) (read reg3)) (read rdata)))
+        - (write rvalid
+            (ite arvalid true
+                 (ite (and (read rvalid) rready) false (read rvalid))))
+
+  properties:
+    - name: write_reg0
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (and awvalid wvalid) (eq awaddr 0)) (eq (read reg0) wdata))
+    - name: write_reg1
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (and awvalid wvalid) (eq awaddr 1)) (eq (read reg1) wdata))
+    - name: write_reg2
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (and awvalid wvalid) (eq awaddr 2)) (eq (read reg2) wdata))
+    - name: write_reg3
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (and awvalid wvalid) (eq awaddr 3)) (eq (read reg3) wdata))
+    - name: write_responds
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and awvalid wvalid) (eq (read bvalid) true))
+    - name: read_responds
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies arvalid (eq (read rvalid) true))
+    - name: read_data_correct
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies arvalid
+                         (eq (read rdata) (read_reg araddr (prev reg0) (prev reg1) (prev reg2) (prev reg3))))
+    - name: bvalid_held_until_bready
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (prev bvalid) (not bready)) (eq (read bvalid) true))
+    - name: rvalid_held_until_rready
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (and (prev rvalid) (not rready)) (eq (read rvalid) true))
+
+  proof_obligations:
+    - property: write_reg0
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: write_reg1
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: write_reg2
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: write_reg3
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: write_responds
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: read_responds
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: read_data_correct
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: bvalid_held_until_bready
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rvalid_held_until_rready
+      status: unproved
+      engine: theorem_proving
+      backend: koika

@@ -55,6 +55,12 @@ module:
         kind: transition
         rule: accumulate
         operand: (eq (read acc) (add (prev acc) (mul a b)))
+    - name: acc_monotonic
+      kind: transition
+      expression:
+        kind: transition
+        rule: accumulate
+        operand: (ge (read acc) (prev acc))
 
   proof_obligations:
     - property: acc_nonneg
@@ -62,6 +68,10 @@ module:
       engine: theorem_proving
       backend: koika
     - property: accumulate_mac
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: acc_monotonic
       status: unproved
       engine: theorem_proving
       backend: koika

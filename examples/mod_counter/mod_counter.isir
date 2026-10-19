@@ -39,12 +39,32 @@ module:
         kind: transition
         rule: tick
         operand: (eq (read count) (mod (add (prev count) 1) 16))
+    - name: count_le_k_after_5
+      kind: bounded
+      expression:
+        kind: after
+        bound: 5
+        operand: (le (read count) 5)
+    - name: count_in_range_after_16
+      kind: bounded
+      expression:
+        kind: after
+        bound: 16
+        operand: (lt (read count) 16)
   proof_obligations:
     - property: count_in_range
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: tick_wraps_mod_16
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_le_k_after_5
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: count_in_range_after_16
       status: unproved
       engine: theorem_proving
       backend: koika

@@ -1,0 +1,141 @@
+isir_version: "0.1"
+module:
+  name: sort3
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: a_in
+      direction: input
+      type: "bits<8>"
+    - name: b_in
+      direction: input
+      type: "bits<8>"
+    - name: c_in
+      direction: input
+      type: "bits<8>"
+    - name: load
+      direction: input
+      type: "bool"
+  outputs:
+    - name: lo
+      direction: output
+      type: "bits<8>"
+    - name: mid
+      direction: output
+      type: "bits<8>"
+    - name: hi
+      direction: output
+      type: "bits<8>"
+  state:
+    - name: lo
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: mid
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: hi
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  functions:
+    - name: min3
+      params: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}, {name: c, type: "bits<8>"}]
+      return: "bits<8>"
+      body: (ite (le a b) (ite (le a c) a c) (ite (le b c) b c))
+    - name: max3
+      params: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}, {name: c, type: "bits<8>"}]
+      return: "bits<8>"
+      body: (ite (ge a b) (ite (ge a c) a c) (ite (ge b c) b c))
+    - name: mid3
+      params: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}, {name: c, type: "bits<8>"}]
+      return: "bits<8>"
+      body: (sub (sub (add (add a b) c) (min3 a b c)) (max3 a b c))
+
+  # Semantic lemmas for the 3-element min/mid/max (declared as axioms; the
+  # `sorted`/`permutation_sum` properties are proven modulo these).
+  axioms:
+    - name: min3_le_mid3
+      forall: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}, {name: c, type: "bits<8>"}]
+      statement: (le (min3 a b c) (mid3 a b c))
+    - name: mid3_le_max3
+      forall: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}, {name: c, type: "bits<8>"}]
+      statement: (le (mid3 a b c) (max3 a b c))
+    - name: sum3_decomp
+      forall: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}, {name: c, type: "bits<8>"}]
+      statement: (eq (add (add (min3 a b c) (mid3 a b c)) (max3 a b c)) (add (add a b) c))
+
+  rules:
+    - name: sort
+      condition: load
+      action:
+        - (write lo (min3 a_in b_in c_in))
+        - (write mid (mid3 a_in b_in c_in))
+        - (write hi (max3 a_in b_in c_in))
+
+  properties:
+    - name: sorted
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (le (read lo) (read mid)) (le (read mid) (read hi)))
+    - name: permutation_sum
+      kind: transition
+      expression:
+        kind: transition
+        rule: sort
+        operand: (eq (add (add (read lo) (read mid)) (read hi))
+                     (add (add a_in b_in) c_in))
+    - name: lo_min3
+      kind: transition
+      expression:
+        kind: transition
+        rule: sort
+        operand: (eq (read lo) (min3 a_in b_in c_in))
+    - name: mid_mid3
+      kind: transition
+      expression:
+        kind: transition
+        rule: sort
+        operand: (eq (read mid) (mid3 a_in b_in c_in))
+    - name: hi_max3
+      kind: transition
+      expression:
+        kind: transition
+        rule: sort
+        operand: (eq (read hi) (max3 a_in b_in c_in))
+
+  proof_obligations:
+    - property: sorted
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: permutation_sum
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: lo_min3
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: mid_mid3
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: hi_max3
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+
+    - property: sorted
+      engine: model_checking
+    - property: permutation_sum
+      engine: model_checking

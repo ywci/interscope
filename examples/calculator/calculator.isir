@@ -36,11 +36,25 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
+    - name: top
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: error
+      kind: register
+      type: "bool"
+      initial: false
 
   rules:
     - name: execute
       condition: "true"
       action:
+        # top holds the last pushed value; error flags stack overflow/underflow.
+        - (write top (ite (eq (read opcode) 0) data_in (read top)))
+        - (write error
+            (or (and (eq (read opcode) 0) (eq (read sp) 8))
+                (or (and (eq (read opcode) 3) (eq (read sp) 0))
+                    (and (or (eq (read opcode) 1) (eq (read opcode) 2)) (lt (read sp) 2)))))
         - (write sp
             (ite (eq (read opcode) 0)
                  (ite (lt (read sp) 8) (add (read sp) 1) (read sp))
@@ -56,7 +70,45 @@ module:
       expression:
         kind: always
         operand: (and (ge (read sp) 0) (le (read sp) 8))
+    - name: error_is_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read error) true) (eq (read error) false))
+    - name: error_on_push_full
+      kind: transition
+      expression:
+        kind: transition
+        rule: execute
+        operand: (implies (and (eq opcode 0) (eq (prev sp) 8))
+                         (eq (read error) true))
+    - name: error_on_pop_empty
+      kind: transition
+      expression:
+        kind: transition
+        rule: execute
+        operand: (implies (and (eq opcode 3) (eq (prev sp) 0))
+                         (eq (read error) true))
 
   proof_obligations:
     - property: sp_in_range
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: error_is_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: error_on_push_full
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: error_on_pop_empty
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+
+    - property: sp_in_range
+      engine: model_checking
+    - property: error_is_bool
       engine: model_checking

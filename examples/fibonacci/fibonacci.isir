@@ -29,22 +29,68 @@ module:
       kind: register
       type: "bits<16>"
       initial: 1
+
+  functions:
+    # Golden Fibonacci function (fuel-based).
+    - name: fib
+      params: [{name: n, type: "bits<16>"}]
+      return: "bits<16>"
+      recursive: true
+      measure: n
+      body: (ite (eq n 0) 0
+            (ite (eq n 1) 1
+                 (add (fib (sub n 1)) (fib (sub n 2)))))
+
   rules:
     - name: advance
       condition: advance
       action:
         - (write fib_prev (read fib_curr))
         - (write fib_curr (add (read fib_prev) (read fib_curr)))
+
   properties:
     - name: fib_monotonic
       kind: safety
       expression:
         kind: always
         operand: (le (read fib_prev) (read fib_curr))
+    - name: fib_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read fib_prev) 0) (ge (read fib_curr) 0))
+    - name: advance_latches
+      kind: transition
+      expression:
+        kind: transition
+        rule: advance
+        operand: (eq (read fib_prev) (prev fib_curr))
+    - name: advance_recurrence
+      kind: transition
+      expression:
+        kind: transition
+        rule: advance
+        operand: (eq (read fib_curr) (add (prev fib_prev) (prev fib_curr)))
+
   proof_obligations:
     - property: fib_monotonic
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: fib_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: advance_latches
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: advance_recurrence
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+
     - property: fib_monotonic
+      engine: model_checking
+    - property: fib_nonneg
       engine: model_checking

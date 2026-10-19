@@ -61,6 +61,7 @@ Ltac skel_close :=
                | solve [btauto] | solve [lia] | solve [nia] | solve [auto] | solve [eauto]
                | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ]
                | solve [ apply Nat.leb_le; auto ]
+               | solve [ autorewrite with core in *; simpl; try assumption; lia ]
                | solve [ match goal with [ |- context[slice ?x ?h ?l] ] => pose proof (slice_upper_bound x h l) end; simpl in *; lia ] ].
 
 Ltac skel n :=
