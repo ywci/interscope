@@ -845,3 +845,20 @@ def test_bool_function_call_in_prop_context():
         st, it, [], as_prop=False, function_types=ftypes,
     )
     assert out2.strip() == "(is_zero (a inputs))"
+
+
+def test_prelude_coherence_tools():
+    """The prelude wires the generic boolean/equality reflection for coherence proofs."""
+    spec_mod = isir.SpecModule(name="coh")
+    spec_mod.inputs = [isir.Interface(name="i", direction="input", data_type="bool")]
+    spec_mod.state_ops.append(isir.SpecStateOp(state_name="x", kind="register", data_type="bits<2>", initial=0))
+    spec_mod.functions.append({
+        "name": "has_line",
+        "params": [{"name": "s", "type": "bits<2>"}, {"name": "a", "type": "bits<4>"}, {"name": "ra", "type": "bits<4>"}],
+        "return": "bool",
+        "body": "(and (neq s 0) (eq a ra))",
+    })
+    koika_mod = isir_to_koika.convert(spec_mod)
+    text = "\n".join(koika_mod.state_definitions)
+    assert "Require Import ZifyBool." in text
+    assert "Hint Unfold has_line : core." in text

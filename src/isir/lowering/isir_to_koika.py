@@ -497,6 +497,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             function_types[f.get("name")] = _get_coq_type(f.get("return", "bits<1>"))
     function_decls: List[str] = []
     axiom_decls: List[str] = []
+    unfold_names: List[str] = []
     for f in spec_module.functions:
         fname = f.get("name")
         if not fname:
@@ -506,6 +507,8 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         ret_type = _get_coq_type(ret)
         body = f.get("body")
         if body is not None:
+            if not f.get("recursive"):
+                unfold_names.append(fname)
             # Defined (combinational) function: lower the body to a Definition.
             try:
                 body_parsed = parse_sexpr(body) if isinstance(body, str) else body
@@ -640,6 +643,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
     state_defs.append("Require Import Bool.Bool.")
     state_defs.append("Require Import Btauto.")
     state_defs.append("Require Import Lia.")
+    state_defs.append("Require Import ZifyBool.")
     state_defs.append("Require Import Psatz.")
     state_defs.append("Require Import Program.")
     state_defs.append("Import ListNotations.")
@@ -736,6 +740,8 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         state_defs.append("(* Functions: defined (Definition) and uninterpreted (Parameter) *)")
         for d in function_decls:
             state_defs.append(d)
+        if unfold_names:
+            state_defs.append(f"Hint Unfold {' '.join(unfold_names)} : core.")
         state_defs.append("")
     if axiom_decls:
         state_defs.append("(* Assumed laws over functions *)")

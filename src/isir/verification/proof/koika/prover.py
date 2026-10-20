@@ -56,7 +56,8 @@ Opaque Nat.leb Nat.ltb.
 Hint Resolve eq_refl : core.
 
 Ltac skel_close :=
-  simpl; first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
+  try (autounfold with core in *); simpl in *;
+  first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
                | solve [congruence] | solve [contradiction] | solve [tauto]
                | solve [btauto] | solve [lia] | solve [nia] | solve [auto] | solve [eauto]
                | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ]
@@ -74,6 +75,8 @@ Ltac skel n :=
             | progress (match goal with [ H : _ /\ _ |- _ ] => destruct H end); skel m
             | progress (match goal with [ |- context[if negb ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
             | progress (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
+            | progress (match goal with [ H : context[if ?b then _ else _] |- _ ] => destruct b eqn:?; simpl in * end); skel m
+            | progress (match goal with [ H : _ \/ _ |- _ ] => destruct H end); skel m
             | progress (match goal with [ H : step _ ?ins _ |- _ ] =>
                   try (pose proof (assume_inputs ins) as Hin);
                   inversion H; subst; clear H; simpl end); skel m
@@ -86,7 +89,8 @@ Ltac skel n :=
             | progress (match goal with [ H : Nat.ltb ?a ?b = false |- _ ] => apply Nat.ltb_ge in H end); skel m
             | progress (match goal with [ H : Nat.leb ?a ?b = true |- _ ] => apply Nat.leb_le in H end); skel m
             | progress (match goal with [ H : Nat.leb ?a ?b = false |- _ ] => apply Nat.leb_gt in H end); skel m
-            | progress simpl; skel m ]
+            | progress (autounfold with core in *); skel m
+            | progress simpl in *; skel m ]
   end.
 """
 

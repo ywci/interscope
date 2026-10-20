@@ -7,7 +7,7 @@ import pytest
 import yaml
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from isir.parser.parser import parse_isir, ISIRParseError
+from isir.parser.parser import parse_isir, load_expanded_raw, ISIRParseError
 from isir.parser.ast import (
     ISIR, Module, Clock, Reset, State, Rule, Property, TemporalExpr,
     Interface, Parameter, ComponentInstance, Directive, Fairness,
@@ -454,3 +454,98 @@ def test_optional_fields():
 def test_file_not_found():
     with pytest.raises(FileNotFoundError):
         parse_isir("/non/existent/file.isir")
+
+
+def test_parameter_substitution():
+    """Module parameters substitute `$name` references, with optional overrides."""
+    import tempfile
+    text = '''
+isir_version: "0.1"
+module:
+  name: pc
+  parameters:
+    - {name: width, type: int, default: 4}
+    - {name: modulus, type: int, default: 16}
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: en, direction: input, type: "bool"}]
+  state: [{name: count, kind: register, type: "bits<$width>", initial: 0}]
+  rules:
+    - name: tick
+      condition: en
+      action: [(write count (mod (add (read count) 1) $modulus))]
+'''
+    p = Path(tempfile.mkdtemp()) / "pc.isir"
+    p.write_text(text)
+    # defaults
+    spec = parse_isir(p)
+    assert spec.module.state[0].type == "bits<4>"
+    assert "16" in spec.module.rules[0].action[0]
+    # overrides
+    spec2 = parse_isir(p, parameter_overrides={"width": 8, "modulus": 256})
+    assert spec2.module.state[0].type == "bits<8>"
+    assert "256" in spec2.module.rules[0].action[0]
+
+
+def test_repeat_expansion():
+    """`repeat` blocks expand to N instantiated copies with `{var}` substitution."""
+    import tempfile
+    text = '''
+isir_version: "0.1"
+module:
+  name: rp
+  parameters:
+    - {name: num, type: int, default: 3}
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: en, direction: input, type: "bool"}]
+  state:
+    - repeat:
+        var: i
+        range: $num
+        items:
+          - {name: "c{i}_state", kind: register, type: "bits<2>", initial: 0}
+'''
+    p = Path(tempfile.mkdtemp()) / "rp.isir"
+    p.write_text(text)
+    spec = parse_isir(p)
+    names = [s.name for s in spec.module.state]
+    assert names == ["c0_state", "c1_state", "c2_state"]
+    # override to 2 cores
+    spec2 = parse_isir(p, parameter_overrides={"num": 2})
+    names2 = [s.name for s in spec2.module.state]
+    assert names2 == ["c0_state", "c1_state"]
+
+
+def test_reduce_expansion():
+    """`reduce` folds build nested expressions and `@name` references resolve."""
+    import tempfile
+    text = '''
+isir_version: "0.1"
+module:
+  name: rd
+  parameters:
+    - {name: n, type: int, default: 3}
+  reductions:
+    - name: any_ok
+      var: j
+      range: $n
+      init: "false"
+      step: "(or {acc} (eq a {j}))"
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: a, direction: input, type: "bits<2>"}]
+  state:
+    - {name: x, kind: register, type: "bits<2>", initial: 0}
+  rules:
+    - name: r
+      action:
+        - (write x (ite @any_ok 1 0))
+'''
+    p = Path(tempfile.mkdtemp()) / "rd.isir"
+    p.write_text(text)
+    raw = load_expanded_raw(p)
+    action = raw["module"]["rules"][0]["action"][0]
+    # folded: (or (or (or false (eq a 0)) (eq a 1)) (eq a 2))
+    assert "(or (or (or false (eq a 0)) (eq a 1)) (eq a 2))" in action
+    assert "reductions" not in raw["module"]

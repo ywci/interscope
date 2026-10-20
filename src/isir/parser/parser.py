@@ -5,7 +5,7 @@
 
 import yaml
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 from isir.parser.ast import (
     Clock, ComponentInstance, Directive, Evidence, EvidenceRef, Fairness,
     Function, FunctionParam, Axiom, Invariant, Interface, Metadata, Module,
@@ -457,19 +457,108 @@ def _parse_module(data: Dict[str, Any]) -> Module:
     )
 
 
-def parse_isir(source: Union[str, Path]) -> ISIR:
+def _substitute_params(obj: Any, params: Dict[str, Any]) -> Any:
+    """Recursively replace ``$name`` references in string fields with parameter values."""
+    if isinstance(obj, str):
+        for name, value in params.items():
+            obj = obj.replace(f"${name}", str(value))
+        return obj
+    if isinstance(obj, list):
+        return [_substitute_params(x, params) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _substitute_params(v, params) for k, v in obj.items()}
+    return obj
+
+
+def _instantiate(obj: Any, var: str, value: int) -> Any:
+    """Replace ``{var}`` references with an integer value, recursing."""
+    if isinstance(obj, str):
+        return obj.replace("{" + var + "}", str(value))
+    if isinstance(obj, list):
+        return [_instantiate(x, var, value) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _instantiate(v, var, value) for k, v in obj.items()}
+    return obj
+
+
+def _expand_repeats(obj: Any) -> Any:
+    """Expand ``repeat: {var, range, items}`` blocks into N instantiated copies.
+
+    A ``repeat`` dict inside a list expands to ``range`` copies of ``items``,
+    with ``{var}`` replaced by the index.  Nested repeats are supported.
     """
-    Parse a .isir YAML file into a ISIR AST.
+    if isinstance(obj, list):
+        result = []
+        for x in obj:
+            if isinstance(x, dict) and "repeat" in x:
+                rep = x["repeat"]
+                var = rep.get("var", "i")
+                rng = int(rep.get("range", 0))
+                items = rep.get("items", [])
+                for i in range(rng):
+                    result.extend(_expand_repeats(_instantiate(items, var, i)))
+            else:
+                result.append(_expand_repeats(x))
+        return result
+    if isinstance(obj, dict):
+        return {k: _expand_repeats(v) for k, v in obj.items()}
+    return obj
 
-    Args:
-        source: Path to the .isir file.
 
-    Returns:
-        ISIR root object.
+def _expand_reductions(raw: Any) -> Any:
+    """Expand named ``reduce`` folds and replace ``@name`` references.
 
-    Raises:
-        ISIRParseError: If the YAML is malformed or required fields missing.
-        FileNotFoundError: If the file does not exist.
+    A ``reduce`` entry ``{name, var, range, init, step}`` builds a nested
+    expression by left-folding ``step`` over ``range`` indices, substituting
+    ``{acc}`` (the accumulated expression) and ``{var}`` (the index).  The
+    resulting string then replaces every ``@name`` reference anywhere in the
+    design.  This gives general-N reductions (N-way ``or``, "find first" ``ite``)
+    without design-specific helpers.
+    """
+    module = raw.get("module", {})
+    if not isinstance(module, dict):
+        return raw
+    reductions = module.get("reductions", [])
+    if not reductions:
+        return raw
+
+    folded: Dict[str, str] = {}
+    for r in reductions:
+        name = r.get("name")
+        if not name:
+            continue
+        var = r.get("var", "j")
+        rng = int(r.get("range", 0))
+        init = str(r.get("init", ""))
+        step = str(r.get("step", ""))
+        acc = init
+        for idx in range(rng):
+            acc = step.replace("{acc}", acc).replace("{" + var + "}", str(idx))
+        folded[name] = acc
+
+    def _substitute(obj: Any) -> Any:
+        if isinstance(obj, str):
+            for name, val in folded.items():
+                obj = obj.replace("@" + name, val)
+            return obj
+        if isinstance(obj, list):
+            return [_substitute(x) for x in obj]
+        if isinstance(obj, dict):
+            return {k: _substitute(v) for k, v in obj.items()}
+        return obj
+
+    result = _substitute(raw)
+    # The reduce templates are consumed; drop them before schema validation.
+    if isinstance(result.get("module"), dict):
+        result["module"].pop("reductions", None)
+    return result
+
+
+def load_expanded_raw(source: Union[str, Path], parameter_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Load a .isir file, substitute parameters, and expand repeats.
+
+    Returns the fully expanded raw YAML dictionary (before AST parsing), so
+    callers can validate or inspect the resolved design.
     """
     path = Path(source)
     if not path.exists():
@@ -482,7 +571,42 @@ def parse_isir(source: Union[str, Path]) -> ISIR:
         raise ISIRParseError(f"YAML parsing error in {path}: {e}")
 
     if not isinstance(raw, dict):
-        raise ISIRParseError(f"Root of {path} must be a mapping (dictionary)")
+        raise ISIRParseError(f"Root of {path} must be a dictionary")
+
+    module_raw = raw.get("module", {})
+    params: Dict[str, Any] = {}
+    if isinstance(module_raw, dict):
+        for p in module_raw.get("parameters", []) or []:
+            if isinstance(p, dict) and "name" in p:
+                params[p["name"]] = p.get("default")
+    if parameter_overrides:
+        params.update(parameter_overrides)
+    if params:
+        raw = _substitute_params(raw, params)
+        raw = _expand_reductions(raw)
+        raw = _expand_repeats(raw)
+    return raw
+
+
+def parse_isir(source: Union[str, Path], parameter_overrides: Optional[Dict[str, Any]] = None) -> ISIR:
+    """
+    Parse a .isir YAML file into a ISIR AST.
+
+    Args:
+        source: Path to the .isir file.
+        parameter_overrides: Optional mapping overriding module parameter defaults.
+            ``$name`` references anywhere in the design are substituted with the
+            resolved parameter values before parsing, and ``repeat`` blocks are
+            expanded.
+
+    Returns:
+        ISIR root object.
+
+    Raises:
+        ISIRParseError: If the YAML is malformed or required fields missing.
+        FileNotFoundError: If the file does not exist.
+    """
+    raw = load_expanded_raw(source, parameter_overrides)
 
     version = raw.get("isir_version")
     if not version:

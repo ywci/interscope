@@ -235,6 +235,35 @@ module:
       kind: register
       type: "bool"
       initial: false   # which ROB entry the outstanding load read is for
+    # L1-D data cache (2-way set-associative, single set, LRU).
+    - name: dc_v0
+      kind: register
+      type: "bool"
+      initial: false
+    - name: dc_t0
+      kind: register
+      type: "bits<20>"
+      initial: 0
+    - name: dc_d0
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: dc_v1
+      kind: register
+      type: "bool"
+      initial: false
+    - name: dc_t1
+      kind: register
+      type: "bits<20>"
+      initial: 0
+    - name: dc_d1
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: dc_lru
+      kind: register
+      type: "bool"
+      initial: false   # true = way 0 is LRU
     # MMU: 2-way set-associative TLB with LRU (virtual page number -> PPN).
     - name: tlb0_vpn
       kind: register
@@ -418,7 +447,8 @@ module:
         - (write awvalid false)
         - (write wvalid false)
 
-    # Load response (R): store the data in the matching ROB entry, mark it done.
+    # Load response (R): store the data in the matching ROB entry, fill the
+    # L1-D LRU way, and mark the load done.
     - name: load_response
       condition: (and (read load_arvalid) load_rvalid)
       action:
@@ -426,6 +456,13 @@ module:
         - (write rob0_done (ite (read load_rob0) true (read rob0_done)))
         - (write rob1_data (ite (not (read load_rob0)) load_rdata (read rob1_data)))
         - (write rob1_done (ite (not (read load_rob0)) true (read rob1_done)))
+        - (write dc_v0 (ite (read dc_lru) true (read dc_v0)))
+        - (write dc_t0 (ite (read dc_lru) (vpn (read load_araddr)) (read dc_t0)))
+        - (write dc_d0 (ite (read dc_lru) load_rdata (read dc_d0)))
+        - (write dc_v1 (ite (not (read dc_lru)) true (read dc_v1)))
+        - (write dc_t1 (ite (not (read dc_lru)) (vpn (read load_araddr)) (read dc_t1)))
+        - (write dc_d1 (ite (not (read dc_lru)) load_rdata (read dc_d1)))
+        - (write dc_lru (not (read dc_lru)))
         - (write load_arvalid false)
 
     # Fill L1 from L2 on an L1 miss + L2 hit.
@@ -476,8 +513,8 @@ module:
                  (branch_target (fetch_instr (read ic_v0) (read ic_t0) (read ic_d0) (read ic_v1) (read ic_t1) (read ic_d1) (read tlb_ppn)) (read PC))
                  (add (read PC) 4)))
 
-    # Execute: non-load entries complete; load entries issue their AXI read
-    # out-of-order (memory-level parallelism).
+    # Execute: non-load entries complete; load entries hit the L1-D or issue an
+    # AXI read on a miss (out-of-order memory-level parallelism).
     - name: exec0
       condition: (and (and (read rob0_valid) (not (read rob0_done))) (not (read rob0_load)))
       action:
@@ -486,11 +523,30 @@ module:
       condition: (and (and (read rob1_valid) (not (read rob1_done))) (not (read rob1_load)))
       action:
         - (write rob1_done true)
+    - name: load_hit0
+      condition: (and (and (and (read rob0_valid) (not (read rob0_done))) (read rob0_load))
+                      (and (set_hit (read dc_v0) (read dc_t0) (read dc_v1) (read dc_t1) (vpn (read rob0_instr)))
+                           (not (and (read head)
+                                     (store_load_alias (read rob0_instr) (read rob1_instr) (read rob1_store))))))
+      action:
+        - (write rob0_data (fetch_instr (read dc_v0) (read dc_t0) (read dc_d0) (read dc_v1) (read dc_t1) (read dc_d1) (vpn (read rob0_instr))))
+        - (write rob0_done true)
+        - (write dc_lru (ite (way_hit (read dc_v0) (read dc_t0) (vpn (read rob0_instr))) false true))
+    - name: load_hit1
+      condition: (and (and (and (read rob1_valid) (not (read rob1_done))) (read rob1_load))
+                      (and (set_hit (read dc_v0) (read dc_t0) (read dc_v1) (read dc_t1) (vpn (read rob1_instr)))
+                           (not (and (not (read head))
+                                     (store_load_alias (read rob1_instr) (read rob0_instr) (read rob0_store))))))
+      action:
+        - (write rob1_data (fetch_instr (read dc_v0) (read dc_t0) (read dc_d0) (read dc_v1) (read dc_t1) (read dc_d1) (vpn (read rob1_instr))))
+        - (write rob1_done true)
+        - (write dc_lru (ite (way_hit (read dc_v0) (read dc_t0) (vpn (read rob1_instr))) false true))
     - name: load_exec0
       condition: (and (and (and (read rob0_valid) (not (read rob0_done))) (read rob0_load))
                       (and (not (read load_arvalid))
-                           (not (and (read head)
-                                     (store_load_alias (read rob0_instr) (read rob1_instr) (read rob1_store))))))
+                           (and (not (set_hit (read dc_v0) (read dc_t0) (read dc_v1) (read dc_t1) (vpn (read rob0_instr))))
+                                (not (and (read head)
+                                          (store_load_alias (read rob0_instr) (read rob1_instr) (read rob1_store)))))))
       action:
         - (write load_arvalid true)
         - (write load_araddr (read rob0_instr))
@@ -498,8 +554,9 @@ module:
     - name: load_exec1
       condition: (and (and (and (read rob1_valid) (not (read rob1_done))) (read rob1_load))
                       (and (not (read load_arvalid))
-                           (not (and (not (read head))
-                                     (store_load_alias (read rob1_instr) (read rob0_instr) (read rob0_store))))))
+                           (and (not (set_hit (read dc_v0) (read dc_t0) (read dc_v1) (read dc_t1) (vpn (read rob1_instr))))
+                                (not (and (not (read head))
+                                          (store_load_alias (read rob1_instr) (read rob0_instr) (read rob0_store)))))))
       action:
         - (write load_arvalid true)
         - (write load_araddr (read rob1_instr))
@@ -538,6 +595,9 @@ module:
         - (write awaddr (ite (read rob0_store) (read rob0_instr) (read awaddr)))
         - (write wvalid (ite (read rob0_store) true (read wvalid)))
         - (write wdata (ite (read rob0_store) (read rob0_data) (read wdata)))
+        # LSU: store writes through to the L1-D (write on hit).
+        - (write dc_d0 (ite (and (read rob0_store) (way_hit (read dc_v0) (read dc_t0) (vpn (read rob0_instr)))) (read rob0_data) (read dc_d0)))
+        - (write dc_d1 (ite (and (read rob0_store) (way_hit (read dc_v1) (read dc_t1) (vpn (read rob0_instr)))) (read rob0_data) (read dc_d1)))
         # LSU: a load entry retires by writing back its result.
         - (write load_result (ite (read rob0_load) (read rob0_data) (read load_result)))
     - name: commit1
@@ -556,6 +616,9 @@ module:
         - (write awaddr (ite (read rob1_store) (read rob1_instr) (read awaddr)))
         - (write wvalid (ite (read rob1_store) true (read wvalid)))
         - (write wdata (ite (read rob1_store) (read rob1_data) (read wdata)))
+        # LSU: store writes through to the L1-D (write on hit).
+        - (write dc_d0 (ite (and (read rob1_store) (way_hit (read dc_v0) (read dc_t0) (vpn (read rob1_instr)))) (read rob1_data) (read dc_d0)))
+        - (write dc_d1 (ite (and (read rob1_store) (way_hit (read dc_v1) (read dc_t1) (vpn (read rob1_instr)))) (read rob1_data) (read dc_d1)))
         # LSU: a load entry retires by writing back its result.
         - (write load_result (ite (read rob1_load) (read rob1_data) (read load_result)))
 
@@ -597,6 +660,34 @@ module:
         kind: transition
         rule: tlb_fill
         operand: (implies (prev tlb_lru) (eq (read tlb0_valid) true))
+    - name: dc_lru_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read dc_lru) true) (eq (read dc_lru) false))
+    - name: load_dc_hit
+      kind: transition
+      expression:
+        kind: transition
+        rule: load_hit0
+        operand: (and (eq (read rob0_done) true)
+                      (eq (read rob0_data)
+                          (fetch_instr (prev dc_v0) (prev dc_t0) (prev dc_d0)
+                                       (prev dc_v1) (prev dc_t1) (prev dc_d1)
+                                       (vpn (prev rob0_instr)))))
+    - name: load_dc_miss_fills
+      kind: transition
+      expression:
+        kind: transition
+        rule: load_response
+        operand: (implies (prev dc_lru) (eq (read dc_v0) true))
+    - name: store_writes_dc
+      kind: transition
+      expression:
+        kind: transition
+        rule: commit0
+        operand: (implies (and (prev rob0_store) (way_hit (prev dc_v0) (prev dc_t0) (vpn (prev rob0_instr))))
+                         (eq (read dc_d0) (prev rob0_data)))
     - name: fetch_sets_arvalid
       kind: transition
       expression:
@@ -770,6 +861,22 @@ module:
       engine: theorem_proving
       backend: koika
     - property: tlb_miss_fills_lru_way0
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: dc_lru_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: load_dc_hit
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: load_dc_miss_fills
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: store_writes_dc
       status: unproved
       engine: theorem_proving
       backend: koika

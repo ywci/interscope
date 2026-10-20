@@ -148,8 +148,10 @@ def validate_isir_file(file_path: Path, max_errors: int = 10) -> None:
     if not file_path.exists():
         raise FileNotFoundError(f"ISIR file not found: {file_path}")
 
-    with open(file_path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
+    # Expand parameters/repeats before validating, so the schema sees the
+    # fully-resolved design (not the template-level `repeat` blocks).
+    from isir.parser.parser import load_expanded_raw  # local import to avoid a cycle
+    raw = load_expanded_raw(file_path)
 
     if not isinstance(raw, dict):
         raise ISIRParseError(f"Root of {file_path} must be a dictionary")

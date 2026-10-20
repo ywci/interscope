@@ -1,0 +1,160 @@
+isir_version: "0.1"
+module:
+  name: mesi_multicore
+  parameters:
+    - name: num_cores
+      type: int
+      default: 2
+  reductions:
+    # N-way OR: any core holds this line (the requester is a miss, so its own
+    # term is false and harmless).
+    - name: any_has_line
+      var: j
+      range: $num_cores
+      init: "false"
+      step: "(or {acc} (has_line (read c{j}_state) (read c{j}_addr) req_addr))"
+    # "Find first" ite: the data of the (at most one) Modified holder, else memory.
+    - name: modified_data
+      var: j
+      range: $num_cores
+      init: "(mem_read mem req_addr)"
+      step: "(ite (and (is_modified (read c{j}_state)) (has_line (read c{j}_state) (read c{j}_addr) req_addr)) (read c{j}_data) {acc})"
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_addr
+      direction: input
+      type: "bits<4>"
+    - name: req_data
+      direction: input
+      type: "bits<8>"
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_core
+      direction: input
+      type: "bits<4>"   # which core: 0 .. num_cores-1
+  state:
+    # Per-core cache line (MESI state 0=I/1=S/2=E/3=M + address + data).
+    - repeat:
+        var: i
+        range: $num_cores
+        items:
+          - {name: "c{i}_state", kind: register, type: "bits<2>", initial: 0}
+          - {name: "c{i}_addr", kind: register, type: "bits<4>", initial: 0}
+          - {name: "c{i}_data", kind: register, type: "bits<8>", initial: 0}
+    # Shared memory.
+    - name: mem
+      kind: memory
+      type: { type: "memory", elem: "bits<8>", depth: 16 }
+
+  functions:
+    - name: has_line
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a ra))
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+    - name: is_exclusive
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 2)
+
+  rules:
+    # Write: invalidate every other copy, then make the requester Modified.
+    - repeat:
+        var: i
+        range: $num_cores
+        items:
+          - name: "c{i}_write"
+            condition: (and (eq req_core {i}) req_write)
+            action:
+              - repeat:
+                  var: j
+                  range: $num_cores
+                  items:
+                    - (write c{j}_state (ite (and (has_line (read c{j}_state) (read c{j}_addr) req_addr) (neq {j} {i})) 0 (read c{j}_state)))
+              - (write c{i}_state 3)
+              - (write c{i}_addr req_addr)
+              - (write c{i}_data req_data)
+          - name: "c{i}_read_hit"
+            condition: (and (and (eq req_core {i}) (not req_write)) (has_line (read c{i}_state) (read c{i}_addr) req_addr))
+            action:
+              - (write c{i}_state (read c{i}_state))
+          - name: "c{i}_read_miss"
+            condition: (and (and (eq req_core {i}) (not req_write)) (not (has_line (read c{i}_state) (read c{i}_addr) req_addr)))
+            action:
+              # Snoop: downgrade every peer copy of this line (M/E -> S).
+              - repeat:
+                  var: j
+                  range: $num_cores
+                  items:
+                    - (write c{j}_state (ite (and (has_line (read c{j}_state) (read c{j}_addr) req_addr) (neq {j} {i})) 1 (read c{j}_state)))
+              # Exclusive fill only if no peer holds the line; Shared otherwise.
+              - (write c{i}_state (ite @any_has_line 1 2))
+              - (write c{i}_addr req_addr)
+              - (write c{i}_data @modified_data)
+
+  properties:
+    - name: single_writer
+      kind: safety
+      expression:
+        kind: always
+        operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))
+                          (eq (read c0_addr) (read c1_addr))))
+    - name: m_exclusive
+      kind: safety
+      expression:
+        kind: always
+        operand: (and
+                    (not (and (is_modified (read c0_state)) (has_line (read c1_state) (read c1_addr) (read c0_addr))))
+                    (not (and (is_modified (read c1_state)) (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
+    - name: e_exclusive
+      kind: safety
+      expression:
+        kind: always
+        operand: (and
+                    (not (and (is_exclusive (read c0_state)) (has_line (read c1_state) (read c1_addr) (read c0_addr))))
+                    (not (and (is_exclusive (read c1_state)) (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
+    - name: state_valid_c0
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read c0_state) 0) (le (read c0_state) 3))
+    - name: c0_write_invalidates_c1
+      kind: transition
+      expression:
+        kind: transition
+        rule: c0_write
+        operand: (implies (has_line (prev c1_state) (prev c1_addr) req_addr)
+                         (eq (read c1_state) 0))
+
+  proof_obligations:
+    - property: single_writer
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: m_exclusive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: e_exclusive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: state_valid_c0
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: c0_write_invalidates_c1
+      status: unproved
+      engine: theorem_proving
+      backend: koika
