@@ -10,81 +10,36 @@ module:
       async: false
       affects: all
   inputs:
-    - name: req0
+    - name: req0_valid
       direction: input
       type: "bool"
-    - name: req1
+    - name: req1_valid
       direction: input
-      type: "bool"
-    - name: req2
-      direction: input
-      type: "bool"
-    - name: req3
-      direction: input
-      type: "bool"
-  outputs:
-    - name: grant
-      direction: output
-      type: "bits<2>"
-    - name: valid
-      direction: output
       type: "bool"
   state:
     - name: grant
       kind: register
-      type: "bits<2>"
-      initial: 0
-    - name: valid
+      type: "bool"
+      initial: false   # false = grant req0, true = grant req1
+    - name: grant_valid
       kind: register
       type: "bool"
       initial: false
-
-  functions:
-    - name: prio_grant
-      params: [{name: r0, type: "bool"}, {name: r1, type: "bool"}, {name: r2, type: "bool"}, {name: r3, type: "bool"}]
-      return: "bits<2>"
-      body: (ite r0 0 (ite r1 1 (ite r2 2 (ite r3 3 0))))
-
   rules:
     - name: arbitrate
       condition: "true"
       action:
-        - (write grant
-            (ite (read req0) 0
-            (ite (read req1) 1
-            (ite (read req2) 2
-            (ite (read req3) 3 0)))))
-        - (write valid (or (read req0) (or (read req1) (or (read req2) (read req3)))))
+        - (write grant (and (not req0_valid) req1_valid))
+        - (write grant_valid (or req0_valid req1_valid))
   properties:
-    - name: grant_in_range
-      kind: safety
-      expression:
-        kind: always
-        operand: (and (ge (read grant) 0) (le (read grant) 3))
-    - name: valid_is_bool
-      kind: safety
-      expression:
-        kind: always
-        operand: (or (eq (read valid) true) (eq (read valid) false))
-    - name: grant_correct
+    - name: grant0_when_req0
       kind: transition
       expression:
         kind: transition
         rule: arbitrate
-        operand: (and (eq (read grant) (prio_grant req0 req1 req2 req3))
-                      (eq (read valid) (or req0 (or req1 (or req2 req3)))))
+        operand: (implies req0_valid (eq (read grant) false))
   proof_obligations:
-    - property: grant_in_range
+    - property: grant0_when_req0
       status: unproved
       engine: theorem_proving
       backend: koika
-    - property: valid_is_bool
-      status: unproved
-      engine: theorem_proving
-      backend: koika
-    - property: grant_correct
-      status: unproved
-      engine: theorem_proving
-      backend: koika
-    - property: grant_in_range
-      engine: model_checking

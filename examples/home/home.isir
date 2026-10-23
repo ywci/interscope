@@ -1,0 +1,134 @@
+isir_version: "0.1"
+module:
+  name: home
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_core
+      direction: input
+      type: "bits<4>"
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"
+    - name: req_data
+      direction: input
+      type: "bits<8>"
+  state:
+    - name: c0_state
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: c0_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: c1_state
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: c1_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: mem
+      kind: memory
+      type: { type: "memory", elem: "bits<8>", depth: 16 }
+  functions:
+    - name: has_line
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a ra))
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+    - name: is_exclusive
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 2)
+  rules:
+    - name: write0
+      condition: (and (eq req_core 0) req_write)
+      action:
+        - (write c1_state (ite (and (has_line (read c1_state) (read c1_addr) req_addr) (neq 1 0)) 0 (read c1_state)))
+        - (write c0_state 3)
+        - (write c0_addr req_addr)
+        - (write c0_data req_data)
+    - name: write1
+      condition: (and (eq req_core 1) req_write)
+      action:
+        - (write c0_state (ite (and (has_line (read c0_state) (read c0_addr) req_addr) (neq 0 1)) 0 (read c0_state)))
+        - (write c1_state 3)
+        - (write c1_addr req_addr)
+        - (write c1_data req_data)
+    - name: read_hit0
+      condition: (and (and (eq req_core 0) (not req_write)) (has_line (read c0_state) (read c0_addr) req_addr))
+      action:
+        - (write c0_state (read c0_state))
+    - name: read_hit1
+      condition: (and (and (eq req_core 1) (not req_write)) (has_line (read c1_state) (read c1_addr) req_addr))
+      action:
+        - (write c1_state (read c1_state))
+    - name: read_miss0
+      condition: (and (and (eq req_core 0) (not req_write)) (not (has_line (read c0_state) (read c0_addr) req_addr)))
+      action:
+        - (write c1_state (ite (and (has_line (read c1_state) (read c1_addr) req_addr) (neq 1 0)) 1 (read c1_state)))
+        - (write c0_state 1)
+        - (write c0_addr req_addr)
+    - name: read_miss1
+      condition: (and (and (eq req_core 1) (not req_write)) (not (has_line (read c1_state) (read c1_addr) req_addr)))
+      action:
+        - (write c0_state (ite (and (has_line (read c0_state) (read c0_addr) req_addr) (neq 0 1)) 1 (read c0_state)))
+        - (write c1_state 1)
+        - (write c1_addr req_addr)
+  properties:
+    - name: single_writer
+      kind: safety
+      expression:
+        kind: always
+        operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))
+                          (eq (read c0_addr) (read c1_addr))))
+    - name: m_exclusive
+      kind: safety
+      expression:
+        kind: always
+        operand: (and
+                   (not (and (is_modified (read c0_state)) (has_line (read c1_state) (read c1_addr) (read c0_addr))))
+                   (not (and (is_modified (read c1_state)) (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
+    - name: e_exclusive
+      kind: safety
+      expression:
+        kind: always
+        operand: (and
+                   (not (and (is_exclusive (read c0_state)) (has_line (read c1_state) (read c1_addr) (read c0_addr))))
+                   (not (and (is_exclusive (read c1_state)) (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
+  proof_obligations:
+    - property: single_writer
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: m_exclusive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: e_exclusive
+      status: unproved
+      engine: theorem_proving
+      backend: koika

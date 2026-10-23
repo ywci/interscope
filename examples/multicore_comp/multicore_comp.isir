@@ -1,0 +1,196 @@
+isir_version: "0.1"
+module:
+  name: multicore_comp
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_core
+      direction: input
+      type: "bits<4>"
+    - name: issue_valid
+      direction: input
+      type: "bool"
+    - name: rd
+      direction: input
+      type: "bits<2>"
+    - name: op
+      direction: input
+      type: "bool"
+    - name: store
+      direction: input
+      type: "bool"
+    - name: a
+      direction: input
+      type: "bits<8>"
+    - name: b
+      direction: input
+      type: "bits<8>"
+    - name: alu_op
+      direction: input
+      type: "bits<3>"
+    - name: addr
+      direction: input
+      type: "bits<4>"
+    - name: taken
+      direction: input
+      type: "bool"
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"
+    - name: req_data
+      direction: input
+      type: "bits<8>"
+    - name: stall
+      direction: input
+      type: "bool"
+    - name: branch_target
+      direction: input
+      type: "bits<4>"
+    - name: araddr
+      direction: input
+      type: "bits<4>"
+    - name: arvalid
+      direction: input
+      type: "bool"
+    - name: awaddr
+      direction: input
+      type: "bits<4>"
+    - name: awvalid
+      direction: input
+      type: "bool"
+    - name: wdata
+      direction: input
+      type: "bits<8>"
+    - name: wvalid
+      direction: input
+      type: "bool"
+    - name: vpn
+      direction: input
+      type: "bits<4>"
+    - name: va
+      direction: input
+      type: "bits<32>"
+    - name: ppn_in
+      direction: input
+      type: "bits<4>"
+    - name: alloc_valid
+      direction: input
+      type: "bool"
+    - name: id
+      direction: input
+      type: "bits<2>"
+    - name: release0
+      direction: input
+      type: "bool"
+    - name: release1
+      direction: input
+      type: "bool"
+  functions:
+    - name: m_at
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: addr, type: "bits<4>"}]
+      return: "bool"
+      body: (and (eq s 3) (eq a addr))
+    - name: e_at
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: addr, type: "bits<4>"}]
+      return: "bool"
+      body: (and (eq s 2) (eq a addr))
+    - name: has_at
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: addr, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a addr))
+  components:
+    - name: core0
+      module: "examples/core_comp/core_comp.isir"
+      parameters: {me: 0}
+      lift_properties: false
+      port_map: {req_core: req_core, issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr, taken: taken, req_write: req_write, req_addr: req_addr, req_data: req_data, stall: stall, branch_target: branch_target, araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid, vpn: vpn, ppn_in: ppn_in, va: va, alloc_valid: alloc_valid, id: id, release0: release0, release1: release1}
+    - name: core1
+      module: "examples/core_comp/core_comp.isir"
+      parameters: {me: 1}
+      lift_properties: false
+      port_map: {req_core: req_core, issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr, taken: taken, req_write: req_write, req_addr: req_addr, req_data: req_data, stall: stall, branch_target: branch_target, araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid, vpn: vpn, ppn_in: ppn_in, va: va, alloc_valid: alloc_valid, id: id, release0: release0, release1: release1}
+    - name: home
+      module: "examples/home/home.isir"
+      lift_properties: invariant
+      port_map: {req_core: req_core, req_write: req_write, req_addr: req_addr, req_data: req_data}
+    - name: axi_mem
+      module: "examples/axi_mem/axi_mem.isir"
+      lift_properties: false
+      port_map: {araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid}
+  properties:
+    - name: core0_pc_increments
+      kind: transition
+      expression:
+        kind: transition
+        rule: core0_retire
+        operand: (eq (read core0_pc) (add (prev core0_pc) 1))
+    - name: core1_pc_increments
+      kind: transition
+      expression:
+        kind: transition
+        rule: core1_retire
+        operand: (eq (read core1_pc) (add (prev core1_pc) 1))
+  properties:
+    - name: core0_pc_increments
+      kind: transition
+      expression:
+        kind: transition
+        rule: core0_retire
+        operand: (eq (read core0_pc) (add (prev core0_pc) 1))
+    - name: core1_pc_increments
+      kind: transition
+      expression:
+        kind: transition
+        rule: core1_retire
+        operand: (eq (read core1_pc) (add (prev core1_pc) 1))
+    - name: single_writer
+      kind: safety
+      expression:
+        kind: always
+        operand: (not (and (and (eq (read home_c0_state) 3) (eq (read home_c1_state) 3))
+                          (eq (read home_c0_addr) (read home_c1_addr))))
+    - name: m_exclusive
+      kind: safety
+      expression:
+        kind: always
+        operand: (and
+                   (not (and (eq (read home_c0_state) 3) (and (neq (read home_c1_state) 0) (eq (read home_c1_addr) (read home_c0_addr)))))
+                   (not (and (eq (read home_c1_state) 3) (and (neq (read home_c0_state) 0) (eq (read home_c0_addr) (read home_c1_addr))))))
+    - name: e_exclusive
+      kind: safety
+      expression:
+        kind: always
+        operand: (and
+                   (not (and (eq (read home_c0_state) 2) (and (neq (read home_c1_state) 0) (eq (read home_c1_addr) (read home_c0_addr)))))
+                   (not (and (eq (read home_c1_state) 2) (and (neq (read home_c0_state) 0) (eq (read home_c0_addr) (read home_c1_addr))))))
+
+  proof_obligations:
+    - property: core0_pc_increments
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core1_pc_increments
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: single_writer
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: m_exclusive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: e_exclusive
+      status: unproved
+      engine: theorem_proving
+      backend: koika

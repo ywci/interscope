@@ -581,8 +581,13 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         except ExprError as e:
             logger.warning(f"Could not translate invariant '{iname}': {e}")
             continue
-        invariant_decls.append(f"Lemma {iname} : forall s, reachable s -> {operand_coq}.")
-        invariant_decls.append("Admitted.")
+        if inv.get("assumed"):
+            # Already proved in a child module: assume it (Axiom) rather than
+            # re-proving.  Emitted after `reachable` so it can reference it.
+            invariant_decls.append(f"Axiom {iname} : forall s, reachable s -> {operand_coq}.")
+        else:
+            invariant_decls.append(f"Lemma {iname} : forall s, reachable s -> {operand_coq}.")
+            invariant_decls.append("Admitted.")
         invariant_decls.append(f"Hint Resolve {iname} : core.")
 
     global_assumptions = []
@@ -634,6 +639,16 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         )
 
     schedule = spec_module.schedule_op
+    # "parallel" schedules compose every rule into one atomic step (capturing
+    # concurrent firing, e.g. a write and the peer's snoop in the same cycle).
+    if schedule is not None and schedule.kind == "parallel":
+        parallel_order = [r.rule_name for r in spec_module.rule_ops]
+        if schedule.rule_order:
+            # Keep any explicitly ordered prefix, append the rest in declaration order.
+            seen = set(schedule.rule_order)
+            parallel_order = list(schedule.rule_order) + [n for n in parallel_order if n not in seen]
+        schedule.rule_order = parallel_order
+        schedule.kind = "sequential"
     sequential_mode = schedule is not None and schedule.kind == "sequential" and schedule.rule_order
 
     state_defs = []

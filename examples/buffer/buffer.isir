@@ -1,0 +1,36 @@
+isir_version: "0.1"
+module:
+  name: buffer
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: d
+      direction: input
+      type: "bits<4>"
+  state:
+    - name: q
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  rules:
+    - name: update
+      condition: "true"
+      action:
+        - (write q d)
+  properties:
+    - name: q_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read q) 0)
+  proof_obligations:
+    - property: q_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

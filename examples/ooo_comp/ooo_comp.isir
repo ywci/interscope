@@ -1,0 +1,243 @@
+isir_version: "0.1"
+module:
+  name: ooo_comp
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: issue_valid
+      direction: input
+      type: "bool"
+    - name: rd
+      direction: input
+      type: "bits<2>"  # destination architectural register (r0..r3)
+    - name: op
+      direction: input
+      type: "bool"     # false = ALU, true = LSU
+    - name: alu_op
+      direction: input
+      type: "bits<3>"
+    - name: store
+      direction: input
+      type: "bool"
+    - name: a
+      direction: input
+      type: "bits<8>"
+    - name: b
+      direction: input
+      type: "bits<8>"
+    - name: addr
+      direction: input
+      type: "bits<4>"
+  components:
+    - name: alu
+      module: "examples/alu/alu.isir"
+      port_map: {a: a, b: b, op: alu_op}
+    - name: lsu
+      module: "examples/lsu/lsu.isir"
+      port_map: {req_core: 0, req_write: store, req_addr: addr, req_data: a}
+  state:
+    # Register alias table: architectural reg -> physical reg (0..5).
+    - name: rat0
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: rat1
+      kind: register
+      type: "bits<3>"
+      initial: 1
+    - name: rat2
+      kind: register
+      type: "bits<3>"
+      initial: 2
+    - name: rat3
+      kind: register
+      type: "bits<3>"
+      initial: 3
+    # Physical register file: 6 entries. p0..p3 = architectural, p4/p5 = free pool.
+    - name: prf0_busy
+      kind: register
+      type: "bool"
+      initial: true
+    - name: prf1_busy
+      kind: register
+      type: "bool"
+      initial: true
+    - name: prf2_busy
+      kind: register
+      type: "bool"
+      initial: true
+    - name: prf3_busy
+      kind: register
+      type: "bool"
+      initial: true
+    - name: prf4_busy
+      kind: register
+      type: "bool"
+      initial: false
+    - name: prf5_busy
+      kind: register
+      type: "bool"
+      initial: false
+    # Reorder buffer: 2 entries {valid, rd, old_phys, done}.
+    - name: rob0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rob0_rd
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: rob0_old
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: rob0_done
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rob1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rob1_rd
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: rob1_old
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: rob1_done
+      kind: register
+      type: "bool"
+      initial: false
+    - name: head
+      kind: register
+      type: "bool"
+      initial: false   # false = slot 0 is older
+    - name: result
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Store buffer for store-to-load forwarding.
+    - name: sb_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: sb_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: sb_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  rules:
+    # Issue into slot 0: rename rd to physical 4, record old mapping, mark p4 busy.
+    - name: issue0
+      condition: (and issue_valid (not (read rob0_valid)))
+      action:
+        - (write rat0 (ite (eq rd 0) 4 (read rat0)))
+        - (write rat1 (ite (eq rd 1) 4 (read rat1)))
+        - (write rat2 (ite (eq rd 2) 4 (read rat2)))
+        - (write rat3 (ite (eq rd 3) 4 (read rat3)))
+        - (write prf4_busy true)
+        - (write rob0_valid true)
+        - (write rob0_rd rd)
+        - (write rob0_old (ite (eq rd 0) (read rat0) (ite (eq rd 1) (read rat1) (ite (eq rd 2) (read rat2) (read rat3)))))
+        - (write rob0_done false)
+    # Issue into slot 1: rename rd to physical 5.
+    - name: issue1
+      condition: (and (and issue_valid (read rob0_valid)) (not (read rob1_valid)))
+      action:
+        - (write rat0 (ite (eq rd 0) 5 (read rat0)))
+        - (write rat1 (ite (eq rd 1) 5 (read rat1)))
+        - (write rat2 (ite (eq rd 2) 5 (read rat2)))
+        - (write rat3 (ite (eq rd 3) 5 (read rat3)))
+        - (write prf5_busy true)
+        - (write rob1_valid true)
+        - (write rob1_rd rd)
+        - (write rob1_old (ite (eq rd 0) (read rat0) (ite (eq rd 1) (read rat1) (ite (eq rd 2) (read rat2) (read rat3)))))
+        - (write rob1_done false)
+    # Record an issued store in the store buffer.
+    - name: store_buf
+      condition: (and issue_valid (and op store))
+      action:
+        - (write sb_valid true)
+        - (write sb_addr addr)
+        - (write sb_data a)
+    # Execute: route to ALU or LSU, with store-to-load forwarding.
+    - name: execute
+      condition: "true"
+      action:
+        - (write result (ite op (ite store (read lsu_resp_data) (ite (and (read sb_valid) (eq (read sb_addr) addr)) (read sb_data) (read lsu_resp_data))) (read alu_result_reg)))
+    # Commit the older done slot, freeing its previous physical register.
+    - name: commit0
+      condition: (and (eq (read head) false) (read rob0_done))
+      action:
+        - (write prf0_busy (ite (eq (read rob0_old) 0) false (read prf0_busy)))
+        - (write prf1_busy (ite (eq (read rob0_old) 1) false (read prf1_busy)))
+        - (write prf2_busy (ite (eq (read rob0_old) 2) false (read prf2_busy)))
+        - (write prf3_busy (ite (eq (read rob0_old) 3) false (read prf3_busy)))
+        - (write prf4_busy (ite (eq (read rob0_old) 4) false (read prf4_busy)))
+        - (write prf5_busy (ite (eq (read rob0_old) 5) false (read prf5_busy)))
+        - (write rob0_valid false)
+        - (write rob0_done false)
+        - (write head true)
+    - name: commit1
+      condition: (and (eq (read head) true) (read rob1_done))
+      action:
+        - (write prf0_busy (ite (eq (read rob1_old) 0) false (read prf0_busy)))
+        - (write prf1_busy (ite (eq (read rob1_old) 1) false (read prf1_busy)))
+        - (write prf2_busy (ite (eq (read rob1_old) 2) false (read prf2_busy)))
+        - (write prf3_busy (ite (eq (read rob1_old) 3) false (read prf3_busy)))
+        - (write prf4_busy (ite (eq (read rob1_old) 4) false (read prf4_busy)))
+        - (write prf5_busy (ite (eq (read rob1_old) 5) false (read prf5_busy)))
+        - (write rob1_valid false)
+        - (write rob1_done false)
+        - (write head false)
+  properties:
+    - name: commit_in_order
+      kind: transition
+      expression:
+        kind: transition
+        rule: commit0
+        operand: (and (eq (read head) true) (eq (read rob0_valid) false))
+    - name: store_load_forward
+      kind: transition
+      expression:
+        kind: transition
+        rule: execute
+        operand: (implies (and (and op (not store)) (and (read sb_valid) (eq (read sb_addr) addr))) (eq (read result) (read sb_data)))
+    - name: rat_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (and (ge (read rat0) 0) (le (read rat0) 5))
+                      (and (and (ge (read rat1) 0) (le (read rat1) 5))
+                           (and (and (ge (read rat2) 0) (le (read rat2) 5))
+                                (and (ge (read rat3) 0) (le (read rat3) 5)))))
+  invariants:
+    - name: rat_distinct
+      operand: (and (and (neq (read rat0) (read rat1)) (neq (read rat0) (read rat2)))
+                    (and (and (neq (read rat0) (read rat3)) (neq (read rat1) (read rat2)))
+                         (and (neq (read rat1) (read rat3)) (neq (read rat2) (read rat3)))))
+  proof_obligations:
+    - property: commit_in_order
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: store_load_forward
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rat_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika

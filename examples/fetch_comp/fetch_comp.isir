@@ -1,0 +1,48 @@
+isir_version: "0.1"
+module:
+  name: fetch_comp
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: stall
+      direction: input
+      type: "bool"
+    - name: taken
+      direction: input
+      type: "bool"     # actual branch outcome (feeds the BPU)
+    - name: branch_target
+      direction: input
+      type: "bits<4>"
+  components:
+    # Branch predictor lives inside the fetch stage.
+    - name: bpu
+      module: "examples/bpu/bpu.isir"
+      lift_properties: false
+      port_map: {taken: taken}
+  state:
+    - name: pc
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  rules:
+    - name: advance
+      condition: "true"
+      action:
+        - (write pc (ite stall (read pc) (ite (read bpu_predict) branch_target (add (read pc) 1))))
+  properties:
+    - name: pc_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read pc) 0)
+  proof_obligations:
+    - property: pc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

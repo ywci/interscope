@@ -1,0 +1,51 @@
+isir_version: "0.1"
+module:
+  name: bpu
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: taken
+      direction: input
+      type: "bool"   # actual branch outcome this cycle
+  state:
+    - name: ctr
+      kind: register
+      type: "bits<2>"
+      initial: 1       # 2-bit saturating counter, start weakly-not-taken
+    - name: predict
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: update
+      condition: "true"
+      action:
+        - (write ctr (ite taken (ite (lt (read ctr) 3) (add (read ctr) 1) 3)
+                               (ite (gt (read ctr) 0) (sub (read ctr) 1) 0)))
+        - (write predict (ge (read ctr) 2))
+  properties:
+    - name: predict_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read predict) true) (eq (read predict) false))
+    - name: ctr_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read ctr) 0) (le (read ctr) 3))
+  proof_obligations:
+    - property: predict_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: ctr_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika

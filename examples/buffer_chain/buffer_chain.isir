@@ -1,0 +1,33 @@
+isir_version: "0.1"
+module:
+  name: buffer_chain
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: d0
+      direction: input
+      type: "bits<4>"
+  state:
+    - name: wire0
+      kind: register
+      type: "bits<4>"
+    - name: out1
+      kind: register
+      type: "bits<4>"
+  components:
+    - name: bufA
+      module: "examples/buffer/buffer.isir"
+      port_map:
+        d: d0
+        q: wire0
+    - name: bufB
+      module: "examples/buffer/buffer.isir"
+      port_map:
+        d: wire0
+        q: out1

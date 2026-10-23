@@ -1,0 +1,146 @@
+isir_version: "0.1"
+module:
+  name: l1_cache_comp
+  parameters:
+    - name: me
+      type: int
+      default: 0
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_core
+      direction: input
+      type: "bits<4>"
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"   # physical address (PPN): used as the VIPT tag
+    - name: req_vpn
+      direction: input
+      type: "bits<2>"   # virtual page number: used as the VIPT index
+    - name: mshr_alloc
+      direction: input
+      type: "bool"
+    - name: mshr_id
+      direction: input
+      type: "bits<2>"
+    - name: mshr_release0
+      direction: input
+      type: "bool"
+    - name: mshr_release1
+      direction: input
+      type: "bool"
+  components:
+    - name: mshr
+      module: "examples/mshr_comp/mshr_comp.isir"
+      lift_properties: false
+      port_map: {alloc_valid: mshr_alloc, id: mshr_id, addr: req_addr, data: 0, release0: mshr_release0, release1: mshr_release1}
+  state:
+    - name: s0
+      kind: register
+      type: "bits<2>"
+      initial: 0       # 0=I / 1=S / 2=E / 3=M
+    - name: a0
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: s1
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: a1
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: lru
+      kind: register
+      type: "bool"
+      initial: false   # false = way 0 is LRU (fill way 0)
+  functions:
+    - name: has_line
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a ra))
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+  rules:
+    # Write hit way 0.
+    - name: write_hit0
+      condition: (and (and (eq req_core $me) req_write) (has_line (read s0) (read a0) req_addr))
+      action:
+        - (write s0 3)
+        - (write lru true)
+    # Write hit way 1.
+    - name: write_hit1
+      condition: (and (and (and (eq req_core $me) req_write) (not (has_line (read s0) (read a0) req_addr))) (has_line (read s1) (read a1) req_addr))
+      action:
+        - (write s1 3)
+        - (write lru false)
+    # Write miss, allocate LRU way 0.
+    - name: write_miss0
+      condition: (and (and (and (and (eq req_core $me) req_write) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (not (read lru)))
+      action:
+        - (write s0 3)
+        - (write a0 req_addr)
+        - (write lru true)
+    # Write miss, allocate LRU way 1.
+    - name: write_miss1
+      condition: (and (and (and (and (eq req_core $me) req_write) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (read lru))
+      action:
+        - (write s1 3)
+        - (write a1 req_addr)
+        - (write lru false)
+    # Read miss, allocate LRU way 0 as Shared.
+    - name: read_miss0
+      condition: (and (and (and (and (eq req_core $me) (not req_write)) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (not (read lru)))
+      action:
+        - (write s0 1)
+        - (write a0 req_addr)
+    # Read miss, allocate LRU way 1 as Shared.
+    - name: read_miss1
+      condition: (and (and (and (and (eq req_core $me) (not req_write)) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (read lru))
+      action:
+        - (write s1 1)
+        - (write a1 req_addr)
+    # Snoop a peer's write: invalidate any matching way.
+    - name: snoop_inv0
+      condition: (and (and (neq req_core $me) req_write) (has_line (read s0) (read a0) req_addr))
+      action:
+        - (write s0 0)
+    - name: snoop_inv1
+      condition: (and (and (neq req_core $me) req_write) (has_line (read s1) (read a1) req_addr))
+      action:
+        - (write s1 0)
+    # Snoop a peer's read: downgrade any matching way (M/E -> S).
+    - name: snoop_dg0
+      condition: (and (and (neq req_core $me) (not req_write)) (has_line (read s0) (read a0) req_addr))
+      action:
+        - (write s0 1)
+    - name: snoop_dg1
+      condition: (and (and (neq req_core $me) (not req_write)) (has_line (read s1) (read a1) req_addr))
+      action:
+        - (write s1 1)
+
+  properties:
+    - name: states_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (and (ge (read s0) 0) (le (read s0) 3))
+                      (and (ge (read s1) 0) (le (read s1) 3)))
+
+  proof_obligations:
+    - property: states_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika

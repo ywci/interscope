@@ -56,14 +56,15 @@ Opaque Nat.leb Nat.ltb.
 Hint Resolve eq_refl : core.
 
 Ltac skel_close :=
-  try (autounfold with core in *); simpl in *;
-  first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
+  first [ solve [eauto]   (* apply Hint Resolve'd invariants before unfolding functions *)
+        | try (autounfold with core in *); simpl in *;
+          first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
                | solve [congruence] | solve [contradiction] | solve [tauto]
                | solve [btauto] | solve [lia] | solve [nia] | solve [auto] | solve [eauto]
                | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ]
                | solve [ apply Nat.leb_le; auto ]
                | solve [ autorewrite with core in *; simpl; try assumption; lia ]
-               | solve [ match goal with [ |- context[slice ?x ?h ?l] ] => pose proof (slice_upper_bound x h l) end; simpl in *; lia ] ].
+               | solve [ match goal with [ |- context[slice ?x ?h ?l] ] => pose proof (slice_upper_bound x h l) end; simpl in *; lia ] ] ].
 
 Ltac skel n :=
   match n with

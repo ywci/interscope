@@ -1,0 +1,101 @@
+isir_version: "0.1"
+module:
+  name: tlb
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: vpn
+      direction: input
+      type: "bits<4>"   # virtual page number to look up
+    - name: ppn_in
+      direction: input
+      type: "bits<4>"   # physical page number (TLB fill source)
+  state:
+    - name: way0_vpn
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: way0_ppn
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: way0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: way1_vpn
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: way1_ppn
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: way1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: lru
+      kind: register
+      type: "bool"
+      initial: false   # false = way0 is LRU (fill way0)
+    - name: tlb_ppn
+      kind: register
+      type: "bits<4>"
+      initial: 0       # translated PPN (output)
+    - name: miss
+      kind: register
+      type: "bool"
+      initial: false   # set on a TLB miss (for the PTW trigger)
+  functions:
+    - name: way_hit
+      params: [{name: v, type: "bool"}, {name: t, type: "bits<4>"}, {name: va, type: "bits<4>"}]
+      return: "bool"
+      body: (and v (eq t va))
+  rules:
+    - name: hit0
+      condition: (way_hit (read way0_valid) (read way0_vpn) vpn)
+      action:
+        - (write tlb_ppn (read way0_ppn))
+        - (write lru true)
+        - (write miss false)
+    - name: hit1
+      condition: (way_hit (read way1_valid) (read way1_vpn) vpn)
+      action:
+        - (write tlb_ppn (read way1_ppn))
+        - (write lru false)
+        - (write miss false)
+    - name: fill0
+      condition: (and (and (not (way_hit (read way0_valid) (read way0_vpn) vpn)) (not (way_hit (read way1_valid) (read way1_vpn) vpn))) (not (read lru)))
+      action:
+        - (write way0_vpn vpn)
+        - (write way0_ppn ppn_in)
+        - (write way0_valid true)
+        - (write lru true)
+        - (write miss true)
+    - name: fill1
+      condition: (and (and (not (way_hit (read way0_valid) (read way0_vpn) vpn)) (not (way_hit (read way1_valid) (read way1_vpn) vpn))) (read lru))
+      action:
+        - (write way1_vpn vpn)
+        - (write way1_ppn ppn_in)
+        - (write way1_valid true)
+        - (write lru false)
+        - (write miss true)
+  properties:
+    - name: hit_updates_ppn
+      kind: transition
+      expression:
+        kind: transition
+        rule: hit0
+        operand: (eq (read tlb_ppn) (read way0_ppn))
+  proof_obligations:
+    - property: hit_updates_ppn
+      status: unproved
+      engine: theorem_proving
+      backend: koika

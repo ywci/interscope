@@ -78,6 +78,7 @@ class Invariant:
     """A user-declared loop invariant (state property proven by induction)."""
     name: str
     operand: Union[str, List] = "true"
+    assumed: bool = False  # if True, emitted as an Axiom (already proved in a child module)
 
 
 @dataclass

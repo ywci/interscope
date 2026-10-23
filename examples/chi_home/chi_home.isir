@@ -1,0 +1,137 @@
+isir_version: "0.1"
+module:
+  name: chi_home
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_core
+      direction: input
+      type: "bool"     # false = core0, true = core1
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"
+  state:
+    # Request-node (RN) L1 state: one line each, MESI.
+    - name: c0_state
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: c1_state
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    # Home-node (HN) transaction state: a pending request + whether the snoop fired.
+    - name: pending
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snooped
+      kind: register
+      type: "bool"
+      initial: false
+    - name: pending_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: pending_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  functions:
+    - name: has_line
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a ra))
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+  rules:
+    # RN issues a write to the HN.
+    - name: request
+      condition: (and req_write (not (read pending)))
+      action:
+        - (write pending true)
+        - (write snooped false)
+        - (write pending_core req_core)
+        - (write pending_addr req_addr)
+    # HN issues a snoop to the peer RN: invalidate its matching line.
+    - name: snoop
+      condition: (and (read pending) (not (read snooped)))
+      action:
+        - (write c1_state (ite (and (not (read pending_core)) (has_line (read c1_state) (read c1_addr) (read pending_addr))) 0 (read c1_state)))
+        - (write c0_state (ite (and (read pending_core) (has_line (read c0_state) (read c0_addr) (read pending_addr))) 0 (read c0_state)))
+        - (write snooped true)
+    # HN grants the write to core0 (after the snoop completed).
+    - name: grant0
+      condition: (and (and (read pending) (read snooped)) (not (read pending_core)))
+      action:
+        - (write c0_state 3)
+        - (write c0_addr (read pending_addr))
+        - (write pending false)
+    # HN grants the write to core1 (after the snoop completed).
+    - name: grant1
+      condition: (and (and (read pending) (read snooped)) (read pending_core))
+      action:
+        - (write c1_state 3)
+        - (write c1_addr (read pending_addr))
+        - (write pending false)
+  invariants:
+    - name: peer_clear0
+      operand: (implies (and (and (read pending) (read snooped)) (not (read pending_core)))
+                        (not (and (is_modified (read c1_state)) (eq (read c1_addr) (read pending_addr)))))
+    - name: peer_clear1
+      operand: (implies (and (and (read pending) (read snooped)) (read pending_core))
+                        (not (and (is_modified (read c0_state)) (eq (read c0_addr) (read pending_addr)))))
+  invariants:
+    - name: peer_clear0
+      operand: (implies (and (and (read pending) (read snooped)) (not (read pending_core)))
+                        (not (and (is_modified (read c1_state)) (eq (read c1_addr) (read pending_addr)))))
+    - name: peer_clear1
+      operand: (implies (and (and (read pending) (read snooped)) (read pending_core))
+                        (not (and (is_modified (read c0_state)) (eq (read c0_addr) (read pending_addr)))))
+  properties:
+    - name: peer_clear0
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (and (and (read pending) (read snooped)) (not (read pending_core)))
+                          (not (and (is_modified (read c1_state)) (eq (read c1_addr) (read pending_addr)))))
+    - name: peer_clear1
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (and (and (read pending) (read snooped)) (read pending_core))
+                          (not (and (is_modified (read c0_state)) (eq (read c0_addr) (read pending_addr)))))
+
+  invariants:
+    - name: single_writer
+      operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))
+                        (eq (read c0_addr) (read c1_addr))))
+
+  proof_obligations:
+    - property: peer_clear0
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: peer_clear1
+      status: unproved
+      engine: theorem_proving
+      backend: koika

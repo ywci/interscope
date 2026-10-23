@@ -1,0 +1,55 @@
+isir_version: "0.1"
+module:
+  name: mshr_comp
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: alloc_valid
+      direction: input
+      type: "bool"
+    - name: id
+      direction: input
+      type: "bits<2>"
+    - name: addr
+      direction: input
+      type: "bits<4>"
+    - name: data
+      direction: input
+      type: "bits<8>"
+    - name: release0
+      direction: input
+      type: "bool"
+    - name: release1
+      direction: input
+      type: "bool"
+  components:
+    - name: mshr0
+      module: "examples/mshr/mshr.isir"
+      lift_properties: false
+      port_map: {alloc_valid: alloc_valid, id: id, addr: addr, data: data, release: release0}
+    - name: mshr1
+      module: "examples/mshr/mshr.isir"
+      lift_properties: false
+      port_map: {alloc_valid: alloc_valid, id: id, addr: addr, data: data, release: release1}
+    - name: arb
+      module: "examples/arbiter/arbiter.isir"
+      lift_properties: false
+      port_map: {req0_valid: alloc_valid, req1_valid: alloc_valid}
+  properties:
+    - name: arb_grants_on_alloc
+      kind: transition
+      expression:
+        kind: transition
+        rule: arb_arbitrate
+        operand: (implies alloc_valid (eq (read arb_grant_valid) true))
+  proof_obligations:
+    - property: arb_grants_on_alloc
+      status: unproved
+      engine: theorem_proving
+      backend: koika

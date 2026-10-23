@@ -13,6 +13,7 @@ from isir.parser.ast import (
     Schedule, ISIR, State, TemporalExpr, UserType, Candidate, OneOf,
 )
 from isir.utils.logger import get_logger
+from isir.utils.expr import parse_sexpr, expr_to_string
 
 logger = get_logger(__name__)
 
@@ -295,7 +296,8 @@ def _parse_axiom(data: Dict[str, Any]) -> Axiom:
 def _parse_invariant(data: Dict[str, Any]) -> Invariant:
     return Invariant(
         name=_require(data, "name", "invariant"),
-        operand=_require(data, "operand", "invariant")
+        operand=_require(data, "operand", "invariant"),
+        assumed=bool(data.get("assumed", False))
     )
 
 
@@ -512,9 +514,13 @@ def _expand_reductions(raw: Any) -> Any:
     expression by left-folding ``step`` over ``range`` indices, substituting
     ``{acc}`` (the accumulated expression) and ``{var}`` (the index).  The
     resulting string then replaces every ``@name`` reference anywhere in the
-    design.  This gives general-N reductions (N-way ``or``, "find first" ``ite``)
-    without design-specific helpers.
+    design.  ``@name(a1, a2, ...)`` passes positional arguments, substituted
+    for ``$1``, ``$2``, ... inside the folded expression.  This gives general-N
+    reductions (N-way ``or``, "find first" ``ite``) without design-specific
+    helpers.
     """
+    import re
+
     module = raw.get("module", {})
     if not isinstance(module, dict):
         return raw
@@ -539,7 +545,16 @@ def _expand_reductions(raw: Any) -> Any:
     def _substitute(obj: Any) -> Any:
         if isinstance(obj, str):
             for name, val in folded.items():
-                obj = obj.replace("@" + name, val)
+                pattern = re.compile(r"@" + re.escape(name) + r"(?:\(([^)]*)\))?")
+                def _repl(match: Any) -> str:
+                    args = match.group(1)
+                    if args is None:
+                        return val
+                    result = val
+                    for k, arg in enumerate(a.strip() for a in args.split(",")):
+                        result = result.replace(f"${k + 1}", arg)
+                    return result
+                obj = pattern.sub(_repl, obj)
             return obj
         if isinstance(obj, list):
             return [_substitute(x) for x in obj]
@@ -552,6 +567,223 @@ def _expand_reductions(raw: Any) -> Any:
     if isinstance(result.get("module"), dict):
         result["module"].pop("reductions", None)
     return result
+
+
+def _resolve_component_path(base_path: Path, module_ref: str) -> Path:
+    """Resolve a component's ``module`` reference to an ``.isir`` file path.
+
+    Tries the parent file's directory first (like ``#include``), then the
+    current working directory, then the reference as given.
+    """
+    ref = Path(module_ref)
+    if ref.is_absolute():
+        return ref
+    for candidate in (base_path.parent / ref, Path.cwd() / ref, ref):
+        if candidate.exists():
+            return candidate
+    return base_path.parent / ref
+
+
+def _build_name_map(child_module: Dict[str, Any], prefix: str, port_map: Dict[str, Any]) -> Dict[str, str]:
+    """Map every child identifier to its flattened (prefixed/bound) parent name."""
+    name_map: Dict[str, str] = {}
+    for key in ("inputs", "outputs", "state"):
+        for item in child_module.get(key, []) or []:
+            n = item.get("name") if isinstance(item, dict) else None
+            if n:
+                name_map[n] = str(port_map.get(n, f"{prefix}_{n}"))
+    for key in ("functions", "rules", "properties"):
+        for item in child_module.get(key, []) or []:
+            n = item.get("name") if isinstance(item, dict) else None
+            if n:
+                name_map[n] = f"{prefix}_{n}"
+    return name_map
+
+
+def _substitute_sexpr_names(expr: Any, name_map: Dict[str, str]) -> Any:
+    """Recursively replace identifier atoms in a parsed sexpr."""
+    if isinstance(expr, str):
+        return name_map.get(expr, expr)
+    if isinstance(expr, list):
+        return [_substitute_sexpr_names(e, name_map) for e in expr]
+    return expr
+
+
+def _substitute_sexpr_string(s: Any, name_map: Dict[str, str]) -> Any:
+    """Parse a sexpr string, substitute names, and re-serialize it."""
+    if not isinstance(s, str):
+        return s
+    try:
+        return expr_to_string(_substitute_sexpr_names(parse_sexpr(s), name_map))
+    except Exception:
+        return s
+
+
+def _merge_modules(parent: Dict[str, Any], child: Dict[str, Any]) -> None:
+    """Merge the child's flattened state/ports/functions/rules/properties into the parent."""
+    for key in ("state", "inputs", "outputs", "functions", "rules", "properties", "axioms", "invariants", "proof_obligations"):
+        items = child.get(key, [])
+        if items:
+            parent.setdefault(key, [])
+            parent[key].extend(items)
+
+
+def _unfold_function_bodies(sexpr_str: Any, functions: List[Dict[str, Any]]) -> Any:
+    """Beta-reduce user function calls in a sexpr using their declared bodies.
+
+    E.g. with ``is_modified(s) = (eq s 3)``, the call ``(is_modified (read c0_state))``
+    becomes ``(eq (read c0_state) 3)``.  Nested calls are reduced recursively.
+    """
+    if not sexpr_str or not functions:
+        return sexpr_str
+    fn_map = {}
+    for fn in functions:
+        name = fn.get("name")
+        body = fn.get("body")
+        params = [p.get("name") for p in (fn.get("params") or [])]
+        if name and body is not None:
+            fn_map[name] = (params, parse_sexpr(body) if isinstance(body, str) else body)
+    if not fn_map:
+        return sexpr_str
+    try:
+        node = parse_sexpr(sexpr_str) if isinstance(sexpr_str, str) else sexpr_str
+    except Exception:
+        return sexpr_str
+
+    def _subst(n, sub):
+        if isinstance(n, str):
+            return sub.get(n, n)
+        if isinstance(n, list):
+            return [_subst(x, sub) for x in n]
+        return n
+
+    def _unfold(n, depth=0):
+        if depth > 32:
+            return n
+        if isinstance(n, list) and n and isinstance(n[0], str) and n[0] in fn_map:
+            params, body = fn_map[n[0]]
+            args = n[1:]
+            sub = {params[i]: args[i] for i in range(min(len(params), len(args)))}
+            return _unfold(_subst(body, sub), depth + 1)
+        if isinstance(n, list):
+            return [_unfold(x, depth) for x in n]
+        return n
+
+    return expr_to_string(_unfold(node))
+
+
+def _flatten_components(raw: Dict[str, Any], base_path: Path) -> Dict[str, Any]:
+    """Expand hierarchical ``components`` into flattened, prefixed declarations.
+
+    Each component names an ``.isir`` module (by path).  Its state, ports,
+    functions, rules and properties are loaded, prefixed with the instance
+    name, and merged into the parent; ``port_map`` rebinds child ports to
+    parent signals instead of the prefix.
+    """
+    module = raw.get("module", {})
+    if not isinstance(module, dict):
+        return raw
+    components = module.get("components", [])
+    if not components:
+        return raw
+
+    for comp in components:
+        if not isinstance(comp, dict):
+            continue
+        name = comp.get("name")
+        module_ref = comp.get("module")
+        if not name or not module_ref:
+            continue
+        overrides = comp.get("parameters", {}) or {}
+        port_map = comp.get("port_map", {}) or {}
+        lift_props = comp.get("lift_properties", True)
+        # lift_properties modes:
+        #   true/"obligations" (default) : lift and re-prove the child's obligations
+        #   false/"drop"                : drop the child's properties/invariants
+        #   "invariant"                 : lift safety/always properties as *assumed*
+        #                                 reachable invariants (reuse, don't re-prove)
+        if lift_props is False or lift_props == "drop":
+            lift_mode = "drop"
+        elif lift_props == "invariant":
+            lift_mode = "invariant"
+        else:
+            lift_mode = "obligations"
+
+        path = _resolve_component_path(base_path, str(module_ref))
+        child = load_expanded_raw(path, parameter_overrides=overrides)
+        child_module = child.get("module", {})
+        if lift_mode == "drop":
+            child_module["properties"] = []
+            child_module["proof_obligations"] = []
+            child_module["invariants"] = []
+        name_map = _build_name_map(child_module, str(name), port_map)
+
+        # Drop child ports *and wires* bound via `port_map`: they are wired to
+        # parent signals, not promoted/merged into the parent.
+        bound_names = {str(k) for k in port_map}
+        for key in ("inputs", "outputs", "state"):
+            child_module[key] = [
+                item for item in (child_module.get(key, []) or [])
+                if not (isinstance(item, dict) and item.get("name") in bound_names)
+            ]
+
+        # Prefix declaration names.
+        for key in ("state", "inputs", "outputs", "functions", "rules", "properties", "axioms", "invariants"):
+            for item in child_module.get(key, []) or []:
+                if isinstance(item, dict) and item.get("name"):
+                    item["name"] = name_map.get(item["name"], f"{name}_{item['name']}")
+
+        # Substitute references inside expressions.
+        for fn in child_module.get("functions", []) or []:
+            fn["body"] = _substitute_sexpr_string(fn.get("body"), name_map)
+        for rule in child_module.get("rules", []) or []:
+            rule["condition"] = _substitute_sexpr_string(rule.get("condition"), name_map)
+            rule["action"] = [_substitute_sexpr_string(a, name_map) for a in (rule.get("action") or [])]
+        for prop in child_module.get("properties", []) or []:
+            expr = prop.get("expression", {}) if isinstance(prop.get("expression"), dict) else {}
+            if "operand" in expr:
+                expr["operand"] = _substitute_sexpr_string(expr["operand"], name_map)
+            if "rule" in expr and expr["rule"] in name_map:
+                expr["rule"] = name_map[expr["rule"]]
+        for ax in child_module.get("axioms", []) or []:
+            ax["statement"] = _substitute_sexpr_string(ax.get("statement"), name_map)
+        for inv in child_module.get("invariants", []) or []:
+            inv["operand"] = _substitute_sexpr_string(inv.get("operand"), name_map)
+        for po in child_module.get("proof_obligations", []) or []:
+            if isinstance(po, dict) and po.get("property") in name_map:
+                po["property"] = name_map[po["property"]]
+
+        # lift_properties: invariant — convert the child's safety/always
+        # properties into assumed reachable invariants (reuse, don't re-prove).
+        if lift_mode == "invariant":
+            lifted_invariants = []
+            for prop in child_module.get("properties", []) or []:
+                if prop.get("kind") != "safety":
+                    continue
+                expr = prop.get("expression", {})
+                if not isinstance(expr, dict) or expr.get("kind") != "always":
+                    continue
+                operand = expr.get("operand")
+                if operand is None:
+                    continue
+                # Unfold the child's user functions so the lifted invariant is in
+                # primitive operators, matching the parent's own (unfolded) form.
+                operand = _unfold_function_bodies(
+                    operand, child_module.get("functions", []) or []
+                )
+                lifted_invariants.append({
+                    "name": prop.get("name"),
+                    "operand": operand,
+                    "assumed": True,
+                })
+            child_module.setdefault("invariants", []).extend(lifted_invariants)
+            child_module["properties"] = []
+            child_module["proof_obligations"] = []
+
+        _merge_modules(module, child_module)
+
+    module.pop("components", None)
+    return raw
 
 
 def load_expanded_raw(source: Union[str, Path], parameter_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -581,10 +813,10 @@ def load_expanded_raw(source: Union[str, Path], parameter_overrides: Optional[Di
                 params[p["name"]] = p.get("default")
     if parameter_overrides:
         params.update(parameter_overrides)
-    if params:
-        raw = _substitute_params(raw, params)
-        raw = _expand_reductions(raw)
-        raw = _expand_repeats(raw)
+    raw = _substitute_params(raw, params)
+    raw = _expand_reductions(raw)
+    raw = _expand_repeats(raw)
+    raw = _flatten_components(raw, path)
     return raw
 
 

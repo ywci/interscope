@@ -1,0 +1,34 @@
+isir_version: "0.1"
+module:
+  name: rn_core
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_core
+      direction: input
+      type: "bool"     # this RN's id (unused in the passive L1D)
+  state:
+    # L1D MESI line state (the actual cache). Written by the home node's snoop/grant.
+    - name: mstate
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: maddr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  functions:
+    - name: has_line
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a ra))
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)

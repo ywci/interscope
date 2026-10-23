@@ -62,6 +62,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
         spec_mod.invariants.append({
             'name': inv.name,
             'operand': inv.operand,
+            'assumed': bool(getattr(inv, 'assumed', False)),
         })
 
     # State elements

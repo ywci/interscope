@@ -426,7 +426,6 @@ def test_optional_fields():
             "inputs": [{"name": "in1", "direction": "input", "type": "bool"}],
             "outputs": [],
             "types": [{"name": "state_t", "kind": "enum", "values": ["A", "B"]}],
-            "components": [{"name": "sub", "module": "submod"}],
             "directives": [{"type": "assume", "name": "assume1", "expression": "true"}],
             "fairness": [{"name": "fair1", "type": "weak", "condition": "(eventually req)"}],
             "metadata": {"engine": "ic3"},
@@ -440,8 +439,6 @@ def test_optional_fields():
     assert len(spec.module.inputs) == 1
     assert len(spec.module.types) == 1
     assert spec.module.types[0].name == "state_t"
-    assert len(spec.module.components) == 1
-    assert spec.module.components[0].name == "sub"
     assert len(spec.module.directives) == 1
     assert spec.module.directives[0].type == "assume"
     assert len(spec.module.fairness) == 1
@@ -549,3 +546,227 @@ module:
     # folded: (or (or (or false (eq a 0)) (eq a 1)) (eq a 2))
     assert "(or (or (or false (eq a 0)) (eq a 1)) (eq a 2))" in action
     assert "reductions" not in raw["module"]
+
+
+def test_component_flattening(tmp_path):
+    """`components` load a child module by path, prefix it, and bind ports."""
+    (tmp_path / "child.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: child
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: en, direction: input, type: "bool"}]
+  state:
+    - {name: cnt, kind: register, type: "bits<4>", initial: 0}
+  rules:
+    - name: tick
+      condition: en
+      action:
+        - (write cnt (add (read cnt) 1))
+  properties:
+    - name: bound
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read cnt) 15)
+  proof_obligations:
+    - property: bound
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+''', encoding="utf-8")
+    (tmp_path / "top.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: top
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: go, direction: input, type: "bool"}]
+  components:
+    - name: u0
+      module: "child.isir"
+      port_map: {en: go}
+''', encoding="utf-8")
+    raw = load_expanded_raw(tmp_path / "top.isir")
+    mod = raw["module"]
+    assert [s["name"] for s in mod["state"]] == ["u0_cnt"]
+    assert [i["name"] for i in mod["inputs"]] == ["go"]
+    assert [r["name"] for r in mod["rules"]] == ["u0_tick"]
+    assert mod["rules"][0]["condition"] == "go"
+    assert mod["rules"][0]["action"] == ["(write u0_cnt (add (read u0_cnt) 1))"]
+    assert [p["name"] for p in mod["properties"]] == ["u0_bound"]
+    assert mod["proof_obligations"][0]["property"] == "u0_bound"
+    assert "components" not in mod
+
+
+def test_reduce_positional_args():
+    """`@name(a)` passes a positional argument into the folded expression."""
+    import tempfile
+    text = '''
+isir_version: "0.1"
+module:
+  name: pa
+  parameters:
+    - {name: n, type: int, default: 2}
+  reductions:
+    - name: any_eq
+      var: j
+      range: $n
+      init: "false"
+      step: "(or {acc} (eq (read x{j}) $1))"
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: a, direction: input, type: "bits<2>"}]
+  state:
+    - {name: x0, kind: register, type: "bits<2>", initial: 0}
+    - {name: x1, kind: register, type: "bits<2>", initial: 0}
+  rules:
+    - name: r
+      action:
+        - (write x0 (ite @any_eq(a) 1 0))
+'''
+    p = Path(tempfile.mkdtemp()) / "pa.isir"
+    p.write_text(text)
+    raw = load_expanded_raw(p)
+    action = raw["module"]["rules"][0]["action"][0]
+    assert "(or (or false (eq (read x0) a)) (eq (read x1) a))" in action
+
+
+def test_component_cross_instance_wiring(tmp_path):
+    """`port_map` can bind a child *state* to a parent signal (cross-instance wire)."""
+    (tmp_path / "buf.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: buf
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: d, direction: input, type: "bits<4>"}]
+  state:
+    - {name: q, kind: register, type: "bits<4>", initial: 0}
+  rules:
+    - name: update
+      condition: "true"
+      action: [(write q d)]
+''', encoding="utf-8")
+    (tmp_path / "top.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: top
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: d0, direction: input, type: "bits<4>"}]
+  state:
+    - {name: mid, kind: register, type: "bits<4>", initial: 0}
+  components:
+    - name: a
+      module: "buf.isir"
+      port_map: {d: d0, q: mid}
+    - name: b
+      module: "buf.isir"
+      port_map: {d: mid}
+''', encoding="utf-8")
+    raw = load_expanded_raw(tmp_path / "top.isir")
+    mod = raw["module"]
+    rules = {r["name"]: r for r in mod["rules"]}
+    # a writes the shared 'mid' wire; b reads it.
+    assert rules["a_update"]["action"] == ["(write mid d0)"]
+    assert rules["b_update"]["action"] == ["(write b_q mid)"]
+    # 'mid' is declared once in the parent, not duplicated.
+    assert [s["name"] for s in mod["state"]].count("mid") == 1
+
+
+def test_component_lift_properties_false(tmp_path):
+    """`lift_properties: false` drops a child's proof obligations (reuse, not re-prove)."""
+    (tmp_path / "child.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: child
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: d, direction: input, type: "bits<4>"}]
+  state:
+    - {name: q, kind: register, type: "bits<4>", initial: 0}
+  rules:
+    - name: update
+      condition: "true"
+      action: [(write q d)]
+  properties:
+    - name: q_nonneg
+      kind: safety
+      expression: {kind: always, operand: "(ge (read q) 0)"}
+  proof_obligations:
+    - {property: q_nonneg, status: unproved, engine: theorem_proving, backend: koika}
+''', encoding="utf-8")
+    (tmp_path / "top.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: top
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: d0, direction: input, type: "bits<4>"}]
+  components:
+    - name: a
+      module: "child.isir"
+      lift_properties: false
+      port_map: {d: d0}
+''', encoding="utf-8")
+    raw = load_expanded_raw(tmp_path / "top.isir")
+    mod = raw["module"]
+    assert mod.get("properties", []) == []
+    assert mod.get("proof_obligations", []) == []
+    assert [r["name"] for r in mod["rules"]] == ["a_update"]
+
+
+def test_lift_properties_invariant_mode(tmp_path):
+    """`lift_properties: invariant` lifts a child's safety/always property as an
+    assumed reachable invariant with its user functions unfolded."""
+    (tmp_path / "child.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: child
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: d, direction: input, type: "bits<4>"}]
+  state:
+    - {name: q, kind: register, type: "bits<4>", initial: 0}
+  functions:
+    - name: is_three
+      params: [{name: s, type: "bits<4>"}]
+      return: "bool"
+      body: (eq s 3)
+  rules:
+    - name: update
+      condition: "true"
+      action: [(write q d)]
+  properties:
+    - name: q_is_three
+      kind: safety
+      expression: {kind: always, operand: "(is_three (read q))"}
+  proof_obligations:
+    - {property: q_is_three, status: unproved, engine: theorem_proving, backend: koika}
+''', encoding="utf-8")
+    (tmp_path / "top.isir").write_text('''
+isir_version: "0.1"
+module:
+  name: top
+  clocks: [{name: clk, edge: posedge}]
+  resets: [{name: rst, polarity: active_high, async: false, affects: all}]
+  inputs: [{name: d0, direction: input, type: "bits<4>"}]
+  components:
+    - name: a
+      module: "child.isir"
+      lift_properties: invariant
+      port_map: {d: d0}
+''', encoding="utf-8")
+    raw = load_expanded_raw(tmp_path / "top.isir")
+    mod = raw["module"]
+    invs = mod.get("invariants", [])
+    assert len(invs) == 1, f"expected 1 lifted invariant, got {invs}"
+    assert invs[0]["name"] == "a_q_is_three"
+    assert invs[0]["assumed"] is True
+    # function is_three was unfolded to (eq ... 3)
+    assert "is_three" not in invs[0]["operand"]
+    assert "(eq (read a_q) 3)" in invs[0]["operand"]
+    assert mod.get("properties", []) == []
+    assert mod.get("proof_obligations", []) == []

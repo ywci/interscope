@@ -1,0 +1,82 @@
+isir_version: "0.1"
+module:
+  name: axi_mem
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    # AXI read-address channel (simplified: no burst/len).
+    - name: araddr
+      direction: input
+      type: "bits<4>"
+    - name: arvalid
+      direction: input
+      type: "bool"
+    # AXI write-address / write-data channel.
+    - name: awaddr
+      direction: input
+      type: "bits<4>"
+    - name: awvalid
+      direction: input
+      type: "bool"
+    - name: wdata
+      direction: input
+      type: "bits<8>"
+    - name: wvalid
+      direction: input
+      type: "bool"
+  state:
+    - name: mem
+      kind: memory
+      type: { type: "memory", elem: "bits<8>", depth: 16 }
+    # AXI read-data / write-response channels (registered, one-cycle).
+    - name: rdata
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: rvalid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: bvalid
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    # Read: AR handshake -> serve the word on the R channel.
+    - name: do_read
+      condition: arvalid
+      action:
+        - (write rdata (mem_read mem araddr))
+        - (write rvalid true)
+    # Write: AW & W handshake -> store the word, ack on the B channel.
+    - name: do_write
+      condition: (and awvalid wvalid)
+      action:
+        - (mem_write mem awaddr wdata)
+        - (write bvalid true)
+  properties:
+    - name: rvalid_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read rvalid) true) (eq (read rvalid) false))
+    - name: bvalid_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read bvalid) true) (eq (read bvalid) false))
+  proof_obligations:
+    - property: rvalid_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: bvalid_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika

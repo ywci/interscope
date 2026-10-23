@@ -1,0 +1,77 @@
+isir_version: "0.1"
+module:
+  name: cache_comp
+  parameters:
+    - name: me
+      type: int
+      default: 0
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    # I-side (instruction fetch): exposed to fetch_comp.
+    - name: i_addr
+      direction: input
+      type: "bits<4>"
+    # D-side (data access): exposed to lsu.
+    - name: d_core
+      direction: input
+      type: "bits<4>"
+    - name: d_write
+      direction: input
+      type: "bool"
+    - name: d_addr
+      direction: input
+      type: "bits<4>"
+    - name: d_data
+      direction: input
+      type: "bits<8>"
+  components:
+    # L1 I-Cache: read-only, fed by the fetch address.
+    - name: l1i
+      module: "examples/l1_cache_comp/l1_cache_comp.isir"
+      parameters: {me: $me}
+      lift_properties: false
+      port_map: {req_core: 0, req_write: const_false, req_addr: i_addr, req_vpn: 0, mshr_alloc: false, mshr_id: 0, mshr_release0: false, mshr_release1: false}
+    # L1 D-Cache: MESI, fed by the data request.
+    - name: l1d
+      module: "examples/l1_cache_comp/l1_cache_comp.isir"
+      parameters: {me: $me}
+      lift_properties: false
+      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: 0, mshr_alloc: false, mshr_id: 0, mshr_release0: false, mshr_release1: false}
+    # L2 unified cache: MESI last-level cache.
+    - name: l2
+      module: "examples/l2_cache_comp/l2_cache_comp.isir"
+      parameters: {me: $me}
+      lift_properties: false
+      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: 0, req_data: d_data, mshr_alloc: false, mshr_id: 0, mshr_release0: false, mshr_release1: false, miss_valid: l2_miss_valid, miss_addr: l2_miss_addr}
+  state:
+    - name: const_false
+      kind: register
+      type: "bool"
+      initial: false
+    - name: l2_miss_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: l2_miss_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  properties:
+    - name: l1d_states_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (and (ge (read l1d_s0) 0) (le (read l1d_s0) 3))
+                      (and (ge (read l1d_s1) 0) (le (read l1d_s1) 3)))
+  proof_obligations:
+    - property: l1d_states_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika

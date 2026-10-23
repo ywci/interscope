@@ -1,0 +1,79 @@
+isir_version: "0.1"
+module:
+  name: lsu
+  parameters:
+    - name: me
+      type: int
+      default: 0
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_core
+      direction: input
+      type: "bits<4>"   # which core issues the memory op this cycle
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"
+    - name: req_data
+      direction: input
+      type: "bits<8>"
+  components:
+    - name: l1d
+      module: "examples/l1_cache_comp/l1_cache_comp.isir"
+      parameters: {me: $me}
+      port_map: {req_core: req_core, req_write: req_write, req_addr: req_addr, req_vpn: 0, mshr_alloc: false, mshr_id: 0, mshr_release0: false, mshr_release1: false}
+  state:
+    - name: mem
+      kind: memory
+      type: { type: "memory", elem: "bits<8>", depth: 16 }
+    - name: resp_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: resp_valid
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    # Store: write-through to memory, signal completion.
+    - name: store
+      condition: (and (eq req_core $me) req_write)
+      action:
+        - (mem_write mem req_addr req_data)
+        - (write resp_valid true)
+    # Load: serve the word from memory, signal completion.
+    - name: load
+      condition: (and (eq req_core $me) (not req_write))
+      action:
+        - (write resp_data (mem_read mem req_addr))
+        - (write resp_valid true)
+  properties:
+    - name: resp_valid_bool
+      kind: safety
+      expression:
+        kind: always
+        operand: (or (eq (read resp_valid) true) (eq (read resp_valid) false))
+    - name: load_returns_mem
+      kind: transition
+      expression:
+        kind: transition
+        rule: load
+        operand: (eq (read resp_data) (mem_read mem req_addr))
+  proof_obligations:
+    - property: resp_valid_bool
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: load_returns_mem
+      status: unproved
+      engine: theorem_proving
+      backend: koika

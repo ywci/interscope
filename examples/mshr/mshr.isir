@@ -1,0 +1,68 @@
+isir_version: "0.1"
+module:
+  name: mshr
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: alloc_valid
+      direction: input
+      type: "bool"
+    - name: id
+      direction: input
+      type: "bits<2>"   # miss id (e.g. ROB slot)
+    - name: addr
+      direction: input
+      type: "bits<4>"   # missed address
+    - name: data
+      direction: input
+      type: "bits<8>"   # store data (for a store miss)
+    - name: release
+      direction: input
+      type: "bool"
+  state:
+    - name: valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: mid
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: maddr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: mdata
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  rules:
+    - name: alloc
+      condition: (and alloc_valid (not (read valid)))
+      action:
+        - (write valid true)
+        - (write mid id)
+        - (write maddr addr)
+        - (write mdata data)
+    - name: rel
+      condition: release
+      action:
+        - (write valid false)
+  properties:
+    - name: alloc_sets_entry
+      kind: transition
+      expression:
+        kind: transition
+        rule: alloc
+        operand: (and (eq (read valid) true) (eq (read mid) id))
+  proof_obligations:
+    - property: alloc_sets_entry
+      status: unproved
+      engine: theorem_proving
+      backend: koika

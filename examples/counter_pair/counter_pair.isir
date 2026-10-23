@@ -1,0 +1,25 @@
+isir_version: "0.1"
+module:
+  name: counter_pair
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: inc_lo
+      direction: input
+      type: "bool"
+    - name: inc_hi
+      direction: input
+      type: "bool"
+  components:
+    - name: lo
+      module: "examples/counter/counter.isir"
+      port_map: {inc: inc_lo}
+    - name: hi
+      module: "examples/counter/counter.isir"
+      port_map: {inc: inc_hi}
