@@ -1,0 +1,237 @@
+isir_version: "0.1"
+module:
+  name: l2_slice
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    # CHI REQ (RN -> HN): request from a core's L1.
+    - name: req_valid
+      direction: input
+      type: "bool"
+    - name: req_core
+      direction: input
+      type: "bool"   # requester core id (false=core0, true=core1)
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"   # physical line address (tag)
+    - name: req_data
+      direction: input
+      type: "bits<8>"
+    # CHI RSP (RN -> HN): snoop response from the peer RN.
+    - name: rsp_valid
+      direction: input
+      type: "bool"
+    - name: rsp_core
+      direction: input
+      type: "bool"   # responding core id
+    - name: rsp_op
+      direction: input
+      type: "bool"      # 0 = invalidated, 1 = downgraded
+  state:
+    # Directory: per-core line state + address (the sharer bookkeeping).
+    - name: c0_state
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: c1_state
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    # L2 data cache: 2-way set-associative (MESI + tag + data + LRU).
+    - name: s0
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: a0
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: d0
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: s1
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: a1
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: d1
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: lru
+      kind: register
+      type: "bool"
+      initial: false
+    # CHI transaction control.
+    - name: pending
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snooped
+      kind: register
+      type: "bool"
+      initial: false
+    - name: pending_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: pending_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: pending_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: pending_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: req_credits
+      kind: register
+      type: "bits<2>"
+      initial: 2
+    # SNP (HN -> RN): snoop to the peer.
+    - name: snp_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: snp_op
+      kind: register
+      type: "bool"
+      initial: false
+    # GRANT (HN -> RN): grant to the requester.
+    - name: grant_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: grant_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  functions:
+    - name: has_line
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a ra))
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+  rules:
+    # REQ: latch the request and issue a snoop to the peer RN (snoop-before-grant).
+    - name: request
+      condition: (and (and (not (read pending)) req_valid) (neq (read req_credits) 0))
+      action:
+        - (write pending true)
+        - (write pending_core req_core)
+        - (write pending_write req_write)
+        - (write pending_addr req_addr)
+        - (write pending_data req_data)
+        - (write snooped false)
+        - (write req_credits (sub (read req_credits) 1))
+        - (write snp_valid true)
+        - (write snp_core (not req_core))
+        - (write snp_addr req_addr)
+        - (write snp_op req_write)
+    # Snoop response arrived: record it and clear the peer's directory entry.
+    - name: snoop
+      condition: (and (and (read pending) (not (read snooped))) rsp_valid)
+      action:
+        - (write snooped true)
+        - (write snp_valid false)
+        - (write c0_state (ite (eq (read snp_core) false) (ite (read snp_op) 0 1) (read c0_state)))
+        - (write c1_state (ite (eq (read snp_core) true) (ite (read snp_op) 0 1) (read c1_state)))
+    # Grant the requester (snoop-before-grant): update the directory and the L2
+    # data cache (allocate into the LRU way).
+    - name: grant
+      condition: (and (read pending) (read snooped))
+      action:
+        - (write grant_valid true)
+        - (write grant_core (read pending_core))
+        - (write grant_write (read pending_write))
+        - (write grant_addr (read pending_addr))
+        - (write grant_data (read pending_data))
+        # directory: requester -> M (write) / S (read); peer already cleared.
+        - (write c0_state (ite (eq (read pending_core) false) (ite (read pending_write) 3 1) (read c0_state)))
+        - (write c0_addr (ite (eq (read pending_core) false) (read pending_addr) (read c0_addr)))
+        - (write c1_state (ite (eq (read pending_core) true) (ite (read pending_write) 3 1) (read c1_state)))
+        - (write c1_addr (ite (eq (read pending_core) true) (read pending_addr) (read c1_addr)))
+        # L2 data cache: fill the LRU way with the granted line.
+        - (write s0 (ite (eq (read lru) false) (ite (read pending_write) 3 2) (read s0)))
+        - (write a0 (ite (eq (read lru) false) (read pending_addr) (read a0)))
+        - (write d0 (ite (eq (read lru) false) req_data (read d0)))
+        - (write s1 (ite (eq (read lru) true) (ite (read pending_write) 3 2) (read s1)))
+        - (write a1 (ite (eq (read lru) true) (read pending_addr) (read a1)))
+        - (write d1 (ite (eq (read lru) true) req_data (read d1)))
+        - (write lru (not (read lru)))
+        - (write pending false)
+        - (write snooped false)
+        - (write req_credits (add (read req_credits) 1))
+    # Deassert the grant one cycle after it was issued.
+    - name: clear_grant
+      condition: (not (and (read pending) (read snooped)))
+      action:
+        - (write grant_valid false)
+  # Bounded auxiliary invariants (declared for now; l2_states_valid is provable
+  # via the skeleton at depth ~10, credits_bounded needs req_credits+pending=2).
+  invariants:
+    - name: l2_states_valid
+      operand: (and (and (ge (read s0) 0) (le (read s0) 3))
+                    (and (ge (read s1) 0) (le (read s1) 3)))
+    - name: credits_bounded
+      operand: (and (ge (read req_credits) 0) (le (read req_credits) 2))
+  properties:
+    # SWMR over the directory: at most one core holds M at a given address.
+    - name: single_writer
+      kind: safety
+      expression:
+        kind: always
+        operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))
+                          (eq (read c0_addr) (read c1_addr))))
+  proof_obligations:
+    - property: single_writer
+      status: unproved
+      engine: theorem_proving
+      backend: koika

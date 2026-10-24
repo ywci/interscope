@@ -1,10 +1,6 @@
 isir_version: "0.1"
 module:
   name: core_rn
-  parameters:
-    - name: me
-      type: int
-      default: 0
   clocks:
     - name: clk
       edge: posedge
@@ -14,63 +10,52 @@ module:
       async: false
       affects: all
   inputs:
-    # CHI channels exposed by this request node.
-    - name: req_valid
-      direction: input
-      type: "bool"      # this RN has a request to issue
-    - name: req_write
+    # Request from the core's pipeline (what the L1 wants to do).
+    - name: core_req_valid
       direction: input
       type: "bool"
-    - name: req_addr
+    - name: core_req_write
+      direction: input
+      type: "bool"
+    - name: core_req_addr
       direction: input
       type: "bits<4>"
-    - name: req_data
+    - name: core_req_data
       direction: input
       type: "bits<8>"
+    # CHI SNP (HN -> RN): snoop from the home node.
     - name: snp_valid
       direction: input
-      type: "bool"      # snoop from the home node (SNP channel)
+      type: "bool"
     - name: snp_op
       direction: input
-      type: "bool"
+      type: "bool"      # true = invalidate (write snoop); false = downgrade (read snoop)
     - name: snp_addr
       direction: input
       type: "bits<4>"
+    # CHI GRANT/RSP (HN -> RN): grant from the home node.
     - name: grant_valid
       direction: input
-      type: "bool"      # grant from the home node (RSP channel)
+      type: "bool"
     - name: grant_write
       direction: input
-      type: "bool"
+      type: "bool"      # true = write grant (-> M); false = read grant (-> S)
     - name: grant_addr
       direction: input
       type: "bits<4>"
     - name: grant_data
       direction: input
       type: "bits<8>"
-    # Core data path (VA/offset for the MMU + LSU).
-    - name: addr
-      direction: input
-      type: "bits<4>"
-    - name: va
-      direction: input
-      type: "bits<8>"
   components:
-    # The full core (mmu/fetch/ooo/cache). Its coherence request is driven by the
-    # CHI channels; non-essential execution inputs are tied off.
-    - name: core
-      module: "examples/core_comp/core_comp.isir"
-      parameters: {me: $me}
+    # The core's L1 data cache (the actual line storage).  The RN control drives
+    # it by asserting its request inputs.
+    - name: l1
+      module: "examples/l1_cache_comp/l1_cache_comp.isir"
       lift_properties: false
-      port_map:
-        {req_core: $me, req_write: req_write, req_addr: req_addr, req_data: req_data,
-         addr: addr, va: va, d_is_physical: false,
-         issue_valid: false, rd: 0, op: false, store: false, a: 0, b: 0, alu_op: 0,
-         taken: false, stall: false, branch_target: 0,
-         araddr: 0, arvalid: false, awaddr: 0, awvalid: false, wdata: 0, wvalid: false,
-         alloc_valid: false, id: 0, release0: false, release1: false}
+      port_map: {req_core: 0, req_write: l1_req_write, req_addr: l1_req_addr,
+                 req_vpn: 0, is_physical: const_false, req_data: l1_req_data}
   state:
-    # This RN's coherence line (the home node drives it via SNP/grant).
+    # This RN's L1 line (MESI): the coherence/directory entry.
     - name: mstate
       kind: register
       type: "bits<2>"
@@ -105,26 +90,51 @@ module:
       kind: register
       type: "bool"
       initial: false
+    # Constant false (used as a tied-low port for the L1).
+    - name: const_false
+      kind: register
+      type: "bool"
+      initial: false
+    # L1 request inputs (driven by the RN control).
+    - name: l1_req_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: l1_req_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: l1_req_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
   functions:
+    - name: has_line
+      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      return: "bool"
+      body: (and (neq s 0) (eq a ra))
     - name: is_modified
       params: [{name: s, type: "bits<2>"}]
       return: "bool"
       body: (eq s 3)
   rules:
-    # Issue a request onto the REQ channel.
+    # Issue a request onto the REQ channel and forward it to the L1.
     - name: issue_req
-      condition: req_valid
+      condition: core_req_valid
       action:
         - (write req_out_valid true)
-        - (write req_out_write req_write)
-        - (write req_out_addr req_addr)
-        - (write req_out_data req_data)
+        - (write req_out_write core_req_write)
+        - (write req_out_addr core_req_addr)
+        - (write req_out_data core_req_data)
+        - (write l1_req_write core_req_write)
+        - (write l1_req_addr core_req_addr)
+        - (write l1_req_data core_req_data)
     # Complete a request when the grant arrives.
     - name: complete_req
       condition: grant_valid
       action:
         - (write req_out_valid false)
-    # Respond to a snoop (SNP -> RSP).
+    # Respond to a snoop: invalidate or downgrade the line (SNP -> RSP).
     - name: respond_snp
       condition: snp_valid
       action:
@@ -134,10 +144,17 @@ module:
       condition: (not snp_valid)
       action:
         - (write snp_rsp_valid false)
-    # Receive a grant (RSP + DAT).
+    # Receive a grant: adopt the granted state and data, and fill the L1.
     - name: receive_grant
       condition: grant_valid
       action:
         - (write mstate (ite grant_write 3 1))
         - (write maddr grant_addr)
         - (write mdata grant_data)
+        - (write l1_req_write true)
+        - (write l1_req_addr grant_addr)
+        - (write l1_req_data grant_data)
+  # Declared: mstate stays in [0,3] (provable via the skeleton at depth ~12).
+  invariants:
+    - name: states_valid
+      operand: (and (ge (read mstate) 0) (le (read mstate) 3))

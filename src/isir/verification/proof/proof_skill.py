@@ -537,6 +537,8 @@ class LLMProofSkill(ProofSkill):
                 temp_prover = KoikaProver(config=self.config)
                 temp_prover._prelude = ""
                 temp_prover._prelude_validated = True
+                if context.get("spec_module"):
+                    temp_prover.spec_module = context["spec_module"]
                 script = temp_prover._try_proof_strategies(Path(coq_file), theorem_name)
                 temp_prover.close()
                 if script is not None:

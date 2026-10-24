@@ -66,21 +66,27 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
     Returns ``(helper_lemmas, directed_proof, isir_invariants)``.
     """
     # 1. Locate the property/invariant by name (handles both the raw parser
-    #    module and the lowered SpecModule with dict/op representations).
+    #    module and the lowered SpecModule with dict/op representations).  The
+    #    Coq theorem name is `<property>_proved`, so strip that suffix.
+    prop_name = theorem_name[:-7] if theorem_name.endswith("_proved") else theorem_name
     operand = None
     for inv in (getattr(spec, "invariants", None) or []):
         nm = inv.get("name") if isinstance(inv, dict) else getattr(inv, "name", "")
-        if nm == theorem_name:
+        if nm in (theorem_name, prop_name):
             operand = inv.get("operand") if isinstance(inv, dict) else getattr(inv, "operand", None)
             break
     if operand is None:
         for po in (getattr(spec, "property_ops", None) or getattr(spec, "properties", None) or []):
             nm = getattr(po, "prop_name", None) or getattr(po, "name", "")
-            if nm == theorem_name:
+            if nm in (theorem_name, prop_name):
                 operand = getattr(po, "operand", None)
                 if operand is None:
                     expr_obj = getattr(po, "expression", None)
-                    operand = getattr(expr_obj, "operand", None) if expr_obj is not None else None
+                    operand = (
+                        expr_obj.get("operand")
+                        if isinstance(expr_obj, dict)
+                        else getattr(expr_obj, "operand", None)
+                    )
                 break
     if operand is None:
         return None
@@ -183,7 +189,7 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
     farg = " ".join(f"Hx{i}" for i in range(len(flags)))
     cval_s, cval2_s = str(cval).lower(), str(cval2).lower()
     directed = (
-        f"Proof.\n  intros s H.\n  induction H.\n"
+        f"Proof.\n  intros.\n  match goal with [ H : reachable _ |- _ ] => induction H end.\n"
         f"  - simpl; intro Hc; destruct Hc as [[HA HB] HC]; unfold {f} in *; simpl in *; congruence.\n"
         f"  - match goal with [ Hs : step ?a ?b ?c |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
         f"    all: try (match goal with [ IH : ~ _ |- _ ] => apply IH end).\n"
@@ -245,7 +251,11 @@ def try_coherence_synthesis(prover, coq_file: Path, theorem_name: str) -> Option
         content = coq_file.read_text()
     except Exception:
         return None
-    if f"Lemma {theorem_name} :" not in content:
+    if f"Lemma {theorem_name} :" in content:
+        kind = "Lemma"
+    elif f"Theorem {theorem_name} :" in content:
+        kind = "Theorem"
+    else:
         return None
     res = synthesize_coherence_helper(spec, theorem_name)
     if res is None:
@@ -268,8 +278,8 @@ def try_coherence_synthesis(prover, coq_file: Path, theorem_name: str) -> Option
                 return None
             remove(coq_file, name)
     new_content = content.replace(
-        f"Lemma {theorem_name} :", helper + f"Lemma {theorem_name} :", 1)
-    pat = re.compile(rf"Lemma {re.escape(theorem_name)}\s+:.*?Admitted\.", re.DOTALL)
+        f"{kind} {theorem_name} :", helper + f"{kind} {theorem_name} :", 1)
+    pat = re.compile(rf"{kind} {re.escape(theorem_name)}\s+:.*?Admitted\.", re.DOTALL)
     m = pat.search(new_content)
     if not m:
         return None

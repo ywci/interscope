@@ -1,0 +1,380 @@
+isir_version: "0.1"
+module:
+  name: chi_noc_multicore
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    # Core 0 / core 1 pipeline requests.
+    - name: core_req0_valid
+      direction: input
+      type: "bool"
+    - name: core_req0_write
+      direction: input
+      type: "bool"
+    - name: core_req0_addr
+      direction: input
+      type: "bits<4>"
+    - name: core_req0_data
+      direction: input
+      type: "bits<8>"
+    - name: core_req1_valid
+      direction: input
+      type: "bool"
+    - name: core_req1_write
+      direction: input
+      type: "bool"
+    - name: core_req1_addr
+      direction: input
+      type: "bits<4>"
+    - name: core_req1_data
+      direction: input
+      type: "bits<8>"
+  components:
+    - name: rn0
+      module: "examples/core_rn/core_rn.isir"
+      lift_properties: false
+      port_map:
+        {core_req_valid: core_req0_valid, core_req_write: core_req0_write,
+         core_req_addr: core_req0_addr, core_req_data: core_req0_data,
+         snp_valid: sr0_valid, snp_op: sr0_op, snp_addr: sr0_addr,
+         grant_valid: gr0_valid, grant_write: gr0_write, grant_addr: gr0_addr, grant_data: gr0_data,
+         req_out_valid: req0_valid, req_out_write: req0_write, req_out_addr: req0_addr, req_out_data: req0_data,
+         snp_rsp_valid: rsp0_valid, mstate: c0_mstate, maddr: c0_maddr}
+    - name: rn1
+      module: "examples/core_rn/core_rn.isir"
+      lift_properties: false
+      port_map:
+        {core_req_valid: core_req1_valid, core_req_write: core_req1_write,
+         core_req_addr: core_req1_addr, core_req_data: core_req1_data,
+         snp_valid: sr1_valid, snp_op: sr1_op, snp_addr: sr1_addr,
+         grant_valid: gr1_valid, grant_write: gr1_write, grant_addr: gr1_addr, grant_data: gr1_data,
+         req_out_valid: req1_valid, req_out_write: req1_write, req_out_addr: req1_addr, req_out_data: req1_data,
+         snp_rsp_valid: rsp1_valid, mstate: c1_mstate, maddr: c1_maddr}
+    - name: router
+      module: "examples/noc_router/noc_router.isir"
+      lift_properties: false
+      port_map:
+        {req0_valid: req0_valid, req0_write: req0_write, req0_addr: req0_addr, req0_data: req0_data,
+         req1_valid: req1_valid, req1_write: req1_write, req1_addr: req1_addr, req1_data: req1_data,
+         snp0_valid: snp0_valid, snp0_core: snp0_core, snp0_addr: snp0_addr, snp0_op: snp0_op,
+         snp1_valid: snp1_valid, snp1_core: snp1_core, snp1_addr: snp1_addr, snp1_op: snp1_op,
+         grant0_valid: grant0_valid, grant0_core: grant0_core, grant0_write: grant0_write, grant0_addr: grant0_addr, grant0_data: grant0_data,
+         grant1_valid: grant1_valid, grant1_core: grant1_core, grant1_write: grant1_write, grant1_addr: grant1_addr, grant1_data: grant1_data,
+         rsp0_valid: rsp0_valid, rsp0_core: rsp0_core_sig, rsp0_op: rsp0_op_sig,
+         rsp1_valid: rsp1_valid, rsp1_core: rsp1_core_sig, rsp1_op: rsp1_op_sig,
+         rs0_valid: rs0_valid, rs0_core: rs0_core, rs0_write: rs0_write, rs0_addr: rs0_addr, rs0_data: rs0_data,
+         rs1_valid: rs1_valid, rs1_core: rs1_core, rs1_write: rs1_write, rs1_addr: rs1_addr, rs1_data: rs1_data,
+         sr0_valid: sr0_valid, sr0_op: sr0_op, sr0_addr: sr0_addr,
+         sr1_valid: sr1_valid, sr1_op: sr1_op, sr1_addr: sr1_addr,
+         gr0_valid: gr0_valid, gr0_write: gr0_write, gr0_addr: gr0_addr, gr0_data: gr0_data,
+         gr1_valid: gr1_valid, gr1_write: gr1_write, gr1_addr: gr1_addr, gr1_data: gr1_data,
+         ps0_valid: ps0_valid, ps0_core: ps0_core, ps0_op: ps0_op,
+         ps1_valid: ps1_valid, ps1_core: ps1_core, ps1_op: ps1_op}
+    - name: slice0
+      module: "examples/l2_slice/l2_slice.isir"
+      lift_properties: invariant
+      port_map:
+        {req_valid: rs0_valid, req_core: rs0_core, req_write: rs0_write, req_addr: rs0_addr, req_data: rs0_data,
+         rsp_valid: ps0_valid, rsp_core: ps0_core, rsp_op: ps0_op,
+         snp_valid: snp0_valid, snp_core: snp0_core, snp_addr: snp0_addr, snp_op: snp0_op,
+         grant_valid: grant0_valid, grant_core: grant0_core, grant_write: grant0_write, grant_addr: grant0_addr, grant_data: grant0_data}
+    - name: slice1
+      module: "examples/l2_slice/l2_slice.isir"
+      lift_properties: invariant
+      port_map:
+        {req_valid: rs1_valid, req_core: rs1_core, req_write: rs1_write, req_addr: rs1_addr, req_data: rs1_data,
+         rsp_valid: ps1_valid, rsp_core: ps1_core, rsp_op: ps1_op,
+         snp_valid: snp1_valid, snp_core: snp1_core, snp_addr: snp1_addr, snp_op: snp1_op,
+         grant_valid: grant1_valid, grant_core: grant1_core, grant_write: grant1_write, grant_addr: grant1_addr, grant_data: grant1_data}
+  state:
+    # RN REQ -> router.
+    - name: req0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req0_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: req0_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: req1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req1_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: req1_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Router REQ -> slice.
+    - name: rs0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rs0_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rs0_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rs0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: rs0_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: rs1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rs1_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rs1_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rs1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: rs1_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Slice SNP -> router.
+    - name: snp0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp0_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: snp0_op
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp1_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: snp1_op
+      kind: register
+      type: "bool"
+      initial: false
+    # Router SNP -> RN.
+    - name: sr0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: sr0_op
+      kind: register
+      type: "bool"
+      initial: false
+    - name: sr0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: sr1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: sr1_op
+      kind: register
+      type: "bool"
+      initial: false
+    - name: sr1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    # Slice GRANT -> router.
+    - name: grant0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant0_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant0_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: grant0_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: grant1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant1_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant1_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: grant1_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Router GRANT -> RN.
+    - name: gr0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: gr0_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: gr0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: gr0_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: gr1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: gr1_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: gr1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: gr1_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # RSP core/op constants (RN id / op — unused by the slices, kept for the
+    # router's RSP payload).
+    - name: rsp0_core_sig
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rsp0_op_sig
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rsp1_core_sig
+      kind: register
+      type: "bool"
+      initial: true
+    - name: rsp1_op_sig
+      kind: register
+      type: "bool"
+      initial: false
+    # RN RSP -> router.
+    - name: rsp0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: rsp1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    # Router RSP -> slice.
+    - name: ps0_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: ps0_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: ps0_op
+      kind: register
+      type: "bool"
+      initial: false
+    - name: ps1_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: ps1_core
+      kind: register
+      type: "bool"
+      initial: false
+    - name: ps1_op
+      kind: register
+      type: "bool"
+      initial: false
+    # RN L1D MESI (the real coherence state).
+    - name: c0_mstate
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c0_maddr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: c1_mstate
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c1_maddr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  functions:
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+  invariants:
+    # SWMR over the RNs' L1D MESI: at most one core holds M at an address.
+    - name: single_writer
+      operand: (not (and (and (is_modified (read c0_mstate)) (is_modified (read c1_mstate)))
+                        (eq (read c0_maddr) (read c1_maddr))))
