@@ -138,7 +138,7 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         return result
 
     # Arithmetic
-    if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd', 'min', 'max'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
         a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
@@ -149,6 +149,10 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
             return f"(Nat.shiftr {a} {b})"
         if op == 'gcd':
             return f"(Nat.gcd {a} {b})"
+        if op == 'min':
+            return f"(Nat.min {a} {b})"
+        if op == 'max':
+            return f"(Nat.max {a} {b})"
         omap = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': 'mod'}
         return f"({a} {omap[op]} {b})"
 

@@ -1,0 +1,83 @@
+isir_version: "0.1"
+module:
+  name: microcode_controller
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+    - name: all_idle
+      direction: input
+      type: "bool"     # scoreboard: true when every engine is free (barrier)
+    - name: ucode_opcode
+      direction: input
+      type: "bits<3>"  # decoded opcode of the instruction at the current PC
+
+  state:
+    - name: pc
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: running
+      kind: register
+      type: "bool"
+      initial: false
+    - name: opcode_out
+      kind: register
+      type: "bits<3>"
+      initial: 0
+
+  rules:
+    # Begin execution of the microcode program.
+    - name: start_fetch
+      condition: (and start (not (read running)))
+      action:
+        - (write running true)
+        - (write pc 0)
+    # Decode the current instruction into the dispatch opcode.
+    - name: decode
+      condition: (read running)
+      action:
+        - (write opcode_out ucode_opcode)
+    # Advance the PC only while all engines are idle (barrier synchronization:
+    # dependent instructions wait for every prior engine to complete).
+    - name: advance
+      condition: (and (read running) all_idle)
+      action:
+        - (write pc (min (add (read pc) 1) 15))
+    # End of program.
+    - name: finish
+      condition: (and (read running) (eq (read pc) 15))
+      action:
+        - (write running false)
+
+  properties:
+    - name: pc_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read pc) 15)
+    - name: pc_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read pc) 0)
+
+  proof_obligations:
+    - property: pc_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: pc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

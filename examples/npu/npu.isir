@@ -1,0 +1,361 @@
+isir_version: "0.1"
+module:
+  name: npu
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    # Microcode controller: dispatch an instruction to one of the six engines.
+    - name: ucode_valid
+      direction: input
+      type: "bool"
+    - name: ucode_opcode
+      direction: input
+      type: "bits<3>"   # 0=GEMM, 1=Softmax, 2=LayerNorm, 3=GELU, 4=Vec, 5=DMA
+    # Engine completion signals (from the tiling/control units).
+    - name: gemm_done
+      direction: input
+      type: "bool"
+    - name: softmax_done
+      direction: input
+      type: "bool"
+    - name: layernorm_done
+      direction: input
+      type: "bool"
+    - name: gelu_done
+      direction: input
+      type: "bool"
+    - name: vec_done
+      direction: input
+      type: "bool"
+    - name: dma_done
+      direction: input
+      type: "bool"
+    # Shared activation/weight data (forwarded to the engines).
+    - name: a0
+      direction: input
+      type: "bits<8>"
+    - name: a1
+      direction: input
+      type: "bits<8>"
+    - name: x
+      direction: input
+      type: "bits<8>"
+    - name: b
+      direction: input
+      type: "bits<8>"
+    - name: load_valid
+      direction: input
+      type: "bool"
+    - name: w_in00
+      direction: input
+      type: "bits<8>"
+    - name: w_in01
+      direction: input
+      type: "bits<8>"
+    - name: w_in10
+      direction: input
+      type: "bits<8>"
+    - name: w_in11
+      direction: input
+      type: "bits<8>"
+    - name: scale
+      direction: input
+      type: "bits<8>"
+    - name: shift
+      direction: input
+      type: "bits<4>"
+    - name: mean
+      direction: input
+      type: "bits<8>"
+    - name: inv_std
+      direction: input
+      type: "bits<8>"
+    - name: beta
+      direction: input
+      type: "bits<8>"
+    - name: start
+      direction: input
+      type: "bool"
+    - name: direction
+      direction: input
+      type: "bool"
+    - name: base_addr
+      direction: input
+      type: "bits<8>"
+    - name: burst_len
+      direction: input
+      type: "bits<4>"
+
+  components:
+    - name: gemm
+      module: "examples/systolic_array/systolic_array.isir"
+      lift_properties: false
+      port_map:
+        {a0: a0, a1: a1, load_valid: load_valid,
+         w_in00: w_in00, w_in01: w_in01, w_in10: w_in10, w_in11: w_in11,
+         scale: scale, shift: shift, run: gemm_busy,
+         acc0: gemm_acc0, acc1: gemm_acc1, out0: gemm_out0, out1: gemm_out1}
+    - name: softmax
+      module: "examples/softmax_engine/softmax_engine.isir"
+      lift_properties: false
+      port_map: {x: gemm_out0, valid: softmax_valid, out: softmax_out}
+    - name: layernorm
+      module: "examples/layernorm_engine/layernorm_engine.isir"
+      lift_properties: false
+      port_map: {x: gemm_out1, mean: mean, inv_std: inv_std, beta: beta, valid: layernorm_valid, out: layernorm_out}
+    - name: gelu
+      module: "examples/gelu_engine/gelu_engine.isir"
+      lift_properties: false
+      port_map: {x: x, valid: gelu_valid, out: gelu_out}
+    - name: vec
+      module: "examples/vec_engine/vec_engine.isir"
+      lift_properties: false
+      port_map: {op: 0, a: a0, b: b, valid: vec_valid, out: vec_out}
+    - name: dma
+      module: "examples/dma_engine/dma_engine.isir"
+      lift_properties: false
+      port_map: {start: start, direction: direction, base_addr: base_addr, burst_len: burst_len, busy: dma_busy}
+    - name: ucode
+      module: "examples/microcode_controller/microcode_controller.isir"
+      lift_properties: false
+      port_map: {start: ucode_valid, all_idle: all_idle, ucode_opcode: ucode_opcode,
+                 opcode_out: ucode_opcode_out, running: ucode_running}
+    - name: sram
+      module: "examples/sram_bank/sram_bank.isir"
+      lift_properties: false
+      port_map: {addr: sram_addr, data_in: sram_data_in, write_en: sram_write_en, read_en: sram_read_en,
+                 data_out: sram_data_out}
+
+  state:
+    # Scoreboard: one busy slot per engine.
+    - name: gemm_busy
+      kind: register
+      type: "bool"
+      initial: false
+    - name: softmax_busy
+      kind: register
+      type: "bool"
+      initial: false
+    - name: layernorm_busy
+      kind: register
+      type: "bool"
+      initial: false
+    - name: gelu_busy
+      kind: register
+      type: "bool"
+      initial: false
+    - name: vec_busy
+      kind: register
+      type: "bool"
+      initial: false
+    - name: dma_busy
+      kind: register
+      type: "bool"
+      initial: false
+    # All engines idle (barrier signal for the microcode controller).
+    - name: all_idle
+      kind: register
+      type: "bool"
+      initial: true
+    # Microcode controller outputs.
+    - name: ucode_opcode_out
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: ucode_running
+      kind: register
+      type: "bool"
+      initial: false
+    # SRAM bank interface.
+    - name: sram_addr
+      kind: register
+      type: "bits<3>"
+      initial: 0
+    - name: sram_data_in
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: sram_write_en
+      kind: register
+      type: "bool"
+      initial: false
+    - name: sram_read_en
+      kind: register
+      type: "bool"
+      initial: false
+    - name: sram_data_out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Per-engine enable (driven by the dispatcher).
+    - name: softmax_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: layernorm_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: gelu_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: vec_valid
+      kind: register
+      type: "bool"
+      initial: false
+    # Engine outputs (exposed for the host / next stage).
+    - name: gemm_acc0
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: gemm_acc1
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: gemm_out0
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: gemm_out1
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: softmax_out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: layernorm_out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: gelu_out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: vec_out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  rules:
+    # Barrier: all engines idle iff every scoreboard slot is free.
+    - name: update_all_idle
+      condition: "true"
+      action:
+        - (write all_idle
+            (not (or (or (or (read gemm_busy) (read softmax_busy))
+                        (or (read layernorm_busy) (read gelu_busy)))
+                     (or (read vec_busy) (read dma_busy)))))
+    # Dispatchers: each engine is dispatched only when its scoreboard slot is free.
+    - name: dispatch_gemm
+      condition: (and (and ucode_running (eq (read ucode_opcode_out) 0)) (not (read gemm_busy)))
+      action:
+        - (write gemm_busy true)
+    - name: dispatch_softmax
+      condition: (and (and ucode_running (eq (read ucode_opcode_out) 1)) (not (read softmax_busy)))
+      action:
+        - (write softmax_busy true)
+        - (write softmax_valid true)
+    - name: dispatch_layernorm
+      condition: (and (and ucode_running (eq (read ucode_opcode_out) 2)) (not (read layernorm_busy)))
+      action:
+        - (write layernorm_busy true)
+        - (write layernorm_valid true)
+    - name: dispatch_gelu
+      condition: (and (and ucode_running (eq (read ucode_opcode_out) 3)) (not (read gelu_busy)))
+      action:
+        - (write gelu_busy true)
+        - (write gelu_valid true)
+    - name: dispatch_vec
+      condition: (and (and ucode_running (eq (read ucode_opcode_out) 4)) (not (read vec_busy)))
+      action:
+        - (write vec_busy true)
+        - (write vec_valid true)
+    - name: dispatch_dma
+      condition: (and (and ucode_running (eq (read ucode_opcode_out) 5)) (not (read dma_busy)))
+      action:
+        - (write dma_busy true)
+    # Completers: release the scoreboard slot when the engine finishes.
+    - name: complete_gemm
+      condition: (and (read gemm_busy) gemm_done)
+      action:
+        - (write gemm_busy false)
+    - name: complete_softmax
+      condition: (and (read softmax_busy) softmax_done)
+      action:
+        - (write softmax_busy false)
+        - (write softmax_valid false)
+    - name: complete_layernorm
+      condition: (and (read layernorm_busy) layernorm_done)
+      action:
+        - (write layernorm_busy false)
+        - (write layernorm_valid false)
+    - name: complete_gelu
+      condition: (and (read gelu_busy) gelu_done)
+      action:
+        - (write gelu_busy false)
+        - (write gelu_valid false)
+    - name: complete_vec
+      condition: (and (read vec_busy) vec_done)
+      action:
+        - (write vec_busy false)
+        - (write vec_valid false)
+    - name: complete_dma
+      condition: (and (read dma_busy) dma_done)
+      action:
+        - (write dma_busy false)
+
+  properties:
+    # Scoreboard mutual exclusion: a GEMM instruction is dispatched only when the
+    # GEMM engine is free (the dispatcher's precondition enforces this).
+    - name: gemm_dispatched_only_when_free
+      kind: transition
+      expression:
+        kind: transition
+        rule: dispatch_gemm
+        operand: (eq (read gemm_busy) true)
+    - name: softmax_dispatched_only_when_free
+      kind: transition
+      expression:
+        kind: transition
+        rule: dispatch_softmax
+        operand: (eq (read softmax_busy) true)
+    - name: vec_dispatched_only_when_free
+      kind: transition
+      expression:
+        kind: transition
+        rule: dispatch_vec
+        operand: (eq (read vec_busy) true)
+    - name: dma_dispatched_only_when_free
+      kind: transition
+      expression:
+        kind: transition
+        rule: dispatch_dma
+        operand: (eq (read dma_busy) true)
+
+  proof_obligations:
+    - property: gemm_dispatched_only_when_free
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: softmax_dispatched_only_when_free
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: vec_dispatched_only_when_free
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: dma_dispatched_only_when_free
+      status: unproved
+      engine: theorem_proving
+      backend: koika

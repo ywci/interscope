@@ -1,0 +1,87 @@
+isir_version: "0.1"
+module:
+  name: vec_engine
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    # Vec opcode: 0 = VEC_ADD (a+b), 1 = VEC_MUL (accumulated product).
+    - name: op
+      direction: input
+      type: "bits<2>"
+    - name: a
+      direction: input
+      type: "bits<8>"
+    - name: b
+      direction: input
+      type: "bits<8>"
+    - name: valid
+      direction: input
+      type: "bool"
+
+  components:
+    # The INT8 multiply-accumulate unit (bits<8> x bits<8> -> bits<32>): reused
+    # as the VEC_MUL path (its accumulator holds the full-precision product).
+    - name: mac_unit
+      module: "examples/mac/mac.isir"
+      lift_properties: false
+      port_map: {a: a, b: b, enable: valid, acc: mac_acc, acc_out: mac_acc_out}
+
+  state:
+    # Clamped output (saturating, always in [0, 255]).
+    - name: out
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    # The MAC unit's INT32 accumulator (exposed via the component port map).
+    - name: mac_acc
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: mac_acc_out
+      kind: register
+      type: "bits<32>"
+      initial: 0
+
+  functions:
+    - name: clamp8
+      params: [{name: x, type: "bits<32>"}]
+      return: "bits<32>"
+      body: (min x 255)
+
+  rules:
+    # VEC_ADD: saturating add (a+b clamped to INT8).  VEC_MUL: the accumulated
+    # product, clamped to INT8.  Both paths keep the output in [0, 255].
+    - name: compute
+      condition: valid
+      action:
+        - (write out (clamp8 (ite (eq op 0) (add a b) (read mac_acc))))
+
+  properties:
+    - name: out_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read out) 255)
+    - name: out_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read out) 0)
+
+  proof_obligations:
+    - property: out_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: out_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

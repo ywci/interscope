@@ -214,12 +214,8 @@ module:
       condition: (not (and (read pending) (read snooped)))
       action:
         - (write grant_valid false)
-  # Bounded auxiliary invariants (declared for now; l2_states_valid is provable
-  # via the skeleton at depth ~10, credits_bounded needs req_credits+pending=2).
+  # credits_bounded needs the req_credits+pending=2 arithmetic lemma (declared).
   invariants:
-    - name: l2_states_valid
-      operand: (and (and (ge (read s0) 0) (le (read s0) 3))
-                    (and (ge (read s1) 0) (le (read s1) 3)))
     - name: credits_bounded
       operand: (and (ge (read req_credits) 0) (le (read req_credits) 2))
   properties:
@@ -230,8 +226,19 @@ module:
         kind: always
         operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))
                           (eq (read c0_addr) (read c1_addr))))
+    # L2 data-cache MESI states stay within [0, 3].
+    - name: l2_states_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (and (ge (read s0) 0) (le (read s0) 3))
+                      (and (ge (read s1) 0) (le (read s1) 3)))
   proof_obligations:
     - property: single_writer
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: l2_states_valid
       status: unproved
       engine: theorem_proving
       backend: koika

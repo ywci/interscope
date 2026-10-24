@@ -1,0 +1,62 @@
+isir_version: "0.1"
+module:
+  name: gelu_engine
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: x
+      direction: input
+      type: "bits<8>"   # INT8 activation
+    - name: valid
+      direction: input
+      type: "bool"
+
+  state:
+    - name: out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  functions:
+    # GELU activation (shifted-ReLU stand-in for the 256-entry LUT): a nonlinear
+    # gate expressed with min/max/sub only, so the INT8 bound is auto-provable.
+    - name: gelu
+      params: [{name: x, type: "bits<8>"}]
+      return: "bits<8>"
+      body: (min (max 0 (sub x 32)) 255)
+
+  rules:
+    - name: compute
+      condition: valid
+      action:
+        - (write out (gelu x))
+
+  properties:
+    - name: out_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read out) 255)
+    - name: out_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read out) 0)
+
+  proof_obligations:
+    - property: out_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: out_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

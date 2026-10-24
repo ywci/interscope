@@ -2,7 +2,7 @@
 #
 # S-expression parser, evaluator, and type checker for ISIR expressions.
 # Supports all operators defined in the specification (add, sub, and, or, not,
-# eq, neq, gt, lt, gte, lte, le, ge, mul, div, mod, concat, slice, ite, read,
+# eq, neq, gt, lt, gte, lte, le, ge, mul, div, mod, min, max, concat, slice, ite, read,
 # write, mem_read, mem_write, next, prev, rose, fell, stable, implies).
 # Also provides functions to convert an expression to a string and type-check it.
 
@@ -173,7 +173,7 @@ def _eval_internal(expr: Any,
     args = expr[1:]
 
     # Arithmetic
-    if op in ('add', 'sub', 'mul', 'div', 'mod'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments, got {len(args)}")
         a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
@@ -193,6 +193,10 @@ def _eval_internal(expr: Any,
             if b == 0:
                 raise ExprError("Modulo by zero")
             return a % b
+        elif op == 'min':
+            return min(a, b)
+        elif op == 'max':
+            return max(a, b)
 
     # Logical
     elif op in ('and', 'or'):
@@ -405,7 +409,7 @@ def _type_check_internal(expr: Any, context: Dict[str, str]) -> str:
         raise ExprError(f"Operator must be a string, got {type(op)}")
     args = expr[1:]
 
-    if op in ('add', 'sub', 'mul', 'div', 'mod'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
         for arg in args:
             t = _type_check_internal(arg, context)
             if t not in ('int', 'any', 'bits'):

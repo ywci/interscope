@@ -37,9 +37,11 @@ def _ovl_expr(expr_str: str) -> str:
         op = expr[0]
         args = expr[1:]
 
-        if op in ('add', 'sub', 'mul', 'div', 'mod'):
+        if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
             if len(args) != 2: raise ExprError(f"{op} expects 2 arguments")
             a = _convert(args[0]); b = _convert(args[1])
+            if op == 'min': return f"(({a} < {b}) ? {a} : {b})"
+            if op == 'max': return f"(({a} > {b}) ? {a} : {b})"
             vop = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': '%'}[op]
             return f"({a} {vop} {b})"
 

@@ -322,3 +322,11 @@ module:
         - (write ps1_valid (and (or (read rsp0_valid) (read rsp1_valid)) (read pending_slice)))
         - (write ps1_core (ite (read rsp1_valid) (read rsp1_core) (read rsp0_core)))
         - (write ps1_op (ite (read rsp1_valid) (read rsp1_op) (read rsp0_op)))
+  # Declared routing-correctness invariants: a routed valid only when its source
+  # is valid.  The auto-prover cannot close these because the address-bit routing
+  # uses `slice` + `eq` (Opaque / Nat.eqb match), which blocks the and/or reasoning.
+  invariants:
+    - name: rs0_valid_implies_req
+      operand: (implies (read rs0_valid) (or (read req0_valid) (read req1_valid)))
+    - name: sr0_valid_implies_snp
+      operand: (implies (read sr0_valid) (or (read snp0_valid) (read snp1_valid)))

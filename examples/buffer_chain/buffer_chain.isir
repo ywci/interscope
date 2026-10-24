@@ -31,3 +31,25 @@ module:
       port_map:
         d: wire0
         q: out1
+  properties:
+    - name: bufA_passes_d0
+      kind: transition
+      expression:
+        kind: transition
+        rule: bufA_update
+        operand: (eq (read wire0) d0)
+    - name: bufB_passes_wire0
+      kind: transition
+      expression:
+        kind: transition
+        rule: bufB_update
+        operand: (eq (read out1) (prev wire0))
+  proof_obligations:
+    - property: bufA_passes_d0
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: bufB_passes_wire0
+      status: unproved
+      engine: theorem_proving
+      backend: koika

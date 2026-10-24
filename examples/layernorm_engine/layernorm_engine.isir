@@ -1,0 +1,65 @@
+isir_version: "0.1"
+module:
+  name: layernorm_engine
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: x
+      direction: input
+      type: "bits<8>"    # INT8 activation
+    - name: mean
+      direction: input
+      type: "bits<8>"    # pass-1 mean (per hidden dim)
+    - name: inv_std
+      direction: input
+      type: "bits<8>"    # pass-1 rsqrt(var + eps), scaled to Q0.8
+    - name: beta
+      direction: input
+      type: "bits<8>"    # learned bias
+    - name: valid
+      direction: input
+      type: "bool"
+
+  state:
+    - name: out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  rules:
+    # Pass 2 (normalize): (x - mean) * inv_std + beta, saturating to INT8.
+    # `sub` saturates at 0 (nat), so the result stays non-negative before clamp.
+    - name: normalize
+      condition: valid
+      action:
+        - (write out (min (add (mul (sub x mean) inv_std) beta) 255))
+
+  properties:
+    - name: out_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read out) 255)
+    - name: out_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read out) 0)
+
+  proof_obligations:
+    - property: out_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: out_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

@@ -14,11 +14,11 @@ module:
   inputs:
     - name: a
       direction: input
-      type: "bits<16>"
+      type: "bits<8>"   # INT8 activation
       protocol: fixed_cycle
     - name: b
       direction: input
-      type: "bits<16>"
+      type: "bits<8>"   # INT8 weight
       protocol: fixed_cycle
     - name: enable
       direction: input

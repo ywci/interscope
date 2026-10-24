@@ -1,0 +1,68 @@
+isir_version: "0.1"
+module:
+  name: softmax_engine
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: x
+      direction: input
+      type: "bits<8>"   # INT8 score (one row element)
+    - name: valid
+      direction: input
+      type: "bool"
+
+  components:
+    # Pass 1 (find max): the running row maximum, for numerical stability.
+    - name: max_finder
+      module: "examples/min_max_finder/min_max_finder.isir"
+      lift_properties: false
+      port_map: {valid: valid, data: x, max_val: row_max}
+
+  state:
+    - name: row_max
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # The numerically-stable shifted score: x - row_max, clamped to INT8.
+    - name: out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  rules:
+    # Pass 2/3 (shift + normalize): subtract the running max and clamp.  The full
+    # exp-LUT + reciprocal-normalize passes reuse this shifted, bounded value.
+    - name: shift
+      condition: valid
+      action:
+        - (write out (min (sub x (read row_max)) 255))
+
+  properties:
+    - name: out_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read out) 255)
+    - name: out_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read out) 0)
+
+  proof_obligations:
+    - property: out_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: out_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

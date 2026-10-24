@@ -62,7 +62,7 @@ def _expr_to_acl2(expr: Any,
     args = expr[1:]
 
     # Arithmetic operators
-    if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd', 'min', 'max'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
         a = _expr_to_acl2(args[0], state_indices, memory_names, inputs)
@@ -73,6 +73,10 @@ def _expr_to_acl2(expr: Any,
             return f"(ash {a} (- {b}))"
         if op == 'gcd':
             return f"(gcd {a} {b})"
+        if op == 'min':
+            return f"(min {a} {b})"
+        if op == 'max':
+            return f"(max {a} {b})"
         acl2_op_map = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': 'mod'}
         acl2_op = acl2_op_map[op]
         return f"({acl2_op} {a} {b})"

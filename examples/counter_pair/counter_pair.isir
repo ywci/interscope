@@ -19,7 +19,36 @@ module:
   components:
     - name: lo
       module: "examples/counter/counter.isir"
-      port_map: {inc: inc_lo}
+      port_map: {inc: inc_lo, count: lo_count}
     - name: hi
       module: "examples/counter/counter.isir"
-      port_map: {inc: inc_hi}
+      port_map: {inc: inc_hi, count: hi_count}
+  state:
+    - name: lo_count
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: hi_count
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  properties:
+    - name: lo_count_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read lo_count) 15)
+    - name: hi_count_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read hi_count) 15)
+  proof_obligations:
+    - property: lo_count_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: hi_count_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika

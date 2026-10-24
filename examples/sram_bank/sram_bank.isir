@@ -1,0 +1,64 @@
+isir_version: "0.1"
+module:
+  name: sram_bank
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: addr
+      direction: input
+      type: "bits<3>"   # 8-entry bank (weights/activations for one tile)
+    - name: data_in
+      direction: input
+      type: "bits<8>"   # INT8 word
+    - name: write_en
+      direction: input
+      type: "bool"
+    - name: read_en
+      direction: input
+      type: "bool"
+
+  state:
+    - name: mem
+      kind: memory
+      type: { type: "memory", elem: "bits<8>", depth: 8 }
+    - name: data_out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  rules:
+    - name: write
+      condition: write_en
+      action:
+        - (mem_write mem addr (min data_in 255))
+    - name: read
+      condition: read_en
+      action:
+        - (write data_out (mem_read mem addr))
+
+  # Declared: the write clamps to INT8, so the bank holds only [0,255] words;
+  # the read-side bound needs a list lemma (nth_default + Forall) not yet in the
+  # auto-prover, so it is declared rather than proved.
+  invariants:
+    - name: data_out_bounded
+      operand: (le (read data_out) 255)
+  properties:
+    - name: data_out_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (ge (read data_out) 0)
+
+  proof_obligations:
+    - property: data_out_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

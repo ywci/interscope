@@ -474,6 +474,42 @@ class LLMProofSkill(ProofSkill):
             metadata={"backend": "model_checking", "engine": engine}
         )
 
+    def _is_bound_property(self, spec_module, prop_name: str) -> bool:
+        """True if the property operand is a conjunction/disjunction of
+        ge/le/gt/lt comparisons on reads (a simple numeric bound).  These often
+        need a deeper skeleton (the ite/eq destruct of the state update) than the
+        fast `skel 3` pass, and they never match the SWMR shape (which starts
+        with `not`/`implies`/function calls)."""
+        if not spec_module:
+            return False
+        try:
+            from isir.utils.expr import parse_sexpr
+        except Exception:
+            return False
+        for po in (getattr(spec_module, "property_ops", None) or []):
+            nm = getattr(po, "prop_name", None) or getattr(po, "name", "")
+            if nm != prop_name:
+                continue
+            expr_obj = getattr(po, "expression", None)
+            operand = expr_obj.get("operand") if isinstance(expr_obj, dict) else None
+            if operand is None:
+                return False
+            try:
+                e = parse_sexpr(operand)
+            except Exception:
+                return False
+
+            def _check(n):
+                if isinstance(n, list) and n:
+                    op = n[0]
+                    if op in ("ge", "le", "gt", "lt"):
+                        return True
+                    if op in ("and", "or"):
+                        return all(_check(a) for a in n[1:])
+                return False
+            return _check(e)
+        return False
+
     def _prove_with_perf(
         self,
         obligation: Dict[str, Any],
@@ -511,6 +547,13 @@ class LLMProofSkill(ProofSkill):
                 skeleton_script = temp_prover._recursive_skeleton_proof(
                     Path(coq_file), theorem_name, max_depth=3
                 )
+                if skeleton_script is None and self._is_bound_property(
+                    context.get("spec_module"), obligation.get("property", "")
+                ):
+                    logger.info("Bound property: retrying deeper skeleton (depth 12)...")
+                    skeleton_script = temp_prover._recursive_skeleton_proof(
+                        Path(coq_file), theorem_name, max_depth=12
+                    )
                 temp_prover.close()
 
                 if skeleton_script is not None:

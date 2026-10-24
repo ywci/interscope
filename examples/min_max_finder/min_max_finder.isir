@@ -15,22 +15,22 @@ module:
       type: "bool"
     - name: data
       direction: input
-      type: "bits<16>"
+      type: "bits<8>"
   outputs:
     - name: min_val
       direction: output
-      type: "bits<16>"
+      type: "bits<8>"
     - name: max_val
       direction: output
-      type: "bits<16>"
+      type: "bits<8>"
   state:
     - name: min_val
       kind: register
-      type: "bits<16>"
+      type: "bits<8>"
       initial: 0
     - name: max_val
       kind: register
-      type: "bits<16>"
+      type: "bits<8>"
       initial: 0
     - name: first
       kind: register

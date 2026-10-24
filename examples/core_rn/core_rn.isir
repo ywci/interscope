@@ -154,7 +154,14 @@ module:
         - (write l1_req_write true)
         - (write l1_req_addr grant_addr)
         - (write l1_req_data grant_data)
-  # Declared: mstate stays in [0,3] (provable via the skeleton at depth ~12).
-  invariants:
+  properties:
     - name: states_valid
-      operand: (and (ge (read mstate) 0) (le (read mstate) 3))
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read mstate) 0) (le (read mstate) 3))
+  proof_obligations:
+    - property: states_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika

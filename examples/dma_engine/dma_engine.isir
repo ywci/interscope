@@ -1,0 +1,93 @@
+isir_version: "0.1"
+module:
+  name: dma_engine
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+    - name: direction
+      direction: input
+      type: "bool"     # false = DDR -> SRAM (load), true = SRAM -> DDR (store)
+    - name: base_addr
+      direction: input
+      type: "bits<8>"  # DDR burst base address
+    - name: burst_len
+      direction: input
+      type: "bits<4>"  # number of beats in the burst
+
+  state:
+    # Current burst beat address (DDR side).
+    - name: addr
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Beats remaining in the current burst.
+    - name: remaining
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    # Direction of the in-flight burst.
+    - name: is_store
+      kind: register
+      type: "bool"
+      initial: false
+    - name: busy
+      kind: register
+      type: "bool"
+      initial: false
+
+  rules:
+    # Start a burst: latch the base address, length and direction (parameters
+    # clamped to the address/counter widths).
+    - name: start_burst
+      condition: (and start (not (read busy)))
+      action:
+        - (write addr (min base_addr 255))
+        - (write remaining (min burst_len 15))
+        - (write is_store direction)
+        - (write busy true)
+    # Advance one beat per cycle until the burst is exhausted (address clamped
+    # to the 8-bit address space).
+    - name: burst_step
+      condition: (and (read busy) (neq (read remaining) 0))
+      action:
+        - (write addr (min (add (read addr) 1) 255))
+        - (write remaining (sub (read remaining) 1))
+    # Complete the burst.
+    - name: complete_burst
+      condition: (and (read busy) (eq (read remaining) 0))
+      action:
+        - (write busy false)
+
+  properties:
+    # The DDR burst address stays within the 8-bit address space.
+    - name: addr_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read addr) 255)
+    - name: remaining_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (read remaining) 15)
+
+  proof_obligations:
+    - property: addr_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: remaining_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika

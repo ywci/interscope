@@ -137,7 +137,7 @@ def _infer_width(expr, signal_widths: Dict[str, int]) -> int:
         if len(args) >= 3:
             return max(_infer_width(args[1], signal_widths),
                        _infer_width(args[2], signal_widths))
-    elif op in ('add', 'sub', 'mul', 'div', 'mod'):
+    elif op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
         widths = [_infer_width(a, signal_widths) for a in args]
         return max(widths) if widths else 32
     elif op == 'concat':
@@ -205,11 +205,15 @@ def _sva_expr(expr: Union[str, List, int, bool],
     args = expr[1:]
 
     # Arithmetic
-    if op in ('add', 'sub', 'mul', 'div', 'mod'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
         if len(args) != 2:
             raise ValueError(f"{op} expects 2 arguments")
         a = _sva_expr(args[0], signal_widths, temp)
         b = _sva_expr(args[1], signal_widths, temp)
+        if op == 'min':
+            return f"(({a} < {b}) ? {a} : {b})"
+        if op == 'max':
+            return f"(({a} > {b}) ? {a} : {b})"
         sv_op = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': '%'}[op]
         return f"({a} {sv_op} {b})"
 

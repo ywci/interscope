@@ -445,7 +445,7 @@ def _infer_expr_width(expr: Any, reg_widths: dict) -> int:
         op = expr[0]
         if op == 'read' and len(expr) > 1:
             return reg_widths.get(_capitalize(expr[1]), 32)
-        if op in ('add', 'sub', 'and', 'or', 'band', 'bor', 'land', 'lor', 'not', 'ite'):
+        if op in ('add', 'sub', 'and', 'or', 'band', 'bor', 'land', 'lor', 'not', 'ite', 'min', 'max'):
             for arg in expr[1:]:
                 w = _infer_expr_width(arg, reg_widths)
                 if w != 32:
@@ -479,6 +479,12 @@ def _coq_bits_expr(expr, reg_widths: dict, current_width: int) -> str:
     if op in ('add', 'sub'):
         sym = {'add': '+', 'sub': '-'}[op]
         return f"({_coq_bits_expr(args[0], reg_widths, current_width)} {sym} {_coq_bits_expr(args[1], reg_widths, current_width)})"
+
+    if op in ('min', 'max'):
+        a = _coq_bits_expr(args[0], reg_widths, current_width)
+        b = _coq_bits_expr(args[1], reg_widths, current_width)
+        cmp = '<' if op == 'min' else '>'
+        return f"({a} {cmp} {b} ? {a} : {b})"
     
     elif op in ('and', 'band', 'land', 'or', 'bor', 'lor', 'not'):
         op_width = _infer_expr_width(expr, reg_widths)

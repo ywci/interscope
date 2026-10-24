@@ -36,11 +36,14 @@ def _vhdl_expr(expr: Union[str, List, int, bool],
     args = expr[1:]
 
     # Binary arithmetic
-    if op in ('add', 'sub', 'mul', 'div', 'mod'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
         if len(args) != 2:
             raise ValueError(f"{op} expects 2 arguments")
         a = _vhdl_expr(args[0], context)
         b = _vhdl_expr(args[1], context)
+        if op in ('min', 'max'):
+            vhdl_fn = {'min': 'minimum', 'max': 'maximum'}[op]
+            return f"{vhdl_fn}({a}, {b})"
         vhdl_op = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': 'mod'}[op]
         return f"({a} {vhdl_op} {b})"
 

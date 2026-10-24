@@ -1,0 +1,173 @@
+isir_version: "0.1"
+module:
+  name: systolic_array
+  clocks:
+    - name: clk
+      edge: posedge
+      period: "10ns"
+  resets:
+    - name: rst_n
+      polarity: active_low
+      async: false
+      affects: all
+
+  inputs:
+    # Activations flow down the columns (one INT8 activation per column per cycle).
+    - name: a0
+      direction: input
+      type: "bits<8>"
+    - name: a1
+      direction: input
+      type: "bits<8>"
+    # Weight loading (weights are STATIONARY: loaded once, then held).
+    - name: load_valid
+      direction: input
+      type: "bool"
+    - name: w_in00
+      direction: input
+      type: "bits<8>"
+    - name: w_in01
+      direction: input
+      type: "bits<8>"
+    - name: w_in10
+      direction: input
+      type: "bits<8>"
+    - name: w_in11
+      direction: input
+      type: "bits<8>"
+    # Requantization parameters (per-layer scale and shift).
+    - name: scale
+      direction: input
+      type: "bits<8>"
+    - name: shift
+      direction: input
+      type: "bits<4>"
+    # Compute enable: gates the MAC and requantize stages (dispatch-driven).
+    - name: run
+      direction: input
+      type: "bool"
+
+  state:
+    # Weights (INT8, weight-stationary): w[i][j] = weight from input i to output j.
+    - name: w00
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: w01
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: w10
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: w11
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Accumulators (INT32): one per output.  Partial sums accumulate across the
+    # inner-dimension (K) tiling cycles.
+    - name: acc0
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    - name: acc1
+      kind: register
+      type: "bits<32>"
+      initial: 0
+    # Requantized INT8 outputs (INT32 accumulator -> INT8 via scale/shift/clamp).
+    - name: out0
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: out1
+      kind: register
+      type: "bits<8>"
+      initial: 0
+
+  rules:
+    # Load the stationary weights.
+    - name: load_weights
+      condition: load_valid
+      action:
+        - (write w00 w_in00)
+        - (write w01 w_in01)
+        - (write w10 w_in10)
+        - (write w11 w_in11)
+    # Systolic MAC step: each PE multiplies its stationary weight by the column
+    # activation and accumulates into the row's partial sum.  Two PEs per output
+    # row (one per input column), mirroring a 2x2 weight-stationary array.
+    - name: mac_step
+      condition: (and (not load_valid) run)
+      action:
+        - (write acc0 (add (read acc0) (add (mul a0 (read w00)) (mul a1 (read w10)))))
+        - (write acc1 (add (read acc1) (add (mul a0 (read w01)) (mul a1 (read w11)))))
+    # Requantize: INT32 accumulator -> INT8 via clamp(round((acc * scale) >> shift)).
+    # The `min` clamp keeps the output in [0, 255] (provable bound).
+    - name: requantize
+      condition: run
+      action:
+        - (write out0 (min (shr (mul (read acc0) scale) shift) 255))
+        - (write out1 (min (shr (mul (read acc1) scale) shift) 255))
+
+  properties:
+    - name: acc_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read acc0) 0) (ge (read acc1) 0))
+    - name: mac_step_correct
+      kind: transition
+      expression:
+        kind: transition
+        rule: mac_step
+        operand: (eq (read acc0) (add (prev acc0) (add (mul a0 (prev w00)) (mul a1 (prev w10)))))
+    - name: acc_monotonic
+      kind: transition
+      expression:
+        kind: transition
+        rule: mac_step
+        operand: (and (ge (read acc0) (prev acc0)) (ge (read acc1) (prev acc1)))
+    - name: weights_stationary
+      kind: transition
+      expression:
+        kind: transition
+        rule: mac_step
+        operand: (and (and (eq (read w00) (prev w00)) (eq (read w01) (prev w01)))
+                      (and (eq (read w10) (prev w10)) (eq (read w11) (prev w11))))
+    - name: out_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (le (read out0) 255) (le (read out1) 255))
+    - name: out_nonneg
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read out0) 0) (ge (read out1) 0))
+
+  proof_obligations:
+    - property: acc_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: mac_step_correct
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: acc_monotonic
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: weights_stationary
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: out_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: out_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika

@@ -16,11 +16,23 @@ module:
     - name: req1_valid
       direction: input
       type: "bool"
+    - name: req2_valid
+      direction: input
+      type: "bool"
+    - name: req3_valid
+      direction: input
+      type: "bool"
+    - name: req4_valid
+      direction: input
+      type: "bool"
+    - name: req5_valid
+      direction: input
+      type: "bool"
   state:
     - name: grant
       kind: register
-      type: "bool"
-      initial: false   # false = grant req0, true = grant req1
+      type: "bits<3>"   # granted requestor id (0..5)
+      initial: 0
     - name: grant_valid
       kind: register
       type: "bool"
@@ -29,17 +41,38 @@ module:
     - name: arbitrate
       condition: "true"
       action:
-        - (write grant (and (not req0_valid) req1_valid))
-        - (write grant_valid (or req0_valid req1_valid))
+        # Fixed-priority arbiter: lowest-index valid request wins.
+        - (write grant
+            (ite req0_valid 0
+            (ite req1_valid 1
+            (ite req2_valid 2
+            (ite req3_valid 3
+            (ite req4_valid 4
+            (ite req5_valid 5 0)))))))
+        - (write grant_valid
+            (or (or (or req0_valid req1_valid) (or req2_valid req3_valid))
+                (or req4_valid req5_valid)))
   properties:
     - name: grant0_when_req0
       kind: transition
       expression:
         kind: transition
         rule: arbitrate
-        operand: (implies req0_valid (eq (read grant) false))
+        operand: (implies req0_valid (eq (read grant) 0))
+    - name: grant_valid_when_any
+      kind: transition
+      expression:
+        kind: transition
+        rule: arbitrate
+        operand: (eq (read grant_valid)
+                     (or (or (or req0_valid req1_valid) (or req2_valid req3_valid))
+                         (or req4_valid req5_valid)))
   proof_obligations:
     - property: grant0_when_req0
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: grant_valid_when_any
       status: unproved
       engine: theorem_proving
       backend: koika
