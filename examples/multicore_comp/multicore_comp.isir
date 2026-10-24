@@ -73,15 +73,12 @@ module:
     - name: wvalid
       direction: input
       type: "bool"
-    - name: vpn
-      direction: input
-      type: "bits<4>"
     - name: va
       direction: input
       type: "bits<32>"
-    - name: ppn_in
+    - name: d_is_physical
       direction: input
-      type: "bits<4>"
+      type: "bool"
     - name: alloc_valid
       direction: input
       type: "bool"
@@ -112,12 +109,12 @@ module:
       module: "examples/core_comp/core_comp.isir"
       parameters: {me: 0}
       lift_properties: false
-      port_map: {req_core: req_core, issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr, taken: taken, req_write: req_write, req_addr: req_addr, req_data: req_data, stall: stall, branch_target: branch_target, araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid, vpn: vpn, ppn_in: ppn_in, va: va, alloc_valid: alloc_valid, id: id, release0: release0, release1: release1}
+      port_map: {req_core: req_core, issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr, taken: taken, req_write: req_write, req_addr: req_addr, req_data: req_data, stall: stall, branch_target: branch_target, araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid, va: va, d_is_physical: d_is_physical, alloc_valid: alloc_valid, id: id, release0: release0, release1: release1}
     - name: core1
       module: "examples/core_comp/core_comp.isir"
       parameters: {me: 1}
       lift_properties: false
-      port_map: {req_core: req_core, issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr, taken: taken, req_write: req_write, req_addr: req_addr, req_data: req_data, stall: stall, branch_target: branch_target, araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid, vpn: vpn, ppn_in: ppn_in, va: va, alloc_valid: alloc_valid, id: id, release0: release0, release1: release1}
+      port_map: {req_core: req_core, issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr, taken: taken, req_write: req_write, req_addr: req_addr, req_data: req_data, stall: stall, branch_target: branch_target, araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid, va: va, d_is_physical: d_is_physical, alloc_valid: alloc_valid, id: id, release0: release0, release1: release1}
     - name: home
       module: "examples/home/home.isir"
       lift_properties: invariant

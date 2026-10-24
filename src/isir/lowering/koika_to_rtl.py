@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Optional, List, Tuple, Dict, Any
 from isir.dialects import isir, rtl
-from isir.utils.expr import parse_sexpr, ExprError
+from isir.utils.expr import parse_sexpr, ExprError, expr_to_string, unfold_user_functions
 from isir.utils.logger import get_logger
 from isir.utils.config_loader import get_project_root
 
@@ -308,9 +308,13 @@ def _has_unsupported_ops(expr: Any) -> bool:
 def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -> str:
     registers = [s for s in spec_module.state_ops if s.kind == "register"]
 
+    functions = getattr(spec_module, "functions", None) or []
     flattened_rules: List[Tuple[str, str, str, Any]] = []
     for rule in spec_module.rule_ops:
         ridx = 0
+        # Unfold user functions in the rule's condition so the Coq DSL sees only
+        # primitive operators.
+        condition = unfold_user_functions(rule.condition or "true", functions)
         for action_str in rule.actions:
             try:
                 parsed = parse_sexpr(action_str)
@@ -324,7 +328,8 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
                 dest = parsed[1]
                 if isinstance(dest, str):
                     sub = f"{rule.rule_name}_act_{ridx}"
-                    flattened_rules.append((sub, rule.condition, dest, parsed[2]))
+                    expr_val = parse_sexpr(unfold_user_functions(parsed[2], functions))
+                    flattened_rules.append((sub, condition, dest, expr_val))
                     ridx += 1
 
     lines = [

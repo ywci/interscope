@@ -281,3 +281,99 @@ def _parse_sby_output(output: str, work_dir: Path) -> tuple:
             else:
                 return ("inconclusive", None)
     return ("error", None)
+
+
+def _extract_width(data_type: str) -> Optional[int]:
+    """Return bit width from a type string like 'bits<8>'."""
+    if data_type == "bool":
+        return 1
+    if data_type.startswith("bits<"):
+        try:
+            return int(data_type[5:-1])
+        except ValueError:
+            pass
+    return None
+
+
+def _find_verilog(rtl_dir: Path, design_name: str) -> Optional[Path]:
+    """Locate the generated top-level Verilog file."""
+    direct = rtl_dir / f"{design_name}.v"
+    if direct.exists():
+        return direct
+    nested = rtl_dir / f"{design_name}.v" / f"{design_name}.v"
+    if nested.exists():
+        return nested
+    for candidate in sorted(rtl_dir.rglob("*.v")):
+        return candidate
+    return None
+
+
+def run_mc_audit(
+    spec_module,
+    out_dir: Path,
+    engine: str = "bmc",
+    depth: Optional[int] = None,
+    timeout: Optional[int] = None,
+    koika_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run SymbiYosys BMC as an *independent audit* of the spec's top-level
+    properties (the ``properties``/``invariants`` lowered to SVA assertions).
+
+    Lower the spec to Verilog RTL + SystemVerilog assertions, then invoke the
+    model checker.  This is the cross-tool confirmation of the Coq proof (a
+    different engine over a different representation), not a per-strategy gate.
+    """
+    from isir.lowering.koika_to_rtl import convert as rtl_convert
+    from isir.lowering.isir_to_assert import convert as assert_convert
+    from isir.lowering.assert_to_sva import convert as sva_convert
+
+    out_dir = Path(out_dir).resolve()
+    rtl_dir = out_dir / "rtl"
+    assertions_dir = out_dir / "assertions"
+    rtl_dir.mkdir(parents=True, exist_ok=True)
+    assertions_dir.mkdir(parents=True, exist_ok=True)
+
+    design_name = spec_module.name
+
+    # 1. RTL.
+    try:
+        rtl_convert(spec_module, rtl_dir, koika_path=koika_path)
+    except Exception as e:
+        raise ModelCheckError(f"RTL generation failed: {e}") from e
+    rtl_file = _find_verilog(rtl_dir, design_name)
+    if rtl_file is None:
+        raise ModelCheckError(f"Could not locate generated Verilog for '{design_name}'.")
+
+    # 2. SVA assertions (the top-level properties become `assert property`).
+    try:
+        assert_mod = assert_convert(spec_module)
+        signal_widths: Dict[str, int] = {}
+        for s in getattr(spec_module, "state_ops", []) or []:
+            w = _extract_width(getattr(s, "data_type", "") or "")
+            if w is not None:
+                signal_widths[getattr(s, "state_name", "")] = w
+        for inp in getattr(spec_module, "inputs", []) or []:
+            w = _extract_width(getattr(inp, "data_type", "") or "")
+            if w is not None:
+                signal_widths[getattr(inp, "name", "")] = w
+        for outp in getattr(spec_module, "outputs", []) or []:
+            w = _extract_width(getattr(outp, "data_type", "") or "")
+            if w is not None:
+                signal_widths[getattr(outp, "name", "")] = w
+        sva_code = sva_convert(assert_mod, signal_widths=signal_widths)
+    except Exception as e:
+        raise ModelCheckError(f"SVA generation failed: {e}") from e
+
+    assertions_file = assertions_dir / f"{design_name}_assertions.sv"
+    assertions_file.write_text(sva_code, encoding="utf-8")
+    logger.info("Generated audit RTL (%s) and SVA (%s).", rtl_file, assertions_file)
+
+    # 3. Run SymbiYosys.
+    return run_model_check(
+        rtl_file,
+        assertions_file,
+        design_name,
+        engine=engine,
+        depth=depth,
+        timeout=timeout,
+    )

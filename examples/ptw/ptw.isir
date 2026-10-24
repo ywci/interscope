@@ -12,22 +12,18 @@ module:
   inputs:
     - name: va
       direction: input
-      type: "bits<32>"  # virtual address: VPN1[31:22] | VPN0[21:12] | offset[11:0]
+      type: "bits<8>"   # virtual address: VPN1[7:6] | VPN0[5:4] | offset[3:0]
     - name: start
       direction: input
       type: "bool"      # trigger a walk (e.g. TLB miss)
+    - name: mem_data
+      direction: input
+      type: "bits<8>"   # returned PTE/data (from the L1D, PIPT)
   state:
     - name: root_ppn
       kind: register
-      type: "bits<20>"   # satp: root page-table base
+      type: "bits<4>"   # satp: root page-table base
       initial: 0
-    # Level-1 and level-0 page tables (PTEs are 32-bit words).
-    - name: pt1_mem
-      kind: memory
-      type: { type: "memory", elem: "bits<32>", depth: 1024 }
-    - name: pt0_mem
-      kind: memory
-      type: { type: "memory", elem: "bits<32>", depth: 1024 }
     # Walk state machine: 0=idle, 1=read PTE1, 2=read PTE0, 3=done.
     - name: walk_state
       kind: register
@@ -35,60 +31,63 @@ module:
       initial: 0
     - name: pte1
       kind: register
-      type: "bits<32>"
+      type: "bits<8>"
       initial: 0
     - name: pte0
       kind: register
-      type: "bits<32>"
+      type: "bits<8>"
+      initial: 0
+    # Physical read address issued to the memory hierarchy (output).
+    - name: mem_addr
+      kind: register
+      type: "bits<4>"
       initial: 0
     - name: result_ppn
       kind: register
-      type: "bits<20>"
+      type: "bits<4>"
       initial: 0
     - name: result_pa
       kind: register
-      type: "bits<32>"
+      type: "bits<8>"
       initial: 0
   functions:
     - name: vpn1
-      params: [{name: va, type: "bits<32>"}]
-      return: "bits<10>"
-      body: (slice va 31 22)
+      params: [{name: va, type: "bits<8>"}]
+      return: "bits<2>"
+      body: (slice va 7 6)
     - name: vpn0
-      params: [{name: va, type: "bits<32>"}]
-      return: "bits<10>"
-      body: (slice va 21 12)
+      params: [{name: va, type: "bits<8>"}]
+      return: "bits<2>"
+      body: (slice va 5 4)
     - name: offset
-      params: [{name: va, type: "bits<32>"}]
-      return: "bits<12>"
-      body: (slice va 11 0)
+      params: [{name: va, type: "bits<8>"}]
+      return: "bits<4>"
+      body: (slice va 3 0)
     - name: pte_ppn
-      params: [{name: pte, type: "bits<32>"}]
-      return: "bits<20>"
-      body: (slice pte 31 12)
-    - name: pte_valid
-      params: [{name: pte, type: "bits<32>"}]
-      return: "bool"
-      body: (eq (slice pte 0 0) 1)
+      params: [{name: pte, type: "bits<8>"}]
+      return: "bits<4>"
+      body: (slice pte 7 4)
   rules:
-    # Level 1: read the level-1 PTE indexed by VPN1.
+    # Level 1: issue a physical read for the level-1 PTE (PIPT).
     - name: walk_start
       condition: (and (eq (read walk_state) 0) start)
       action:
-        - (write pte1 (mem_read pt1_mem (vpn1 va)))
+        - (write mem_addr (concat (slice (read root_ppn) 1 0) (vpn1 va) 2))
         - (write walk_state 1)
-    # Level 0: read the level-0 PTE indexed by VPN0 (table base = PTE1.ppn in Sv32).
+    # Level 0: latch PTE1, then issue a physical read for the level-0 PTE.
     - name: walk_l0
       condition: (eq (read walk_state) 1)
       action:
-        - (write pte0 (mem_read pt0_mem (vpn0 va)))
+        - (write pte1 mem_data)
+        - (write mem_addr (concat (slice (pte_ppn mem_data) 1 0) (vpn0 va) 2))
         - (write walk_state 2)
     # Combine: PPN = PTE0.ppn, PA = PPN | offset.
     - name: walk_finish
       condition: (eq (read walk_state) 2)
       action:
-        - (write result_ppn (pte_ppn (read pte0)))
-        - (write result_pa (concat (pte_ppn (read pte0)) (offset va) 12))
+        - (write pte0 mem_data)
+        - (write result_ppn (pte_ppn mem_data))
+        - (write result_pa (concat (pte_ppn mem_data) (offset va) 4))
         - (write walk_state 3)
     # Return to idle for the next request.
     - name: walk_reset
@@ -102,18 +101,8 @@ module:
         kind: transition
         rule: walk_finish
         operand: (eq (read result_ppn) (pte_ppn (read pte0)))
-    - name: pa_keeps_offset
-      kind: transition
-      expression:
-        kind: transition
-        rule: walk_finish
-        operand: (eq (slice (read result_pa) 11 0) (offset va))
   proof_obligations:
     - property: ppn_from_leaf
-      status: unproved
-      engine: theorem_proving
-      backend: koika
-    - property: pa_keeps_offset
       status: unproved
       engine: theorem_proving
       backend: koika

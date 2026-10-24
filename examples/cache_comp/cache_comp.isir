@@ -28,28 +28,41 @@ module:
     - name: d_addr
       direction: input
       type: "bits<4>"
+    - name: d_vpn
+      direction: input
+      type: "bits<2>"    # data VA page-offset (VIPT index for the L1D)
+    - name: d_is_physical
+      direction: input
+      type: "bool"       # true = PIPT special load (PTW); false = VIPT normal load
     - name: d_data
       direction: input
       type: "bits<8>"
+    - name: mshr_release0
+      direction: input
+      type: "bool"       # L2 fill response (release MSHR slot 0)
+    - name: mshr_release1
+      direction: input
+      type: "bool"       # L2 fill response (release MSHR slot 1)
   components:
-    # L1 I-Cache: read-only, fed by the fetch address.
+    # L1 I-Cache: read-only, fed by the fetch address (PIPT).
     - name: l1i
       module: "examples/l1_cache_comp/l1_cache_comp.isir"
       parameters: {me: $me}
       lift_properties: false
-      port_map: {req_core: 0, req_write: const_false, req_addr: i_addr, req_vpn: 0, mshr_alloc: false, mshr_id: 0, mshr_release0: false, mshr_release1: false}
-    # L1 D-Cache: MESI, fed by the data request.
+      port_map: {req_core: 0, req_write: const_false, req_addr: i_addr, req_vpn: 0, is_physical: const_false, req_data: 0}
+    # L1 D-Cache: MESI, VIPT for normal loads / PIPT for PTW special loads.
     - name: l1d
       module: "examples/l1_cache_comp/l1_cache_comp.isir"
       parameters: {me: $me}
       lift_properties: false
-      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: 0, mshr_alloc: false, mshr_id: 0, mshr_release0: false, mshr_release1: false}
-    # L2 unified cache: MESI last-level cache.
+      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: d_vpn, is_physical: d_is_physical, req_data: d_data, rdata: l1d_rdata_signal}
+    # L2 unified cache: MESI last-level cache; its MSHR is allocated on miss and
+    # released by the fill response.
     - name: l2
       module: "examples/l2_cache_comp/l2_cache_comp.isir"
       parameters: {me: $me}
       lift_properties: false
-      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: 0, req_data: d_data, mshr_alloc: false, mshr_id: 0, mshr_release0: false, mshr_release1: false, miss_valid: l2_miss_valid, miss_addr: l2_miss_addr}
+      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: 0, req_data: d_data, mshr_release0: mshr_release0, mshr_release1: mshr_release1, miss_valid: l2_miss_valid, miss_addr: l2_miss_addr}
   state:
     - name: const_false
       kind: register
@@ -62,6 +75,11 @@ module:
     - name: l2_miss_addr
       kind: register
       type: "bits<4>"
+      initial: 0
+    # L1D read data, exposed for the PTW's PIPT special loads.
+    - name: l1d_rdata_signal
+      kind: register
+      type: "bits<8>"
       initial: 0
   properties:
     - name: l1d_states_valid

@@ -41,6 +41,9 @@ module:
     - name: addr
       direction: input
       type: "bits<4>"
+    - name: d_is_physical
+      direction: input
+      type: "bool"     # true = PIPT special load (PTW); false = VIPT normal load
     - name: taken
       direction: input
       type: "bool"     # branch outcome (feeds fetch's BPU)
@@ -77,12 +80,6 @@ module:
     - name: wvalid
       direction: input
       type: "bool"
-    - name: vpn
-      direction: input
-      type: "bits<4>"
-    - name: ppn_in
-      direction: input
-      type: "bits<4>"
     - name: va
       direction: input
       type: "bits<32>"
@@ -99,20 +96,13 @@ module:
       direction: input
       type: "bool"
   components:
-    # TLB (leaf) + MSHR miss queue (container).
-    - name: tlb
-      module: "examples/tlb/tlb.isir"
+    # MMU: instruction TLB + data TLB + shared page-table walker.
+    - name: mmu
+      module: "examples/mmu_comp/mmu_comp.isir"
       lift_properties: false
-      port_map: {vpn: vpn, ppn_in: tlb_ppn_in, tlb_ppn: pa_signal, miss: tlb_miss_signal}
-    - name: ptw
-      module: "examples/ptw/ptw.isir"
-      lift_properties: false
-      port_map: {va: va, start: tlb_miss_signal, result_ppn: ptw_ppn_signal}
-    - name: mshr
-      module: "examples/mshr_comp/mshr_comp.isir"
-      lift_properties: false
-      port_map: {alloc_valid: miss_valid_signal, id: id, addr: miss_addr_signal, data: req_data, release0: release0, release1: release1}
-    # Fetch (with internal BPU). Its pc is exposed as pc_signal.
+      port_map: {i_vpn: pc_signal, d_vpn: addr, va: va, i_ppn: i_pa_signal, d_ppn: pa_signal, i_miss: i_miss_signal, d_miss: d_miss_signal, miss_signal: tlb_miss_signal, ptw_mem_addr: ptw_mem_addr_signal, ptw_active: ptw_active_signal, ptw_mem_data: ptw_mem_data_signal}
+    # Fetch (with internal BPU). Its pc is exposed as pc_signal; its instruction
+    # fetch uses the MMU-translated i_pa_signal (physical).
     - name: fetch
       module: "examples/fetch_comp/fetch_comp.isir"
       lift_properties: false
@@ -121,12 +111,13 @@ module:
       module: "examples/ooo_comp/ooo_comp.isir"
       lift_properties: false
       port_map: {issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr}
-    # Two-level cache: L1I fed by pc_signal, L1D fed by the data request.
+    # Two-level cache: L1I fed by the translated instruction PA, L1D fed by the
+    # translated data PA.
     - name: cache
       module: "examples/cache_comp/cache_comp.isir"
       parameters: {me: $me}
       lift_properties: false
-      port_map: {i_addr: pc_signal, d_core: req_core, d_write: req_write, d_addr: pa_signal, d_data: req_data, l2_miss_valid: miss_valid_signal, l2_miss_addr: miss_addr_signal}
+      port_map: {i_addr: i_pa_signal, d_core: req_core, d_write: l1d_write_signal, d_addr: l1d_addr_signal, d_vpn: d_vpn_signal, d_is_physical: l1d_phys_signal, d_data: req_data, mshr_release0: release0, mshr_release1: release1, l2_miss_valid: miss_valid_signal, l2_miss_addr: miss_addr_signal, l1d_rdata: ptw_mem_data_signal}
     - name: axi_mem
       module: "examples/axi_mem/axi_mem.isir"
       lift_properties: false
@@ -137,10 +128,60 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
+    # Translated addresses from the MMU.
+    - name: i_pa_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
     - name: pa_signal
       kind: register
       type: "bits<4>"
       initial: 0
+    # Data VA page-offset (VIPT index for the L1D).
+    - name: d_vpn_signal
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    # PTW memory interface (physical read -> L1D in PIPT mode).
+    - name: ptw_mem_addr_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: ptw_active_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: ptw_mem_data_signal
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # Multiplexed L1D request (LSU VIPT vs PTW PIPT).
+    - name: l1d_addr_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: l1d_write_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: l1d_phys_signal
+      kind: register
+      type: "bool"
+      initial: false
+    # MMU miss flags.
+    - name: i_miss_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: d_miss_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: tlb_miss_signal
+      kind: register
+      type: "bool"
+      initial: false
+    # MSHR / AXI miss signals.
     - name: miss_valid_signal
       kind: register
       type: "bool"
@@ -149,28 +190,29 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
-    - name: tlb_miss_signal
-      kind: register
-      type: "bool"
-      initial: false
-    - name: ptw_ppn_signal
-      kind: register
-      type: "bits<20>"
-      initial: 0
-    - name: tlb_ppn_in
-      kind: register
-      type: "bits<4>"
-      initial: 0
     - name: pc
       kind: register
       type: "bits<4>"
       initial: 0
   rules:
-    # Truncate the PTW's 20-bit PPN to the TLB's 4-bit fill source.
-    - name: slice_ptw_ppn
+    # Data VA page-offset = VIPT index (== PA offset within a page).
+    - name: slice_d_vpn
       condition: "true"
       action:
-        - (write tlb_ppn_in (slice (read ptw_ppn_signal) 3 0))
+        - (write d_vpn_signal (slice addr 1 0))
+    # Multiplex the L1D request: PTW physical read (PIPT) vs LSU data access (VIPT).
+    - name: mux_l1d_addr
+      condition: "true"
+      action:
+        - (write l1d_addr_signal (ite (read ptw_active_signal) (read ptw_mem_addr_signal) pa_signal))
+    - name: mux_l1d_write
+      condition: "true"
+      action:
+        - (write l1d_write_signal (and (not (read ptw_active_signal)) req_write))
+    - name: mux_l1d_phys
+      condition: "true"
+      action:
+        - (write l1d_phys_signal (or (read ptw_active_signal) d_is_physical))
     - name: retire
       condition: (eq req_core $me)
       action:
@@ -182,36 +224,46 @@ module:
         kind: transition
         rule: retire
         operand: (eq (read pc) (add (prev pc) 1))
-    - name: tlb_hit_sets_pa
+    - name: itlb_hit_sets_i_pa
       kind: transition
       expression:
         kind: transition
-        rule: tlb_hit0
-        operand: (eq (read pa_signal) (read tlb_way0_ppn))
+        rule: mmu_itlb_hit0
+        operand: (eq (read i_pa_signal) (read mmu_itlb_way0_ppn))
+    - name: dtlb_hit_sets_pa
+      kind: transition
+      expression:
+        kind: transition
+        rule: mmu_dtlb_hit0
+        operand: (eq (read pa_signal) (read mmu_dtlb_way0_ppn))
     - name: l2_miss_issues_axi
       kind: transition
       expression:
         kind: transition
         rule: cache_l2_read_miss0
         operand: (eq (read miss_valid_signal) true)
-    - name: miss_allocates_mshr
-      kind: transition
-      expression:
-        kind: transition
-        rule: mshr_mshr0_alloc
-        operand: (eq (read miss_valid_signal) true)
     - name: tlb_miss_triggers_ptw
       kind: transition
       expression:
         kind: transition
-        rule: tlb_fill0
-        operand: (eq (read tlb_miss_signal) true)
+        rule: mmu_combine_miss
+        operand: (eq (read tlb_miss_signal) (or (read i_miss_signal) (read d_miss_signal)))
+    - name: ptw_read_is_pipt
+      kind: transition
+      expression:
+        kind: transition
+        rule: mux_l1d_phys
+        operand: (implies (read ptw_active_signal) (eq (read l1d_phys_signal) true))
   proof_obligations:
     - property: pc_increments
       status: unproved
       engine: theorem_proving
       backend: koika
-    - property: tlb_hit_sets_pa
+    - property: itlb_hit_sets_i_pa
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: dtlb_hit_sets_pa
       status: unproved
       engine: theorem_proving
       backend: koika
@@ -219,11 +271,11 @@ module:
       status: unproved
       engine: theorem_proving
       backend: koika
-    - property: miss_allocates_mshr
+    - property: tlb_miss_triggers_ptw
       status: unproved
       engine: theorem_proving
       backend: koika
-    - property: tlb_miss_triggers_ptw
+    - property: ptw_read_is_pipt
       status: unproved
       engine: theorem_proving
       backend: koika

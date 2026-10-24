@@ -12,7 +12,7 @@ module:
   inputs:
     - name: req_core
       direction: input
-      type: "bool"
+      type: "bits<4>"   # 0 = core0, 1 = core1 (matches the home's req_core width)
     - name: req_write
       direction: input
       type: "bool"
@@ -33,9 +33,10 @@ module:
       lift_properties: false
       port_map: {req_core: true, mstate: c1_mstate_signal, maddr: c1_maddr_signal}
     # Home node: directory + centralized snoop, writing the RNs' L1D via cross-instance.
+    # Its proved SWMR is lifted as assumed reachable invariants.
     - name: home
       module: "examples/home/home.isir"
-      lift_properties: false
+      lift_properties: invariant
       port_map: {req_core: req_core, req_write: req_write, req_addr: req_addr, req_data: req_data,
                  c0_state: c0_mstate_signal, c0_addr: c0_maddr_signal,
                  c1_state: c1_mstate_signal, c1_addr: c1_maddr_signal}
@@ -57,57 +58,27 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
-  functions:
-    - name: is_modified
-      params: [{name: s, type: "bits<2>"}]
-      return: "bool"
-      body: (eq s 3)
-    - name: is_exclusive
-      params: [{name: s, type: "bits<2>"}]
-      return: "bool"
-      body: (eq s 2)
-    - name: has_line
-      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
-      return: "bool"
-      body: (and (neq s 0) (eq a ra))
-  invariants:
-    - name: single_writer
-      operand: (not (and (and (is_modified (read c0_mstate_signal)) (is_modified (read c1_mstate_signal)))
-                        (eq (read c0_maddr_signal) (read c1_maddr_signal))))
-    - name: m_exclusive
-      operand: (and
-                 (not (and (is_modified (read c0_mstate_signal)) (has_line (read c1_mstate_signal) (read c1_maddr_signal) (read c0_maddr_signal))))
-                 (not (and (is_modified (read c1_mstate_signal)) (has_line (read c0_mstate_signal) (read c0_maddr_signal) (read c1_maddr_signal)))))
-    - name: e_exclusive
-      operand: (and
-                 (not (and (is_exclusive (read c0_mstate_signal)) (has_line (read c1_mstate_signal) (read c1_maddr_signal) (read c0_maddr_signal))))
-                 (not (and (is_exclusive (read c1_mstate_signal)) (has_line (read c0_mstate_signal) (read c0_maddr_signal) (read c1_maddr_signal)))))
-
   properties:
-    - name: __none__
+    - name: single_writer
       kind: safety
       expression:
         kind: always
-        operand: "true"
-      kind: safety
-      expression:
-        kind: always
-        operand: (not (and (and (is_modified (read c0_mstate_signal)) (is_modified (read c1_mstate_signal)))
+        operand: (not (and (and (eq (read c0_mstate_signal) 3) (eq (read c1_mstate_signal) 3))
                           (eq (read c0_maddr_signal) (read c1_maddr_signal))))
     - name: m_exclusive
       kind: safety
       expression:
         kind: always
         operand: (and
-                   (not (and (is_modified (read c0_mstate_signal)) (has_line (read c1_mstate_signal) (read c1_maddr_signal) (read c0_maddr_signal))))
-                   (not (and (is_modified (read c1_mstate_signal)) (has_line (read c0_mstate_signal) (read c0_maddr_signal) (read c1_maddr_signal)))))
+                   (not (and (eq (read c0_mstate_signal) 3) (and (neq (read c1_mstate_signal) 0) (eq (read c1_maddr_signal) (read c0_maddr_signal)))))
+                   (not (and (eq (read c1_mstate_signal) 3) (and (neq (read c0_mstate_signal) 0) (eq (read c0_maddr_signal) (read c1_maddr_signal))))))
     - name: e_exclusive
       kind: safety
       expression:
         kind: always
         operand: (and
-                   (not (and (is_exclusive (read c0_mstate_signal)) (has_line (read c1_mstate_signal) (read c1_maddr_signal) (read c0_maddr_signal))))
-                   (not (and (is_exclusive (read c1_mstate_signal)) (has_line (read c0_mstate_signal) (read c0_maddr_signal) (read c1_maddr_signal)))))
+                   (not (and (eq (read c0_mstate_signal) 2) (and (neq (read c1_mstate_signal) 0) (eq (read c1_maddr_signal) (read c0_maddr_signal)))))
+                   (not (and (eq (read c1_mstate_signal) 2) (and (neq (read c0_mstate_signal) 0) (eq (read c0_maddr_signal) (read c1_maddr_signal))))))
   proof_obligations:
     - property: single_writer
       status: unproved

@@ -1,0 +1,143 @@
+isir_version: "0.1"
+module:
+  name: core_rn
+  parameters:
+    - name: me
+      type: int
+      default: 0
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    # CHI channels exposed by this request node.
+    - name: req_valid
+      direction: input
+      type: "bool"      # this RN has a request to issue
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"
+    - name: req_data
+      direction: input
+      type: "bits<8>"
+    - name: snp_valid
+      direction: input
+      type: "bool"      # snoop from the home node (SNP channel)
+    - name: snp_op
+      direction: input
+      type: "bool"
+    - name: snp_addr
+      direction: input
+      type: "bits<4>"
+    - name: grant_valid
+      direction: input
+      type: "bool"      # grant from the home node (RSP channel)
+    - name: grant_write
+      direction: input
+      type: "bool"
+    - name: grant_addr
+      direction: input
+      type: "bits<4>"
+    - name: grant_data
+      direction: input
+      type: "bits<8>"
+    # Core data path (VA/offset for the MMU + LSU).
+    - name: addr
+      direction: input
+      type: "bits<4>"
+    - name: va
+      direction: input
+      type: "bits<8>"
+  components:
+    # The full core (mmu/fetch/ooo/cache). Its coherence request is driven by the
+    # CHI channels; non-essential execution inputs are tied off.
+    - name: core
+      module: "examples/core_comp/core_comp.isir"
+      parameters: {me: $me}
+      lift_properties: false
+      port_map:
+        {req_core: $me, req_write: req_write, req_addr: req_addr, req_data: req_data,
+         addr: addr, va: va, d_is_physical: false,
+         issue_valid: false, rd: 0, op: false, store: false, a: 0, b: 0, alu_op: 0,
+         taken: false, stall: false, branch_target: 0,
+         araddr: 0, arvalid: false, awaddr: 0, awvalid: false, wdata: 0, wvalid: false,
+         alloc_valid: false, id: 0, release0: false, release1: false}
+  state:
+    # This RN's coherence line (the home node drives it via SNP/grant).
+    - name: mstate
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: maddr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: mdata
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # REQ channel output (RN -> HN).
+    - name: req_out_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: req_out_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # RSP channel output (RN -> HN): snoop response.
+    - name: snp_rsp_valid
+      kind: register
+      type: "bool"
+      initial: false
+  functions:
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+  rules:
+    # Issue a request onto the REQ channel.
+    - name: issue_req
+      condition: req_valid
+      action:
+        - (write req_out_valid true)
+        - (write req_out_write req_write)
+        - (write req_out_addr req_addr)
+        - (write req_out_data req_data)
+    # Complete a request when the grant arrives.
+    - name: complete_req
+      condition: grant_valid
+      action:
+        - (write req_out_valid false)
+    # Respond to a snoop (SNP -> RSP).
+    - name: respond_snp
+      condition: snp_valid
+      action:
+        - (write snp_rsp_valid true)
+        - (write mstate (ite snp_op 0 (ite (eq (read mstate) 3) 1 (read mstate))))
+    - name: clear_snp_rsp
+      condition: (not snp_valid)
+      action:
+        - (write snp_rsp_valid false)
+    # Receive a grant (RSP + DAT).
+    - name: receive_grant
+      condition: grant_valid
+      action:
+        - (write mstate (ite grant_write 3 1))
+        - (write maddr grant_addr)
+        - (write mdata grant_data)

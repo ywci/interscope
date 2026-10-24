@@ -55,12 +55,18 @@ Opaque Nat.mul.
 Opaque Nat.leb Nat.ltb.
 Hint Resolve eq_refl : core.
 
+Ltac btauto_safe :=
+  match goal with
+  | [ |- context[match _ with _ => _ end] ] => fail 1  (* avoid the kernel crash on Nat.* / match *)
+  | _ => btauto
+  end.
+
 Ltac skel_close :=
   first [ solve [eauto]   (* apply Hint Resolve'd invariants before unfolding functions *)
         | try (autounfold with core in *); simpl in *;
           first [ solve [assumption] | solve [reflexivity] | solve [discriminate]
                | solve [congruence] | solve [contradiction] | solve [tauto]
-               | solve [btauto] | solve [lia] | solve [nia] | solve [auto] | solve [eauto]
+               | solve [btauto_safe] | solve [lia] | solve [nia] | solve [auto] | solve [eauto]
                | solve [ match goal with [ |- ?b = true \/ ?b = false ] => destruct b; [left; reflexivity | right; reflexivity] end ]
                | solve [ apply Nat.leb_le; auto ]
                | solve [ autorewrite with core in *; simpl; try assumption; lia ]
@@ -73,19 +79,22 @@ Ltac skel n :=
       first [ solve [ eapply (Nat.mod_bound_pos _ _); lia ]
             | skel_close
             | progress intros; skel m
+            | progress (match goal with [ |- ~ _ ] => intros Hneg; try destruct Hneg end); skel m
             | progress (match goal with [ H : _ /\ _ |- _ ] => destruct H end); skel m
             | progress (match goal with [ |- context[if negb ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
             | progress (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:?; simpl end); skel m
+            | progress (match goal with [ |- context[if Bool.eqb ?x ?c then _ else _] ] => destruct x; simpl end); skel m
+            | progress (match goal with [ |- context[if Nat.eqb ?x ?c then _ else _] ] => destruct x; simpl end); skel m
             | progress (match goal with [ H : context[if ?b then _ else _] |- _ ] => destruct b eqn:?; simpl in * end); skel m
             | progress (match goal with [ H : _ \/ _ |- _ ] => destruct H end); skel m
             | progress (match goal with [ H : step _ ?ins _ |- _ ] =>
                   try (pose proof (assume_inputs ins) as Hin);
                   inversion H; subst; clear H; simpl end); skel m
-            | progress (match goal with [ H : stepn _ _ _ |- _ ] => inversion H; subst; clear H; simpl end); skel m
+             | progress (match goal with [ H : stepn _ _ _ |- _ ] => inversion H; subst; clear H; simpl end); skel m
             | progress (match goal with [ H : ?P, IH : ?P -> ?Q |- _ ] => specialize (IH H) end); skel m
             | progress (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end); skel m
-            | progress (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end); skel m
-            | progress (match goal with [ |- context[?f ?x = true] ] => destruct (f x); simpl in * end); skel m
+             | progress (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end); skel m
+             | progress (match goal with [ |- context[?f ?x = true] ] => destruct (f x); simpl in * end); skel m
             | progress (match goal with [ H : Nat.ltb ?a ?b = true |- _ ] => apply Nat.ltb_lt in H end); skel m
             | progress (match goal with [ H : Nat.ltb ?a ?b = false |- _ ] => apply Nat.ltb_ge in H end); skel m
             | progress (match goal with [ H : Nat.leb ?a ?b = true |- _ ] => apply Nat.leb_le in H end); skel m
@@ -94,6 +103,22 @@ Ltac skel n :=
             | progress simpl in *; skel m ]
   end.
 """
+
+
+
+
+# Pluggable deterministic proof strategies, tried (in registration order)
+# before the LLM/PERF escalation.  Each strategy is ``fn(prover, coq_file,
+# theorem_name) -> Optional[str]`` returning a proof script or None.
+_PROOF_STRATEGIES: List[Tuple[str, Callable]] = []
+
+
+def register_proof_strategy(name: str) -> Callable:
+    """Decorator to register a deterministic proof strategy (domain extension)."""
+    def decorator(fn: Callable) -> Callable:
+        _PROOF_STRATEGIES.append((name, fn))
+        return fn
+    return decorator
 
 
 class KoikaProver:
@@ -151,6 +176,8 @@ class KoikaProver:
 
         self.max_repair = config.get("proof", {}).get("max_repair_attempts", 5)
         self.max_bmc_depth = config.get("proof", {}).get("invariant_bmc_depth", 3)
+        self.gate_assumed_invariants = config.get("proof", {}).get("gate_assumed_invariants", False)
+        self.gate_coherence_helpers = config.get("proof", {}).get("gate_coherence_helpers", False)
         self.coqc_path = shutil.which("coqc") or "coqc"
         self.use_proof_library = config.get("provers", {}).get("koika", {}).get(
             "use_proof_library", True
@@ -1776,14 +1803,25 @@ class KoikaProver:
                     "    match goal with [ Hs : step _ _ _ |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
                     f"    match goal with [ Hr : reachable _ |- _ ] => ({specs}) end.\n"
                     "    all: (repeat (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end);\n"
-                    "          repeat (match goal with [ |- context[?x * 0] ] => rewrite (Nat.mul_0_r ?x) end);\n"
                     "          try assumption; try (simpl; lia); try nia).\n"
                     "Qed."
                 )
             candidates.append(
                 "Proof.\n"
                 "  intros.\n"
+                "  solve [eauto].\n"
+                "Qed."
+            )
+            candidates.append(
+                "Proof.\n"
+                "  intros.\n"
                 f"  match goal with [ H : reachable _ |- _ ] => induction H; skel {max_depth} end.\n"
+                "Qed."
+            )
+            candidates.append(
+                "Proof.\n"
+                "  intros.\n"
+                "  solve [eauto 12].\n"
                 "Qed."
             )
 
@@ -1818,19 +1856,36 @@ class KoikaProver:
         return None
 
     def _prove_invariant_lemmas(self, coq_file: Path) -> None:
-        """Prove every user-declared loop invariant (Lemma ... Admitted.) first.
+        """Gate the assumed Axioms, then prove every user-declared loop invariant
+        (Lemma ... Admitted.) first.
 
         Invariants are ordinary `forall s, reachable s -> P s` statements, so
         the generic reachability-induction body closes them.  They are then
         available via `Hint Resolve` for the properties that use them.
         """
+        self._gate_assumed_invariants(coq_file)
         try:
             content = coq_file.read_text()
         except Exception:
             return
         names = re.findall(r"Lemma\s+(\w+)\s+:\s+forall s,\s+reachable s\s*->", content)
         for name in names:
-            self._recursive_skeleton_proof(coq_file, name, max_depth=60)
+            if self._try_proof_strategies(coq_file, name) is None:
+                self._recursive_skeleton_proof(coq_file, name, max_depth=60)
+
+    def _try_proof_strategies(self, coq_file: Path, theorem_name: str) -> Optional[str]:
+        """Run the registered deterministic proof strategies (domain extensions)
+        in registration order; return the first proof script that closes."""
+        for name, fn in _PROOF_STRATEGIES:
+            try:
+                result = fn(self, coq_file, theorem_name)
+            except Exception as e:
+                logger.debug("Proof strategy '%s' raised: %s", name, e)
+                result = None
+            if result is not None:
+                logger.info("Proof strategy '%s' succeeded for '%s'.", name, theorem_name)
+                return result
+        return None
 
     def _propose_invariants(self, coq_file: Path, theorem_name: str) -> List[str]:
         """Ask the LLM to propose loop invariants for a stuck theorem.
@@ -1883,6 +1938,14 @@ class KoikaProver:
                 f"transform until `done` (find them from the step constructors).\n\n"
             )
         prompt += (
+            "Hint: if a rule sets a boolean *flag* state `F` while writing a "
+            "state `Y` to a 'cleared' (non-exclusive) value, and another rule "
+            "gated on `F s = true` writes a state `X` to an 'exclusive' value "
+            "at an address, propose a *conditional* invariant that links the "
+            "flag to the peer being cleared, e.g.:\n\n"
+            "Lemma <name> : forall s, reachable s -> F s = true -> <selector> s = <c> -> ~ (<predicate> (Y s) = true /\\ <Y_addr> s = <addr> s).\n\n"
+        )
+        prompt += (
             "Propose loop invariants that would help prove this theorem.  Return "
             "ONLY the invariant lemmas, one per line, in this exact form:\n\n"
             "Lemma <name> : forall s, reachable s -> <proposition over the state>.\n\n"
@@ -1928,33 +1991,13 @@ class KoikaProver:
                     type_errors.append((name, err))
                     self._remove_invariant(coq_file, name)
                     continue
-                # 1. BMC base-case filter: reject invariants false at initial_state.
-                if not self._invariant_base_case_holds(coq_file, name, operand):
-                    logger.info("Rejected invariant '%s': false at initial_state.", name)
+                # 1. Bounded model-check gate (base + depth-1 + depth-k): reject
+                # invariants that are refutable within max_bmc_depth steps.
+                if not self._gate_invariant(coq_file, name, operand):
+                    logger.info("Rejected invariant '%s': failed the bounded gate.", name)
                     self._remove_invariant(coq_file, name)
                     continue
-                # 2. BMC depth-1 filter: reject invariants broken by a single rule.
-                failing_rules = self._invariant_step_feedback(coq_file, name, operand)
-                if failing_rules:
-                    logger.info(
-                        "Rejected invariant '%s': broken by rules %s.", name, failing_rules
-                    )
-                    self._remove_invariant(coq_file, name)
-                    continue
-                # 2b. BMC depth-k filter (symbolic, via stepn): reject invariants
-                # that hold initially and for one step but fail after k steps.
-                rejected_depth = None
-                for d in range(2, self.max_bmc_depth + 1):
-                    if not self._invariant_depth_holds(coq_file, name, operand, d):
-                        rejected_depth = d
-                        break
-                if rejected_depth is not None:
-                    logger.info(
-                        "Rejected invariant '%s': false after %d steps.", name, rejected_depth
-                    )
-                    self._remove_invariant(coq_file, name)
-                    continue
-                # 3. full induction proof.
+                # 2. full induction proof.
                 if self._recursive_skeleton_proof(coq_file, name, max_depth=60) is not None:
                     proven.append(name)
                     logger.info("LLM-proposed invariant '%s' proven for '%s'.", name, theorem_name)
@@ -2074,6 +2117,57 @@ class KoikaProver:
         ok = self._recursive_skeleton_proof(coq_file, check_name, max_depth=60) is not None
         self._remove_check_lemma(coq_file, check_name)
         return ok
+
+    def _gate_invariant(self, coq_file: Path, name: str, operand: str,
+                        check_depth1: bool = True) -> bool:
+        """Bounded model-check gate for an injected invariant.
+
+        The invariant must already be present as
+        ``Lemma name : forall s, reachable s -> operand. Admitted.`` (or an
+        equivalent ``Axiom``).  Returns True only if it holds at the initial
+        state, survives every single-step rule (when ``check_depth1``), and
+        survives depth-k (k = 2..max_bmc_depth).
+        """
+        if not self._invariant_base_case_holds(coq_file, name, operand):
+            return False
+        if check_depth1 and self._invariant_step_feedback(coq_file, name, operand):
+            return False
+        for d in range(2, self.max_bmc_depth + 1):
+            if not self._invariant_depth_holds(coq_file, name, operand, d):
+                return False
+        return True
+
+    def _gate_assumed_invariants(self, coq_file: Path) -> None:
+        """Bounded-gate the ``assumed`` Axioms (lifted from child modules via
+        ``lift_properties: invariant``).  Drops any that are refutable within
+        ``max_bmc_depth`` steps.  Opt-in via ``proof.gate_assumed_invariants``
+        (expensive on deep hierarchies, so off by default)."""
+        if not getattr(self, "gate_assumed_invariants", False):
+            return
+        try:
+            content = coq_file.read_text()
+        except Exception:
+            return
+        drop = []
+        for line in content.split("\n"):
+            m = re.match(r"Axiom\s+(\w+)\s+:\s+forall\s+s,\s*reachable\s+s\s*->\s*(.*)\.\s*$", line)
+            if m:
+                name, operand = m.group(1), m.group(2).strip()
+                if not self._gate_invariant(coq_file, name, operand, check_depth1=False):
+                    drop.append(name)
+                    logger.warning(
+                        "Dropped assumed invariant '%s': failed the bounded gate.", name
+                    )
+        if drop:
+            dropped = set(drop)
+            content = "\n".join(
+                line for line in content.split("\n")
+                if not re.match(r"Axiom\s+(\w+)\s+:", line) or re.match(r"Axiom\s+(\w+)\s+:", line).group(1) not in dropped
+            )
+            try:
+                coq_file.write_text(content)
+            except Exception:
+                pass
 
     def _inject_check_lemma(self, coq_file: Path, name: str, cond: str, p_next: str) -> None:
         try:

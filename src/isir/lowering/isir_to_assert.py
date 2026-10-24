@@ -6,6 +6,7 @@
 
 from typing import Optional
 from isir.dialects import isir, asserts
+from isir.utils.expr import unfold_user_functions
 from isir.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -44,15 +45,15 @@ def _build_reset_op(resets) -> Optional[asserts.AssertResetOp]:
     return asserts.AssertResetOp(reset_condition=cond)
 
 
-def _convert_temporal_expr(expr: dict) -> asserts.AssertPropertyOp:
+def _convert_temporal_expr(expr: dict, functions=None) -> asserts.AssertPropertyOp:
     """
     Convert a spec property temporal expression (as dict) to an AssertPropertyOp or AssertAlwaysOp.
     Expected dict keys: kind, operand (for always/eventually), left/right (for until), bound.
     """
     kind = expr.get("kind", "always")
-    operand = _expr_to_string(expr.get("operand")) if expr.get("operand") else None
-    left = _expr_to_string(expr.get("left")) if expr.get("left") else None
-    right = _expr_to_string(expr.get("right")) if expr.get("right") else None
+    operand = _expr_to_string(unfold_user_functions(expr.get("operand"), functions)) if expr.get("operand") else None
+    left = _expr_to_string(unfold_user_functions(expr.get("left"), functions)) if expr.get("left") else None
+    right = _expr_to_string(unfold_user_functions(expr.get("right"), functions)) if expr.get("right") else None
     bound = expr.get("bound")
 
     # For always with a simple boolean (no implication), return an AssertAlwaysOp.
@@ -144,7 +145,7 @@ def convert(spec_module: isir.SpecModule) -> asserts.AssertModule:
 
         # Convert temporal expression – this may return an AssertAlwaysOp for
         # simple boolean invariants, otherwise an AssertPropertyOp.
-        assert_op = _convert_temporal_expr(expr_dict)
+        assert_op = _convert_temporal_expr(expr_dict, getattr(spec_module, 'functions', None) or [])
 
         # Apply clock/reset defaults if not already set on the operation
         if isinstance(assert_op, asserts.AssertAlwaysOp):

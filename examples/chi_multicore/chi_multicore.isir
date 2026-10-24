@@ -1,0 +1,238 @@
+isir_version: "0.1"
+module:
+  name: chi_multicore
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: req_valid0
+      direction: input
+      type: "bool"
+    - name: req_write0
+      direction: input
+      type: "bool"
+    - name: req_addr0
+      direction: input
+      type: "bits<4>"
+    - name: req_data0
+      direction: input
+      type: "bits<8>"
+    - name: addr0
+      direction: input
+      type: "bits<4>"
+    - name: va0
+      direction: input
+      type: "bits<8>"
+    - name: req_valid1
+      direction: input
+      type: "bool"
+    - name: req_write1
+      direction: input
+      type: "bool"
+    - name: req_addr1
+      direction: input
+      type: "bits<4>"
+    - name: req_data1
+      direction: input
+      type: "bits<8>"
+    - name: addr1
+      direction: input
+      type: "bits<4>"
+    - name: va1
+      direction: input
+      type: "bits<8>"
+  components:
+    - name: rn0
+      module: "examples/core_rn/core_rn.isir"
+      parameters: {me: 0}
+      lift_properties: false
+      port_map:
+        {req_valid: req_valid0, req_write: req_write0, req_addr: req_addr0, req_data: req_data0, addr: addr0, va: va0,
+         snp_valid: snp0_valid_signal, snp_op: snp_op_signal, snp_addr: snp_addr_signal,
+         grant_valid: grant0_valid_signal, grant_write: grant_write_signal, grant_addr: grant_addr_signal, grant_data: 0,
+         req_out_valid: req_out0, req_out_write: req_out0_write, req_out_addr: req_out0_addr, req_out_data: req_out0_data,
+         snp_rsp_valid: snp_rsp0, mstate: c0_mstate_signal, maddr: c0_maddr_signal}
+    - name: rn1
+      module: "examples/core_rn/core_rn.isir"
+      parameters: {me: 1}
+      lift_properties: false
+      port_map:
+        {req_valid: req_valid1, req_write: req_write1, req_addr: req_addr1, req_data: req_data1, addr: addr1, va: va1,
+         snp_valid: snp1_valid_signal, snp_op: snp_op_signal, snp_addr: snp_addr_signal,
+         grant_valid: grant1_valid_signal, grant_write: grant_write_signal, grant_addr: grant_addr_signal, grant_data: 0,
+         req_out_valid: req_out1, req_out_write: req_out1_write, req_out_addr: req_out1_addr, req_out_data: req_out1_data,
+         snp_rsp_valid: snp_rsp1, mstate: c1_mstate_signal, maddr: c1_maddr_signal}
+    - name: home
+      module: "examples/chi_home/chi_home.isir"
+      lift_properties: false
+      port_map:
+        {req_valid: req_valid_signal, req_write: req_write_signal, req_addr: req_addr_signal, req_core: req_core_signal, req_data: req_data_signal,
+         snp_rsp_valid: snp_rsp_signal,
+         snp_valid: snp_valid_signal, snp_core: snp_core_signal, snp_addr: snp_addr_signal, snp_op: snp_op_signal,
+         grant_valid: grant_valid_signal, grant_core: grant_core_signal, grant_write: grant_write_signal, grant_addr: grant_addr_signal}
+  state:
+    - name: req_valid_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_write_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_addr_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: req_core_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_data_signal
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: snp_rsp_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp_valid_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp_core_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp_addr_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: snp_op_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp0_valid_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp1_valid_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant_valid_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant_core_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant_write_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant_addr_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: grant0_valid_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: grant1_valid_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out0
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out0_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out0_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: req_out0_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: req_out1
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out1_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out1_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: req_out1_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    - name: snp_rsp0
+      kind: register
+      type: "bool"
+      initial: false
+    - name: snp_rsp1
+      kind: register
+      type: "bool"
+      initial: false
+    - name: c0_mstate_signal
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c0_maddr_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: c1_mstate_signal
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: c1_maddr_signal
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  functions:
+    - name: is_modified
+      params: [{name: s, type: "bits<2>"}]
+      return: "bool"
+      body: (eq s 3)
+  rules:
+    - name: mux_req
+      condition: "true"
+      action:
+        - (write req_valid_signal (or (read req_out0) (read req_out1)))
+        - (write req_core_signal (read req_out1))
+        - (write req_write_signal (ite (read req_out1) (read req_out1_write) (read req_out0_write)))
+        - (write req_addr_signal (ite (read req_out1) (read req_out1_addr) (read req_out0_addr)))
+        - (write req_data_signal (ite (read req_out1) (read req_out1_data) (read req_out0_data)))
+    - name: mux_rsp
+      condition: "true"
+      action:
+        - (write snp_rsp_signal (or (read snp_rsp0) (read snp_rsp1)))
+    - name: demux_snp
+      condition: "true"
+      action:
+        - (write snp0_valid_signal (and (read snp_valid_signal) (not (read snp_core_signal))))
+        - (write snp1_valid_signal (and (read snp_valid_signal) (read snp_core_signal)))
+    - name: demux_grant
+      condition: "true"
+      action:
+        - (write grant0_valid_signal (and (read grant_valid_signal) (not (read grant_core_signal))))
+        - (write grant1_valid_signal (and (read grant_valid_signal) (read grant_core_signal)))
+  invariants:
+    - name: single_writer
+      operand: (not (and (and (is_modified (read c0_mstate_signal)) (is_modified (read c1_mstate_signal)))
+                        (eq (read c0_maddr_signal) (read c1_maddr_signal))))

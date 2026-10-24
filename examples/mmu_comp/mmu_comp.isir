@@ -1,0 +1,140 @@
+isir_version: "0.1"
+module:
+  name: mmu_comp
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: i_vpn
+      direction: input
+      type: "bits<4>"   # instruction virtual page number (from fetch)
+    - name: d_vpn
+      direction: input
+      type: "bits<4>"   # data virtual page number (from LSU)
+    - name: va
+      direction: input
+      type: "bits<8>"   # virtual address: VPN1[7:6] | VPN0[5:4] | offset[3:0]
+    - name: ptw_mem_data
+      direction: input
+      type: "bits<8>"   # returned PTE/data for the walker's physical reads (PIPT)
+  components:
+    # Instruction TLB: translates i_vpn -> i_ppn for the fetch stage.
+    - name: itlb
+      module: "examples/tlb/tlb.isir"
+      lift_properties: false
+      port_map: {vpn: i_vpn, ppn_in: ppn_fill, tlb_ppn: i_ppn, miss: i_miss}
+    # Data TLB: translates d_vpn -> d_ppn for the LSU.
+    - name: dtlb
+      module: "examples/tlb/tlb.isir"
+      lift_properties: false
+      port_map: {vpn: d_vpn, ppn_in: ppn_fill, tlb_ppn: d_ppn, miss: d_miss}
+    # Page-table walker: refills the TLBs on a miss (shared, one at a time).
+    - name: ptw
+      module: "examples/ptw/ptw.isir"
+      lift_properties: false
+      port_map: {va: va, start: miss_signal, mem_data: ptw_mem_data, mem_addr: ptw_mem_addr, result_ppn: ptw_ppn}
+  state:
+    # Physical read address issued by the walker (routed to the L1D in PIPT mode).
+    - name: ptw_mem_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    # True while the walker is actively reading page-table entries.
+    - name: ptw_active
+      kind: register
+      type: "bool"
+      initial: false
+    # Fill source for both TLBs: the PTW's leaf PPN.
+    - name: ppn_fill
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    # Translated outputs.
+    - name: i_ppn
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: d_ppn
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    # Miss flags (exposed for the walk trigger and stall logic).
+    - name: i_miss
+      kind: register
+      type: "bool"
+      initial: false
+    - name: d_miss
+      kind: register
+      type: "bool"
+      initial: false
+    - name: miss_signal
+      kind: register
+      type: "bool"
+      initial: false
+    - name: ptw_ppn
+      kind: register
+      type: "bits<4>"
+      initial: 0
+  rules:
+    # Either TLB miss triggers the page-table walk.
+    - name: combine_miss
+      condition: "true"
+      action:
+        - (write miss_signal (or (read i_miss) (read d_miss)))
+    # Forward the PTW's leaf PPN to the TLBs' fill source.
+    - name: slice_ppn
+      condition: "true"
+      action:
+        - (write ppn_fill (read ptw_ppn))
+    # The walker is active whenever it is not idle.
+    - name: ptw_is_active
+      condition: "true"
+      action:
+        - (write ptw_active (neq (read ptw_walk_state) 0))
+  properties:
+    - name: itlb_hit_sets_i_ppn
+      kind: transition
+      expression:
+        kind: transition
+        rule: itlb_hit0
+        operand: (eq (read i_ppn) (read itlb_way0_ppn))
+    - name: dtlb_hit_sets_d_ppn
+      kind: transition
+      expression:
+        kind: transition
+        rule: dtlb_hit0
+        operand: (eq (read d_ppn) (read dtlb_way0_ppn))
+    - name: walk_on_miss
+      kind: transition
+      expression:
+        kind: transition
+        rule: combine_miss
+        operand: (eq (read miss_signal) (or (read i_miss) (read d_miss)))
+    - name: fill_from_leaf
+      kind: transition
+      expression:
+        kind: transition
+        rule: slice_ppn
+        operand: (eq (read ppn_fill) (read ptw_ppn))
+  proof_obligations:
+    - property: itlb_hit_sets_i_ppn
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: dtlb_hit_sets_d_ppn
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: walk_on_miss
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: fill_from_leaf
+      status: unproved
+      engine: theorem_proving
+      backend: koika

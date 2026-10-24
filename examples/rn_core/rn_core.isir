@@ -10,11 +10,41 @@ module:
       async: false
       affects: all
   inputs:
-    - name: req_core
+    - name: req_valid
       direction: input
-      type: "bool"     # this RN's id (unused in the passive L1D)
+      type: "bool"      # this RN has a request to issue
+    - name: req_write
+      direction: input
+      type: "bool"
+    - name: req_addr
+      direction: input
+      type: "bits<4>"
+    - name: req_data
+      direction: input
+      type: "bits<8>"
+    - name: snp_valid
+      direction: input
+      type: "bool"      # snoop from the home node (SNP channel)
+    - name: snp_op
+      direction: input
+      type: "bool"      # true = invalidate (write snoop); false = downgrade (read snoop)
+    - name: snp_addr
+      direction: input
+      type: "bits<4>"
+    - name: grant_valid
+      direction: input
+      type: "bool"      # grant from the home node (RSP channel)
+    - name: grant_write
+      direction: input
+      type: "bool"      # true = write grant (-> M); false = read grant (-> S)
+    - name: grant_addr
+      direction: input
+      type: "bits<4>"
+    - name: grant_data
+      direction: input
+      type: "bits<8>"
   state:
-    # L1D MESI line state (the actual cache). Written by the home node's snoop/grant.
+    # This RN's L1D line (MESI): the real coherence state.
     - name: mstate
       kind: register
       type: "bits<2>"
@@ -23,6 +53,32 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
+    - name: mdata
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # REQ channel output (RN -> HN).
+    - name: req_out_valid
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out_write
+      kind: register
+      type: "bool"
+      initial: false
+    - name: req_out_addr
+      kind: register
+      type: "bits<4>"
+      initial: 0
+    - name: req_out_data
+      kind: register
+      type: "bits<8>"
+      initial: 0
+    # RSP channel output (RN -> HN): snoop response.
+    - name: snp_rsp_valid
+      kind: register
+      type: "bool"
+      initial: false
   functions:
     - name: has_line
       params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
@@ -32,3 +88,45 @@ module:
       params: [{name: s, type: "bits<2>"}]
       return: "bool"
       body: (eq s 3)
+  rules:
+    # Issue a request onto the REQ channel.
+    - name: issue_req
+      condition: req_valid
+      action:
+        - (write req_out_valid true)
+        - (write req_out_write req_write)
+        - (write req_out_addr req_addr)
+        - (write req_out_data req_data)
+    # Complete a request when the grant arrives (RSP channel).
+    - name: complete_req
+      condition: grant_valid
+      action:
+        - (write req_out_valid false)
+    # Respond to a snoop: invalidate or downgrade the line (SNP -> RSP).
+    - name: respond_snp
+      condition: snp_valid
+      action:
+        - (write snp_rsp_valid true)
+        - (write mstate (ite snp_op 0 (ite (eq (read mstate) 3) 1 (read mstate))))
+    - name: clear_snp_rsp
+      condition: (not snp_valid)
+      action:
+        - (write snp_rsp_valid false)
+    # Receive a grant: adopt the granted state and data (RSP + DAT).
+    - name: receive_grant
+      condition: grant_valid
+      action:
+        - (write mstate (ite grant_write 3 1))
+        - (write maddr grant_addr)
+        - (write mdata grant_data)
+  properties:
+    - name: states_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (and (ge (read mstate) 0) (le (read mstate) 3))
+  proof_obligations:
+    - property: states_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika

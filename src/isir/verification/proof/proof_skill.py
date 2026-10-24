@@ -508,12 +508,12 @@ class LLMProofSkill(ProofSkill):
                 if context.get("spec_module"):
                     temp_prover.spec_module = context["spec_module"]
 
-                skeleton_result = temp_prover.prove_with_skeleton_only(
-                    Path(coq_file), theorem_name
+                skeleton_script = temp_prover._recursive_skeleton_proof(
+                    Path(coq_file), theorem_name, max_depth=3
                 )
                 temp_prover.close()
 
-                if skeleton_result and skeleton_result.get("success"):
+                if skeleton_script is not None:
                     logger.info("Skeleton proof succeeded – PERF skipped.")
                     self._last_perf_stats = PERFStats()
                     prop_name = obligation.get("property", "")
@@ -521,12 +521,72 @@ class LLMProofSkill(ProofSkill):
                     if not design_name and context.get("spec_module"):
                         design_name = getattr(context["spec_module"], "name", None)
                     if prop_name and design_name:
-                        self._store_successful_proof(design_name, prop_name, skeleton_result["proof_script"])
+                        self._store_successful_proof(design_name, prop_name, skeleton_script)
                     return ProofResult(
                         success=True,
-                        proof_script=skeleton_result["proof_script"],
+                        proof_script=skeleton_script,
                         metadata={"backend": "koika", "skeleton": True}
                     )
+
+        # Deterministic proof strategies (domain extensions, no LLM) — tried
+        # before the LLM invariant proposal.
+        if backend.startswith("koi"):
+            coq_file = context.get("coq_file_path")
+            theorem_name = context.get("theorem_name")
+            if coq_file and theorem_name:
+                temp_prover = KoikaProver(config=self.config)
+                temp_prover._prelude = ""
+                temp_prover._prelude_validated = True
+                script = temp_prover._try_proof_strategies(Path(coq_file), theorem_name)
+                temp_prover.close()
+                if script is not None:
+                    logger.info("Proof strategy succeeded – PERF skipped.")
+                    prop_name = obligation.get("property", "")
+                    design_name = context.get("design_name")
+                    if not design_name and context.get("spec_module"):
+                        design_name = getattr(context["spec_module"], "name", None)
+                    if prop_name and design_name:
+                        self._store_successful_proof(design_name, prop_name, script)
+                    return ProofResult(
+                        success=True,
+                        proof_script=script,
+                        metadata={"backend": "koika", "automation": "proof_strategy"}
+                    )
+
+        # LLM invariant-proposal stage: ask the LLM for helper invariants, then
+        # re-try the deterministic skeleton with them (before the PERF beam search).
+        if backend.startswith("koi"):
+            coq_file = context.get("coq_file_path")
+            theorem_name = context.get("theorem_name")
+            if coq_file and theorem_name:
+                logger.info("Attempting LLM invariant proposal before PERF...")
+                temp_prover = KoikaProver(config=self.config)
+                temp_prover._prelude = ""
+                temp_prover._prelude_validated = True
+                if self._analysis:
+                    hints_str = self._build_structural_hints_string()
+                    if hints_str:
+                        temp_prover.set_structural_hints(hints_str)
+                if context.get("spec_module"):
+                    temp_prover.spec_module = context["spec_module"]
+                proposed = temp_prover._propose_invariants(Path(coq_file), theorem_name)
+                if proposed:
+                    r = temp_prover._recursive_skeleton_proof(Path(coq_file), theorem_name)
+                    if r is not None:
+                        logger.info("Invariant proposal + skeleton succeeded – PERF skipped.")
+                        prop_name = obligation.get("property", "")
+                        design_name = context.get("design_name")
+                        if not design_name and context.get("spec_module"):
+                            design_name = getattr(context["spec_module"], "name", None)
+                        if prop_name and design_name:
+                            self._store_successful_proof(design_name, prop_name, r)
+                        temp_prover.close()
+                        return ProofResult(
+                            success=True,
+                            proof_script=r,
+                            metadata={"backend": "koika", "automation": "perf_invariant"}
+                        )
+                temp_prover.close()
 
         # Proof‑pattern reuse from cache / successful proofs
         initial_script = None

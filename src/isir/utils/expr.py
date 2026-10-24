@@ -461,3 +461,53 @@ def _type_check_internal(expr: Any, context: Dict[str, str]) -> str:
 
     else:
         raise ExprError(f"Type checking not implemented for operator '{op}'")
+
+
+def unfold_user_functions(sexpr: Union[str, List, int, bool], functions: List[Dict[str, Any]]) -> str:
+    """Beta-reduce user function calls in a sexpr using their declared bodies.
+
+    With ``is_modified(s) = (eq s 3)``, ``(is_modified (read c0_state))`` becomes
+    ``(eq (read c0_state) 3)``.  Nested calls are reduced recursively.  Returns
+    the unfolded sexpr string (or the input unchanged if no functions match).
+    """
+    if not functions:
+        return sexpr if isinstance(sexpr, str) else expr_to_string(sexpr)
+    fn_map = {}
+    for fn in functions:
+        if isinstance(fn, dict):
+            name = fn.get("name")
+            body = fn.get("body")
+            params = [p.get("name") for p in (fn.get("params") or [])]
+        else:
+            name = getattr(fn, "name", None)
+            body = getattr(fn, "body", None)
+            params = [p.name for p in (getattr(fn, "params", None) or [])]
+        if name and body is not None:
+            fn_map[name] = (params, parse_sexpr(body) if isinstance(body, str) else body)
+    if not fn_map:
+        return sexpr if isinstance(sexpr, str) else expr_to_string(sexpr)
+    try:
+        node = parse_sexpr(sexpr) if isinstance(sexpr, str) else sexpr
+    except Exception:
+        return sexpr if isinstance(sexpr, str) else expr_to_string(sexpr)
+
+    def _subst(n, sub):
+        if isinstance(n, str):
+            return sub.get(n, n)
+        if isinstance(n, list):
+            return [_subst(x, sub) for x in n]
+        return n
+
+    def _unfold(n, depth=0):
+        if depth > 32:
+            return n
+        if isinstance(n, list) and n and isinstance(n[0], str) and n[0] in fn_map:
+            params, body = fn_map[n[0]]
+            args = n[1:]
+            sub = {params[i]: args[i] for i in range(min(len(params), len(args)))}
+            return _unfold(_subst(body, sub), depth + 1)
+        if isinstance(n, list):
+            return [_unfold(x, depth) for x in n]
+        return n
+
+    return expr_to_string(_unfold(node))

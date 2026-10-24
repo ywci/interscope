@@ -22,27 +22,18 @@ module:
       type: "bool"
     - name: req_addr
       direction: input
-      type: "bits<4>"   # physical address (PPN): used as the VIPT tag
+      type: "bits<4>"   # physical address (PPN): the tag in BOTH VIPT and PIPT modes
     - name: req_vpn
       direction: input
-      type: "bits<2>"   # virtual page number: used as the VIPT index
-    - name: mshr_alloc
+      type: "bits<2>"   # virtual page-OFFSET (low bits): the VIPT index (== PA offset)
+    - name: is_physical
       direction: input
-      type: "bool"
-    - name: mshr_id
+      type: "bool"      # true = PIPT special load (PTW, address already physical);
+                        # false = VIPT normal load (index from VA offset, tag from PA)
+    - name: req_data
       direction: input
-      type: "bits<2>"
-    - name: mshr_release0
-      direction: input
-      type: "bool"
-    - name: mshr_release1
-      direction: input
-      type: "bool"
-  components:
-    - name: mshr
-      module: "examples/mshr_comp/mshr_comp.isir"
-      lift_properties: false
-      port_map: {alloc_valid: mshr_alloc, id: mshr_id, addr: req_addr, data: 0, release0: mshr_release0, release1: mshr_release1}
+      type: "bits<8>"   # write data / fill data
+  components: []
   state:
     - name: s0
       kind: register
@@ -64,6 +55,18 @@ module:
       kind: register
       type: "bool"
       initial: false   # false = way 0 is LRU (fill way 0)
+    - name: data0
+      kind: register
+      type: "bits<8>"
+      initial: 0       # way 0 data
+    - name: data1
+      kind: register
+      type: "bits<8>"
+      initial: 0       # way 1 data
+    - name: rdata
+      kind: register
+      type: "bits<8>"
+      initial: 0       # read data (output)
   functions:
     - name: has_line
       params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
@@ -73,18 +76,24 @@ module:
       params: [{name: s, type: "bits<2>"}]
       return: "bool"
       body: (eq s 3)
+    - name: phys_index
+      params: [{name: a, type: "bits<4>"}]
+      return: "bits<2>"
+      body: (slice a 1 0)   # PIPT index = page-offset bits of the physical address
   rules:
     # Write hit way 0.
     - name: write_hit0
       condition: (and (and (eq req_core $me) req_write) (has_line (read s0) (read a0) req_addr))
       action:
         - (write s0 3)
+        - (write data0 req_data)
         - (write lru true)
     # Write hit way 1.
     - name: write_hit1
       condition: (and (and (and (eq req_core $me) req_write) (not (has_line (read s0) (read a0) req_addr))) (has_line (read s1) (read a1) req_addr))
       action:
         - (write s1 3)
+        - (write data1 req_data)
         - (write lru false)
     # Write miss, allocate LRU way 0.
     - name: write_miss0
@@ -92,6 +101,7 @@ module:
       action:
         - (write s0 3)
         - (write a0 req_addr)
+        - (write data0 req_data)
         - (write lru true)
     # Write miss, allocate LRU way 1.
     - name: write_miss1
@@ -99,6 +109,19 @@ module:
       action:
         - (write s1 3)
         - (write a1 req_addr)
+        - (write data1 req_data)
+        - (write lru false)
+    # Read hit way 0: return the way's data.
+    - name: read_hit0
+      condition: (and (and (eq req_core $me) (not req_write)) (has_line (read s0) (read a0) req_addr))
+      action:
+        - (write rdata (read data0))
+        - (write lru true)
+    # Read hit way 1: return the way's data.
+    - name: read_hit1
+      condition: (and (and (and (eq req_core $me) (not req_write)) (not (has_line (read s0) (read a0) req_addr))) (has_line (read s1) (read a1) req_addr))
+      action:
+        - (write rdata (read data1))
         - (write lru false)
     # Read miss, allocate LRU way 0 as Shared.
     - name: read_miss0
@@ -138,9 +161,24 @@ module:
         kind: always
         operand: (and (and (ge (read s0) 0) (le (read s0) 3))
                       (and (ge (read s1) 0) (le (read s1) 3)))
+    # The tag is always the physical PPN (req_addr) in both VIPT and PIPT modes.
+    - name: physical_tag_used
+      kind: transition
+      expression:
+        kind: transition
+        rule: write_miss0
+        operand: (eq (read a0) req_addr)
+
+  # NOTE: VIPT aliasing-freedom is an *environment* guarantee (the VA page-offset
+  # equals the PA page-offset, since the index lives inside the page).  It is not
+  # a cache invariant the cache can prove, so it is documented rather than asserted.
 
   proof_obligations:
     - property: states_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: physical_tag_used
       status: unproved
       engine: theorem_proving
       backend: koika

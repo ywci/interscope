@@ -29,12 +29,6 @@ module:
     - name: req_data
       direction: input
       type: "bits<8>"
-    - name: mshr_alloc
-      direction: input
-      type: "bool"
-    - name: mshr_id
-      direction: input
-      type: "bits<2>"
     - name: mshr_release0
       direction: input
       type: "bool"
@@ -42,10 +36,12 @@ module:
       direction: input
       type: "bool"
   components:
+    # MSHR (miss-status holding register): allocated internally on a miss,
+    # released by the fill response.
     - name: mshr
       module: "examples/mshr_comp/mshr_comp.isir"
       lift_properties: false
-      port_map: {alloc_valid: mshr_alloc, id: mshr_id, addr: req_addr, data: req_data, release0: mshr_release0, release1: mshr_release1}
+      port_map: {alloc_valid: miss_valid, id: 0, addr: req_addr, data: req_data, release0: mshr_release0, release1: mshr_release1}
   state:
     - name: s0
       kind: register
