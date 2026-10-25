@@ -219,6 +219,11 @@ module:
     - name: credits_bounded
       operand: (and (ge (read req_credits) 0) (le (read req_credits) 2))
   properties:
+    - name: has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (has_line (read c0_state) (read c0_addr) (read c0_addr)) (neq (read c0_state) 0))
     # SWMR over the directory: at most one core holds M at a given address.
     - name: single_writer
       kind: safety
@@ -234,6 +239,10 @@ module:
         operand: (and (and (ge (read s0) 0) (le (read s0) 3))
                       (and (ge (read s1) 0) (le (read s1) 3)))
   proof_obligations:
+    - property: has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: single_writer
       status: unproved
       engine: theorem_proving

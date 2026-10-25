@@ -59,6 +59,36 @@ module:
       type: "bits<4>"
       initial: 0
   properties:
+    - name: home_is_exclusive_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (home_is_exclusive (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+    - name: home_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (home_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+    - name: rn0_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn0_has_line (read c0_mstate_signal) (read rn0_req_out_addr) (read rn0_req_out_addr)) (neq (read c0_mstate_signal) 0))
+    - name: rn0_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn0_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+    - name: rn1_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn1_has_line (read c0_mstate_signal) (read rn1_req_out_addr) (read rn1_req_out_addr)) (neq (read c0_mstate_signal) 0))
+    - name: rn1_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn1_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
     - name: single_writer
       kind: safety
       expression:
@@ -80,6 +110,30 @@ module:
                    (not (and (eq (read c0_mstate_signal) 2) (and (neq (read c1_mstate_signal) 0) (eq (read c1_maddr_signal) (read c0_maddr_signal)))))
                    (not (and (eq (read c1_mstate_signal) 2) (and (neq (read c0_mstate_signal) 0) (eq (read c0_maddr_signal) (read c1_maddr_signal))))))
   proof_obligations:
+    - property: home_is_exclusive_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: home_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn0_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn0_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: single_writer
       status: unproved
       engine: theorem_proving

@@ -280,16 +280,55 @@ def _parse_function(data: Dict[str, Any]) -> Function:
     )
 
 
-def _parse_axiom(data: Dict[str, Any]) -> Axiom:
+def _parse_axiom(data: Dict[str, Any], functions: Optional[List[Any]] = None) -> Axiom:
     forall_vars = []
     for p in data.get("forall", []):
         if not isinstance(p, dict) or "name" not in p or "type" not in p:
             raise ISIRParseError("Axiom 'forall' binders must be mappings with 'name' and 'type'.")
         forall_vars.append(FunctionParam(name=p["name"], type=p["type"]))
+    statement = _require(data, "statement", "axiom")
+    # Implicit universal quantification: collect free variables that appear as
+    # arguments to known functions and bind them, inferring their type from the
+    # matching function parameter (defaulting to nat).
+    declared = {v.name for v in forall_vars}
+    fn_params = {}
+    for f in (functions or []):
+        if isinstance(f, dict):
+            nm = f.get("name")
+            params = [p.get("type") for p in (f.get("params") or [])]
+        else:
+            nm = getattr(f, "name", None)
+            params = [p.type for p in (getattr(f, "params", None) or [])]
+        if nm:
+            fn_params[nm] = params
+    free_vars: Dict[str, str] = {}
+
+    def _walk(n):
+        if isinstance(n, list) and n and isinstance(n[0], str) and n[0] in fn_params:
+            for i, arg in enumerate(n[1:]):
+                if isinstance(arg, str) and arg not in declared:
+                    ptype = "nat"
+                    params = fn_params[n[0]]
+                    if i < len(params):
+                        ptype = params[i]
+                    free_vars.setdefault(arg, ptype)
+                elif isinstance(arg, list):
+                    _walk(arg)
+        elif isinstance(n, list):
+            for arg in n[1:]:
+                _walk(arg)
+
+    try:
+        _walk(parse_sexpr(statement) if isinstance(statement, str) else statement)
+    except Exception:
+        pass
+    for name, ptype in free_vars.items():
+        if name not in declared:
+            forall_vars.append(FunctionParam(name=name, type=ptype))
     return Axiom(
         name=_require(data, "name", "axiom"),
         forall_vars=forall_vars,
-        statement=_require(data, "statement", "axiom")
+        statement=statement
     )
 
 
@@ -434,6 +473,7 @@ def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
 
 
 def _parse_module(data: Dict[str, Any]) -> Module:
+    functions = [_parse_function(f) for f in data.get("functions", [])]
     return Module(
         name=_require(data, "name", "module"),
         version=data.get("version"),
@@ -448,8 +488,8 @@ def _parse_module(data: Dict[str, Any]) -> Module:
         rules=[_parse_rule(r) for r in data.get("rules", [])],
         directives=[_parse_directive(d) for d in data.get("directives", [])],
         properties=[_parse_property(p) for p in data.get("properties", [])],
-        functions=[_parse_function(f) for f in data.get("functions", [])],
-        axioms=[_parse_axiom(a) for a in data.get("axioms", [])],
+        functions=functions,
+        axioms=[_parse_axiom(a, functions) for a in data.get("axioms", [])],
         invariants=[_parse_invariant(i) for i in data.get("invariants", [])],
         schedule=_parse_schedule(data["schedule"]) if "schedule" in data else None,
         fairness=[_parse_fairness(f) for f in data.get("fairness", [])],

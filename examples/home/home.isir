@@ -47,9 +47,6 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    - name: mem
-      kind: memory
-      type: { type: "memory", elem: "bits<8>", depth: 16 }
   functions:
     - name: has_line
       params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]

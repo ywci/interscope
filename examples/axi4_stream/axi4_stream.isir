@@ -99,6 +99,12 @@ module:
         kind: transition
         rule: step
         operand: (implies (and (not (prev full)) tvalid_in) (eq (read last) tlast_in))
+    - name: handshake_transfers_beat
+      kind: transition
+      expression:
+        kind: transition
+        rule: step
+        operand: (implies (handshake (prev full) tready_out) (eq (read full) false))
 
   proof_obligations:
     - property: full_bool
@@ -122,6 +128,10 @@ module:
       engine: theorem_proving
       backend: koika
     - property: tlast_latches_on_accept
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: handshake_transfers_beat
       status: unproved
       engine: theorem_proving
       backend: koika

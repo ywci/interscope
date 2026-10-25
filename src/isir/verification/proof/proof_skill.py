@@ -490,6 +490,8 @@ class LLMProofSkill(ProofSkill):
             nm = getattr(po, "prop_name", None) or getattr(po, "name", "")
             if nm != prop_name:
                 continue
+            # Transition properties (rule-effect equalities) are definitionally
+            # true: retry deeper to split the rule's ite/and structure.
             expr_obj = getattr(po, "expression", None)
             operand = expr_obj.get("operand") if isinstance(expr_obj, dict) else None
             if operand is None:
@@ -547,8 +549,9 @@ class LLMProofSkill(ProofSkill):
                 skeleton_script = temp_prover._recursive_skeleton_proof(
                     Path(coq_file), theorem_name, max_depth=3
                 )
+                prop = obligation.get("property", "")
                 if skeleton_script is None and self._is_bound_property(
-                    context.get("spec_module"), obligation.get("property", "")
+                    context.get("spec_module"), prop
                 ):
                     logger.info("Bound property: retrying deeper skeleton (depth 12)...")
                     skeleton_script = temp_prover._recursive_skeleton_proof(

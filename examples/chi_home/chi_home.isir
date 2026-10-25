@@ -166,6 +166,18 @@ module:
   # before the requester is granted), so it is declared as an invariant.  The
   # snoop-clears-peer and grant-follows-snoop lemmas are structural corollaries of
   # the `snoop`/`grant` rules.
+  properties:
+    - name: has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (has_line (read c0_state) (read c0_addr) (read c0_addr)) (neq (read c0_state) 0))
+
+  proof_obligations:
+    - property: has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
   invariants:
     - name: single_writer
       operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))

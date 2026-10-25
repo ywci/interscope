@@ -168,6 +168,18 @@ module:
         kind: transition
         rule: write_miss0
         operand: (eq (read a0) req_addr)
+    # A Modified way necessarily holds a valid line (leverages is_modified/has_line).
+    - name: modified_way_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (is_modified (read s0)) (has_line (read s0) (read a0) (read a0)))
+    # The PIPT index is a 2-bit page-offset slice (leverages phys_index).
+    - name: phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (phys_index req_addr) 3)
 
   # NOTE: VIPT aliasing-freedom is an *environment* guarantee (the VA page-offset
   # equals the PA page-offset, since the index lives inside the page).  It is not
@@ -179,6 +191,14 @@ module:
       engine: theorem_proving
       backend: koika
     - property: physical_tag_used
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: modified_way_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: phys_index_bounded
       status: unproved
       engine: theorem_proving
       backend: koika

@@ -218,6 +218,36 @@ module:
       action:
         - (write pc (add (read pc) 1))
   properties:
+    - name: cache_l1d_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (cache_l1d_is_modified (read cache_l1d_s0)) (neq (read cache_l1d_s0) 0))
+    - name: cache_l1d_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (cache_l1d_phys_index (read cache_l1d_a0)) 3)
+    - name: cache_l1i_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (cache_l1i_is_modified (read cache_l1i_s0)) (neq (read cache_l1i_s0) 0))
+    - name: cache_l1i_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (cache_l1i_phys_index (read cache_l1i_a0)) 3)
+    - name: ooo_lsu_l1d_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (ooo_lsu_l1d_is_modified (read ooo_lsu_l1d_s0)) (neq (read ooo_lsu_l1d_s0) 0))
+    - name: ooo_lsu_l1d_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (ooo_lsu_l1d_phys_index (read ooo_lsu_l1d_a0)) 3)
     - name: pc_increments
       kind: transition
       expression:
@@ -255,6 +285,30 @@ module:
         rule: mux_l1d_phys
         operand: (implies (read ptw_active_signal) (eq (read l1d_phys_signal) true))
   proof_obligations:
+    - property: cache_l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: cache_l1d_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: cache_l1i_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: cache_l1i_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: ooo_lsu_l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: ooo_lsu_l1d_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: pc_increments
       status: unproved
       engine: theorem_proving

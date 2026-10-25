@@ -373,6 +373,117 @@ module:
       params: [{name: s, type: "bits<2>"}]
       return: "bool"
       body: (eq s 3)
+  properties:
+    - name: rn0_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn0_has_line (read rn0_l1_s0) (read rn0_l1_req_addr) (read rn0_l1_req_addr)) (neq (read rn0_l1_s0) 0))
+    - name: rn0_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn0_is_modified (read rn0_l1_s0)) (neq (read rn0_l1_s0) 0))
+    - name: rn0_l1_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn0_l1_is_modified (read rn0_l1_s0)) (neq (read rn0_l1_s0) 0))
+    - name: rn0_l1_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (rn0_l1_phys_index (read rn0_l1_req_addr)) 3)
+    - name: rn1_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn1_has_line (read rn1_l1_s0) (read rn1_l1_req_addr) (read rn1_l1_req_addr)) (neq (read rn1_l1_s0) 0))
+    - name: rn1_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn1_is_modified (read rn1_l1_s0)) (neq (read rn1_l1_s0) 0))
+    - name: rn1_l1_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn1_l1_is_modified (read rn1_l1_s0)) (neq (read rn1_l1_s0) 0))
+    - name: rn1_l1_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (rn1_l1_phys_index (read rn1_l1_req_addr)) 3)
+    - name: slice0_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (slice0_has_line (read slice0_c0_state) (read slice0_c0_addr) (read slice0_c0_addr)) (neq (read slice0_c0_state) 0))
+    - name: slice0_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (slice0_is_modified (read slice0_c0_state)) (neq (read slice0_c0_state) 0))
+    - name: slice1_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (slice1_has_line (read slice1_c0_state) (read slice1_c0_addr) (read slice1_c0_addr)) (neq (read slice1_c0_state) 0))
+    - name: slice1_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (slice1_is_modified (read slice1_c0_state)) (neq (read slice1_c0_state) 0))
+
+  proof_obligations:
+    - property: rn0_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn0_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn0_l1_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn0_l1_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_l1_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_l1_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: slice0_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: slice0_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: slice1_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: slice1_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
   invariants:
     # SWMR over the RNs' L1D MESI: at most one core holds M at an address.
     - name: single_writer

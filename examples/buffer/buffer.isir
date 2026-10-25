@@ -29,8 +29,18 @@ module:
       expression:
         kind: always
         operand: (ge (read q) 0)
+    - name: q_passes_d
+      kind: transition
+      expression:
+        kind: transition
+        rule: update
+        operand: (eq (read q) d)
   proof_obligations:
     - property: q_nonneg
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: q_passes_d
       status: unproved
       engine: theorem_proving
       backend: koika

@@ -96,6 +96,8 @@ API keys are resolved automatically. The precedence is:
 
 So you can switch `llm.provider` to `deepseek` and just export `DEEPSEEK_API_KEY` — no need to edit the file. Placeholder values such as `"not-needed"`, `""`, or `"changeme"` are ignored and fall through to the environment variable. You may also use `${VAR}` substitution, e.g. `api_key: "${DEEPSEEK_API_KEY}"`.
 
+The `run.sh` wrapper also sources an optional `.env` file at startup (copy [`.env.example`](.env.example) to `.env`), so you can keep API keys in a local file instead of exporting them in every shell.
+
 ### Base URLs
 
 Base URLs are resolved the same way:
@@ -467,6 +469,8 @@ The SVA backend emits **Yosys‑compatible procedural assertions** and uses **no
 # Full test suite
 ./run.sh --test all
 ```
+
+The integration tests exercise the LLM‑assisted PERF flow and the `rocq‑mcp`/`acl2‑mcp` proof servers. They require the external tools installed by `./install.sh` and a configured LLM (see [API Keys](#api-keys)); without those, those specific tests skip rather than fail.
 
 ### Resetting the Environment
 

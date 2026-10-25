@@ -20,6 +20,13 @@ from isir.utils.config_loader import get_project_root
 
 logger = get_logger(__name__)
 
+# Blackbox (uninterpreted) function names for the current design; used by
+# `_coq_bits_expr` to emit `extcall` for external calls.  Kōika's `extcall`
+# signature is `Sig 1` (single argument), so only single-argument blackboxes are
+# extcall-able; multi-argument ones are skipped in the RTL lowering.
+_BLACKBOX_NAMES = set()
+_MULTIARG_BLACKBOXES = set()
+
 
 class KoikaToRTLError(Exception):
     """Raised when lowering or compilation fails."""
@@ -299,6 +306,8 @@ def _has_unsupported_ops(expr: Any) -> bool:
         op = expr[0]
         if op in ("mem_read", "mem_write", "slice", "mul", "div"):
             return True
+        if op in _MULTIARG_BLACKBOXES:
+            return True
         for arg in expr[1:]:
             if _has_unsupported_ops(arg):
                 return True
@@ -309,6 +318,27 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
     registers = [s for s in spec_module.state_ops if s.kind == "register"]
 
     functions = getattr(spec_module, "functions", None) or []
+    blackboxes = []
+    for f in functions:
+        name = f.get("name") if isinstance(f, dict) else getattr(f, "name", None)
+        body = f.get("body") if isinstance(f, dict) else getattr(f, "body", None)
+        if not name or body is not None:
+            continue
+        fparams = f.get("params", []) if isinstance(f, dict) else getattr(f, "params", [])
+        ret = f.get("return", "bits<1>") if isinstance(f, dict) else getattr(f, "return", "bits<1>")
+        param_types = [p.get("type", "bits<1>") if isinstance(p, dict) else getattr(p, "type", "bits<1>") for p in fparams]
+        if len(param_types) == 1:
+            blackboxes.append({"name": name, "params": param_types, "return": ret})
+        else:
+            logger.warning("Blackbox '%s' has %d arguments; Kōika extcall supports 1. Skipping its rules in RTL.", name, len(param_types))
+    global _BLACKBOX_NAMES, _MULTIARG_BLACKBOXES
+    _BLACKBOX_NAMES = {bb["name"] for bb in blackboxes}
+    _MULTIARG_BLACKBOXES = {
+        (f.get("name") if isinstance(f, dict) else getattr(f, "name", None))
+        for f in functions
+        if (f.get("body") if isinstance(f, dict) else getattr(f, "body", None)) is None
+        and len((f.get("params", []) if isinstance(f, dict) else getattr(f, "params", []))) != 1
+    }
     flattened_rules: List[Tuple[str, str, str, Any]] = []
     for rule in spec_module.rule_ops:
         ridx = 0
@@ -368,8 +398,25 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
         lines.append("  | Dummy_rule")
     lines.append(".\n")
 
-    lines.append("Definition ext_fn_t := empty_ext_fn_t.")
-    lines.append("Definition Sigma := empty_Sigma.\n")
+    if blackboxes:
+        lines.append("Inductive ext_fn_t :=")
+        for bb in blackboxes:
+            lines.append(f"  | {_capitalize(bb['name'])}")
+        lines.append(".\n")
+        lines.append("Definition Sigma (fn : ext_fn_t) : ExternalSignature := match fn with")
+        for bb in blackboxes:
+            arg_types = [f"bits_t {_safe_width(t)}" for t in bb["params"]]
+            ret_type = f"bits_t {_safe_width(bb['return'])}"
+            sig = " ~> ".join(arg_types + [ret_type]) if arg_types else ret_type
+            lines.append(f"  | {_capitalize(bb['name'])} => {{$ {sig} $}}")
+        lines.append("  end.\n")
+        lines.append("Definition sim_ext_fn_specs (fn : ext_fn_t) := match fn with")
+        for bb in blackboxes:
+            lines.append(f"  | {_capitalize(bb['name'])} => {{| efs_name := \"{bb['name']}\"; efs_method := false |}}")
+        lines.append("  end.\n")
+    else:
+        lines.append("Definition ext_fn_t := empty_ext_fn_t.")
+        lines.append("Definition Sigma := empty_Sigma.\n")
 
     lines.append("Definition urules (rl : rule_name_t) : uaction reg_t ext_fn_t := match rl with")
     for rname, condition, dest, expr_val in flattened_rules:
@@ -428,8 +475,15 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
     lines.append(f"      koika_scheduler := ({sched_expr});")
     lines.append(f"      koika_module_name := \"{spec_module.name}\"")
     lines.append("    |};")
-    lines.append("    ip_sim := {| sp_ext_fn_specs := empty_ext_fn_props; sp_prelude := None |};")
-    lines.append("    ip_verilog := Build_verilog_package_t (fun (x : ext_fn_t) => match x with end)")
+    sim_spec = "sim_ext_fn_specs" if blackboxes else "empty_ext_fn_props"
+    lines.append(f"    ip_sim := {{| sp_ext_fn_specs := {sim_spec}; sp_prelude := None |}};")
+    if blackboxes:
+        lines.append("    ip_verilog := Build_verilog_package_t (fun (x : ext_fn_t) => match x with")
+        for bb in blackboxes:
+            lines.append(f"      | {_capitalize(bb['name'])} => {{| efr_name := \"{bb['name']}\"; efr_internal := true |}}")
+        lines.append("      end)")
+    else:
+        lines.append("    ip_verilog := Build_verilog_package_t (fun (x : ext_fn_t) => match x with end)")
     lines.append("  |}.\n")
 
     lines.append(f"Definition prog := Interop.Backends.register package.")
@@ -523,6 +577,10 @@ def _coq_bits_expr(expr, reg_widths: dict, current_width: int) -> str:
         f_val = _coq_bits_expr(args[2], reg_widths, current_width)
         return f"(if {cond} then {t_val} else {f_val})"
         
+    elif op in _BLACKBOX_NAMES:
+        arg_coq = " ".join(_coq_bits_expr(a, reg_widths, current_width) for a in args)
+        return f"extcall {_capitalize(op)}({arg_coq})"
+
     elif op in ('slice', 'mul'):
         raise ExprError(f"Unsupported operator (should have been skipped): {op}")
 

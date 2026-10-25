@@ -23,6 +23,14 @@ cd "$SCRIPT_DIR"
 if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
     export PATH="$SCRIPT_DIR/.venv/bin:$PATH"
 fi
+# Load optional local secrets/overrides (e.g. DEEPSEEK_API_KEY, DEEPSEEK_API_BASE)
+# from .env. These are needed by the LLM-dependent integration tests and PERF.
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
 for var in \
     PERF_BEAM_SIZE PERF_BRANCHES PERF_DEPTH PERF_ENABLED \
     PERF_DIMENSIONS PERF_PRIMARY_DIMENSION PERF_TEMPERATURE \

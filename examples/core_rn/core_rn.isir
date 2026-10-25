@@ -53,7 +53,7 @@ module:
       module: "examples/l1_cache_comp/l1_cache_comp.isir"
       lift_properties: false
       port_map: {req_core: 0, req_write: l1_req_write, req_addr: l1_req_addr,
-                 req_vpn: 0, is_physical: const_false, req_data: l1_req_data}
+                 req_vpn: 0, is_physical: false, req_data: l1_req_data}
   state:
     # This RN's L1 line (MESI): the coherence/directory entry.
     - name: mstate
@@ -87,11 +87,6 @@ module:
       initial: 0
     # RSP channel output (RN -> HN): snoop response.
     - name: snp_rsp_valid
-      kind: register
-      type: "bool"
-      initial: false
-    # Constant false (used as a tied-low port for the L1).
-    - name: const_false
       kind: register
       type: "bool"
       initial: false
@@ -155,12 +150,48 @@ module:
         - (write l1_req_addr grant_addr)
         - (write l1_req_data grant_data)
   properties:
+    - name: has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (has_line (read mstate) (read maddr) (read maddr)) (neq (read mstate) 0))
+    - name: is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (is_modified (read mstate)) (neq (read mstate) 0))
+    - name: l1_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (l1_is_modified (read l1_s0)) (neq (read l1_s0) 0))
+    - name: l1_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (l1_phys_index (read l1_req_addr)) 3)
     - name: states_valid
       kind: safety
       expression:
         kind: always
         operand: (and (ge (read mstate) 0) (le (read mstate) 3))
   proof_obligations:
+    - property: has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: l1_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: l1_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: states_valid
       status: unproved
       engine: theorem_proving

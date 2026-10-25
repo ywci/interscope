@@ -124,19 +124,91 @@ module:
       lift_properties: false
       port_map: {araddr: araddr, arvalid: arvalid, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid}
   properties:
-    - name: core0_pc_increments
-      kind: transition
+    - name: core0_cache_l1d_is_modified_implies_valid
+      kind: safety
       expression:
-        kind: transition
-        rule: core0_retire
-        operand: (eq (read core0_pc) (add (prev core0_pc) 1))
-    - name: core1_pc_increments
-      kind: transition
+        kind: always
+        operand: (implies (core0_cache_l1d_is_modified (read core0_cache_l1d_s0)) (neq (read core0_cache_l1d_s0) 0))
+    - name: core0_cache_l1d_phys_index_bounded
+      kind: safety
       expression:
-        kind: transition
-        rule: core1_retire
-        operand: (eq (read core1_pc) (add (prev core1_pc) 1))
-  properties:
+        kind: always
+        operand: (le (core0_cache_l1d_phys_index (read core0_cache_l1d_a0)) 3)
+    - name: core0_cache_l1i_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (core0_cache_l1i_is_modified (read core0_cache_l1i_s0)) (neq (read core0_cache_l1i_s0) 0))
+    - name: core0_cache_l1i_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (core0_cache_l1i_phys_index (read core0_cache_l1i_a0)) 3)
+    - name: core0_ooo_lsu_l1d_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (core0_ooo_lsu_l1d_is_modified (read core0_ooo_lsu_l1d_s0)) (neq (read core0_ooo_lsu_l1d_s0) 0))
+    - name: core0_ooo_lsu_l1d_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (core0_ooo_lsu_l1d_phys_index (read core0_ooo_lsu_l1d_a0)) 3)
+    - name: core1_cache_l1d_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (core1_cache_l1d_is_modified (read core1_cache_l1d_s0)) (neq (read core1_cache_l1d_s0) 0))
+    - name: core1_cache_l1d_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (core1_cache_l1d_phys_index (read core1_cache_l1d_a0)) 3)
+    - name: core1_cache_l1i_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (core1_cache_l1i_is_modified (read core1_cache_l1i_s0)) (neq (read core1_cache_l1i_s0) 0))
+    - name: core1_cache_l1i_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (core1_cache_l1i_phys_index (read core1_cache_l1i_a0)) 3)
+    - name: core1_ooo_lsu_l1d_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (core1_ooo_lsu_l1d_is_modified (read core1_ooo_lsu_l1d_s0)) (neq (read core1_ooo_lsu_l1d_s0) 0))
+    - name: core1_ooo_lsu_l1d_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (core1_ooo_lsu_l1d_phys_index (read core1_ooo_lsu_l1d_a0)) 3)
+    - name: e_at_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (e_at (read home_c0_state) (read home_c0_addr) (read home_c0_addr)) (neq (read home_c0_state) 0))
+    - name: has_at_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (has_at (read home_c0_state) (read home_c0_addr) (read home_c0_addr)) (neq (read home_c0_state) 0))
+    - name: home_is_exclusive_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (home_is_exclusive (read home_c0_state)) (neq (read home_c0_state) 0))
+    - name: home_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (home_is_modified (read home_c0_state)) (neq (read home_c0_state) 0))
+    - name: m_at_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (m_at (read home_c0_state) (read home_c0_addr) (read home_c0_addr)) (neq (read home_c0_state) 0))
     - name: core0_pc_increments
       kind: transition
       expression:
@@ -153,24 +225,87 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (not (and (and (eq (read home_c0_state) 3) (eq (read home_c1_state) 3))
-                          (eq (read home_c0_addr) (read home_c1_addr))))
+        operand: (not (and (and (eq (read home_c0_state) 3) (eq (read home_c1_state) 3)) (eq (read home_c0_addr) (read home_c1_addr))))
     - name: m_exclusive
       kind: safety
       expression:
         kind: always
-        operand: (and
-                   (not (and (eq (read home_c0_state) 3) (and (neq (read home_c1_state) 0) (eq (read home_c1_addr) (read home_c0_addr)))))
-                   (not (and (eq (read home_c1_state) 3) (and (neq (read home_c0_state) 0) (eq (read home_c0_addr) (read home_c1_addr))))))
+        operand: (and (not (and (eq (read home_c0_state) 3) (and (neq (read home_c1_state) 0) (eq (read home_c1_addr) (read home_c0_addr))))) (not (and (eq (read home_c1_state) 3) (and (neq (read home_c0_state) 0) (eq (read home_c0_addr) (read home_c1_addr))))))
     - name: e_exclusive
       kind: safety
       expression:
         kind: always
-        operand: (and
-                   (not (and (eq (read home_c0_state) 2) (and (neq (read home_c1_state) 0) (eq (read home_c1_addr) (read home_c0_addr)))))
-                   (not (and (eq (read home_c1_state) 2) (and (neq (read home_c0_state) 0) (eq (read home_c0_addr) (read home_c1_addr))))))
+        operand: (and (not (and (eq (read home_c0_state) 2) (and (neq (read home_c1_state) 0) (eq (read home_c1_addr) (read home_c0_addr))))) (not (and (eq (read home_c1_state) 2) (and (neq (read home_c0_state) 0) (eq (read home_c0_addr) (read home_c1_addr))))))
 
   proof_obligations:
+    - property: core0_cache_l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core0_cache_l1d_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core0_cache_l1i_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core0_cache_l1i_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core0_ooo_lsu_l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core0_ooo_lsu_l1d_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core1_cache_l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core1_cache_l1d_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core1_cache_l1i_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core1_cache_l1i_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core1_ooo_lsu_l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: core1_ooo_lsu_l1d_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: e_at_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: has_at_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: home_is_exclusive_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: home_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: m_at_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: core0_pc_increments
       status: unproved
       engine: theorem_proving

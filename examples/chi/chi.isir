@@ -228,6 +228,63 @@ module:
       action:
         - (write grant0_valid_signal (and (read grant_valid_signal) (not (read grant_core_signal))))
         - (write grant1_valid_signal (and (read grant_valid_signal) (read grant_core_signal)))
+  properties:
+    - name: home_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (home_has_line (read home_c0_state) (read home_c0_addr) (read home_c0_addr)) (neq (read home_c0_state) 0))
+    - name: home_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (home_is_modified (read home_c0_state)) (neq (read home_c0_state) 0))
+    - name: rn0_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn0_has_line (read c0_mstate_signal) (read req_addr_signal) (read req_addr_signal)) (neq (read c0_mstate_signal) 0))
+    - name: rn0_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn0_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+    - name: rn1_has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn1_has_line (read c0_mstate_signal) (read req_addr_signal) (read req_addr_signal)) (neq (read c0_mstate_signal) 0))
+    - name: rn1_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (rn1_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+
+  proof_obligations:
+    - property: home_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: home_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn0_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn0_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: rn1_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
   invariants:
     - name: single_writer
       operand: (not (and (and (is_modified (read c0_mstate_signal)) (is_modified (read c1_mstate_signal)))

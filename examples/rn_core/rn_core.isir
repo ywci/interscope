@@ -120,12 +120,30 @@ module:
         - (write maddr grant_addr)
         - (write mdata grant_data)
   properties:
+    - name: has_line_holds_line
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (has_line (read mstate) (read maddr) (read maddr)) (neq (read mstate) 0))
+    - name: is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (is_modified (read mstate)) (neq (read mstate) 0))
     - name: states_valid
       kind: safety
       expression:
         kind: always
         operand: (and (ge (read mstate) 0) (le (read mstate) 3))
   proof_obligations:
+    - property: has_line_holds_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: states_valid
       status: unproved
       engine: theorem_proving

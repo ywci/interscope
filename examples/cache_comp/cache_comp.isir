@@ -82,6 +82,26 @@ module:
       type: "bits<8>"
       initial: 0
   properties:
+    - name: l1d_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (l1d_is_modified (read l1d_s0)) (neq (read l1d_s0) 0))
+    - name: l1d_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (l1d_phys_index (read l1d_a0)) 3)
+    - name: l1i_is_modified_implies_valid
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (l1i_is_modified (read l1i_s0)) (neq (read l1i_s0) 0))
+    - name: l1i_phys_index_bounded
+      kind: safety
+      expression:
+        kind: always
+        operand: (le (l1i_phys_index (read l1i_a0)) 3)
     - name: l1d_states_valid
       kind: safety
       expression:
@@ -89,6 +109,22 @@ module:
         operand: (and (and (ge (read l1d_s0) 0) (le (read l1d_s0) 3))
                       (and (ge (read l1d_s1) 0) (le (read l1d_s1) 3)))
   proof_obligations:
+    - property: l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: l1d_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: l1i_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: l1i_phys_index_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika
     - property: l1d_states_valid
       status: unproved
       engine: theorem_proving

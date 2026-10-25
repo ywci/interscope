@@ -54,6 +54,17 @@ Opaque slice.
 Opaque Nat.mul.
 Opaque Nat.leb Nat.ltb.
 Hint Resolve eq_refl : core.
+Hint Rewrite Nat.eqb_refl : core.
+
+Ltac nat_eqb_norm :=
+  repeat (match goal with
+  | [ H : Nat.eqb ?a ?b = true |- _ ] => apply Nat.eqb_eq in H
+  | [ H : Nat.eqb ?a ?b = false |- _ ] => apply Nat.eqb_neq in H
+  | [ H : context[Nat.eqb ?a ?a] |- _ ] => rewrite Nat.eqb_refl in H
+  | [ |- context[Nat.eqb ?a ?a] ] => rewrite Nat.eqb_refl
+  | [ H : context[Nat.eqb ?a ?b] |- _ ] => destruct (Nat.eqb_spec a b); simpl in *
+  | [ |- context[Nat.eqb ?a ?b] ] => destruct (Nat.eqb_spec a b); simpl in *
+  end).
 
 Ltac btauto_safe :=
   match goal with
@@ -1785,6 +1796,26 @@ class KoikaProver:
         is_combinational = "reachable" not in match.group(0)
         candidates = []
         if is_combinational:
+            # Direct (no-backtracking) tactic first: transition/combination
+            # theorems are definitional equalities — destruct the conjunction,
+            # rewrite the bool/eq hypotheses, reduce Nat.eqb, destruct the
+            # remaining `if` conditions, and close by reflexivity/contradiction.
+            # This is a single coqc compile (fast); the recursive `skel` below is
+            # the fallback for the shapes this direct body cannot close.
+            candidates.append(
+                "Proof.\n"
+                "  intros.\n"
+                "  simpl in *.\n"
+                "  repeat (match goal with [ H : _ /\\ _ |- _ ] => destruct H end).\n"
+                "  repeat (match goal with [ H : ?x = ?y |- _ ] => rewrite H in *; clear H end).\n"
+                "  repeat (match goal with [ |- context[Nat.eqb ?a ?a] ] => rewrite Nat.eqb_refl end).\n"
+                "  simpl in *.\n"
+                "  repeat (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:E end).\n"
+                "  simpl in *.\n"
+                "  all: try reflexivity.\n"
+                "  all: try (exfalso; match goal with [ H : ?b <> ?b |- _ ] => apply H; reflexivity end).\n"
+                "Qed."
+            )
             candidates.append(
                 "Proof.\n"
                 "  intros.\n"

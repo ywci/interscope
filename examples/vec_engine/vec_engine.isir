@@ -62,7 +62,7 @@ module:
     - name: compute
       condition: valid
       action:
-        - (write out (clamp8 (ite (eq op 0) (add a b) (read mac_acc))))
+        - (write out (clamp8 (ite (eq op 0) (add a b) (read mac_acc_out))))
 
   properties:
     - name: out_bounded

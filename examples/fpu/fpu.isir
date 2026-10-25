@@ -189,6 +189,27 @@ module:
         operand: (or 32640 64)
         reference: 32704
 
+    # --- fdiv / fmul / fsqrt special-value branches (leverage the otherwise
+    #     unused operations) ---
+    - name: fmul_inf_zero_is_nan
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (fmul (signed_infinity 0) (signed_zero 0))
+        reference: 32704
+    - name: fdiv_inf_inf_is_nan
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (fdiv (signed_infinity 0) (signed_infinity 0))
+        reference: 32704
+    - name: fsqrt_negative_inf_is_nan
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (fsqrt (signed_infinity 1))
+        reference: 32704
+
   proof_obligations:
     - property: fsub_equals_negated_fadd
       status: unproved
@@ -215,6 +236,18 @@ module:
       engine: theorem_proving
       backend: koika
     - property: quiet_nan_pattern
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: fmul_inf_zero_is_nan
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: fdiv_inf_inf_is_nan
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: fsqrt_negative_inf_is_nan
       status: unproved
       engine: theorem_proving
       backend: koika

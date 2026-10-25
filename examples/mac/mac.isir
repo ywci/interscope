@@ -42,6 +42,8 @@ module:
       condition: enable
       action:
         - (write acc (add (read acc) (mul (read a) (read b))))
+        # Drive the combinational output with the accumulated result.
+        - (write acc_out (add (read acc) (mul (read a) (read b))))
 
   properties:
     - name: acc_nonneg

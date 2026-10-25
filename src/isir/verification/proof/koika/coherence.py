@@ -56,6 +56,77 @@ def _selector_of(val, state):
     return None
 
 
+def _fn_app3(node):
+    """Return ``(fn, a1, a2, a3)`` from ``[fn, [read, a1], [read, a2], [read, a3]]``."""
+    if isinstance(node, list) and len(node) == 4:
+        a1 = _read_arg(node[1]); a2 = _read_arg(node[2]); a3 = _read_arg(node[3])
+        if a1 is not None and a2 is not None and a3 is not None:
+            return node[0], a1, a2, a3
+    return None
+
+
+def _parse_exclusive_clause(cl):
+    """Return ``(f, g, X, Y, Ya, Xa)`` from ``(not (and (f X) (g Y Ya Xa)))``."""
+    if not (isinstance(cl, list) and len(cl) == 2 and cl[0] == "not"):
+        return None
+    inner = cl[1]
+    if not (isinstance(inner, list) and len(inner) == 3 and inner[0] == "and"):
+        return None
+    a = _fn_app(inner[1])      # (f X) -> (f, X)
+    b = _fn_app3(inner[2])     # (g Y Ya Xa) -> (g, Y, Ya, Xa)
+    if a is None or b is None:
+        return None
+    return a[0], b[0], a[1], b[1], b[2], b[3]
+
+
+def _parse_exclusive_shape(e):
+    """Return ``(f, g, X, Y, Xa, Ya)`` from the MESI-exclusive shape
+    ``(and (not (and (f X) (g Y Ya Xa))) (not (and (f Y) (g X Xa Ya))))``."""
+    if not (isinstance(e, list) and len(e) == 3 and e[0] == "and"):
+        return None
+    r0 = _parse_exclusive_clause(e[1])
+    r1 = _parse_exclusive_clause(e[2])
+    if r0 is None or r1 is None:
+        return None
+    f0, g0, X0, Y0, Ya0, Xa0 = r0
+    f1, g1, X1, Y1, Ya1, Xa1 = r1
+    if f0 != f1 or g0 != g1:
+        return None
+    if X0 == Y1 and Y0 == X1 and Xa0 == Ya1 and Ya0 == Xa1:
+        return f0, g0, X0, Y0, Xa0, Ya0
+    return None
+
+
+def _selector_in_condition(cond):
+    """Extract ``(C, cval)`` from a condition ``(eq C cval)`` (nested in ``and``),
+    where ``C`` is an input/state selector and ``cval`` is a constant.  This is
+    the condition-gated selector form (vs. the `ite`-gated value form)."""
+    def _walk(n):
+        if isinstance(n, list) and n and n[0] == "eq" and len(n) == 3:
+            C = n[1]; cval = n[2]
+            if isinstance(C, str) and not isinstance(cval, (list, bool)):
+                return C, cval
+        if isinstance(n, list):
+            for a in n[1:]:
+                r = _walk(a)
+                if r is not None:
+                    return r
+        return None
+    return _walk(cond)
+
+
+NAT_EQB_NORM_LTAC = """Ltac nat_eqb_norm :=
+  repeat (match goal with
+  | [ H : Nat.eqb ?a ?b = true |- _ ] => apply Nat.eqb_eq in H
+  | [ H : Nat.eqb ?a ?b = false |- _ ] => apply Nat.eqb_neq in H
+  | [ H : context[Nat.eqb ?a ?a] |- _ ] => rewrite Nat.eqb_refl in H
+  | [ |- context[Nat.eqb ?a ?a] ] => rewrite Nat.eqb_refl
+  | [ H : context[Nat.eqb ?a ?b] |- _ ] => destruct (Nat.eqb_spec a b); simpl in *
+  | [ |- context[Nat.eqb ?a ?b] ] => destruct (Nat.eqb_spec a b); simpl in *
+  end).
+"""
+
+
 def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, str, List[Tuple[str, str]]]]:
     """Generic, AST-based (sexpr) synthesis of a coherence helper + directed
     proof for a SWMR safety property ``~(f(X) /\\ f(Y) /\\ Xa = Ya)``.
@@ -91,25 +162,31 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
     if operand is None:
         return None
 
-    # 2. SWMR shape: (not (and (and (f (read X)) (f (read Y))) (eq (read Xa) (read Ya)))).
+    # 2. SWMR shape: (not (and (and (f (read X)) (f (read Y))) (eq (read Xa) (read Ya)))),
+    #    or MESI-exclusive shape: (and (not (and (f X) (g Y Ya Xa))) (not (and (f Y) (g X Xa Ya)))).
     e = parse_sexpr(operand)
-    if not (isinstance(e, list) and len(e) == 2 and e[0] == "not"):
+    swmr = None
+    if isinstance(e, list) and len(e) == 2 and e[0] == "not":
+        top = e[1]
+        if isinstance(top, list) and len(top) == 3 and top[0] == "and":
+            lhs, addr = top[1], top[2]
+            if isinstance(lhs, list) and len(lhs) == 3 and lhs[0] == "and":
+                a = _fn_app(lhs[1]); b = _fn_app(lhs[2])
+                if a is not None and b is not None and a[0] == b[0]:
+                    if isinstance(addr, list) and len(addr) == 3 and addr[0] == "eq":
+                        Xa = _read_arg(addr[1]); Ya = _read_arg(addr[2])
+                        if Xa is not None and Ya is not None:
+                            swmr = (a[0], a[1], b[1], Xa, Ya)
+    exclusive = None
+    if swmr is None:
+        exclusive = _parse_exclusive_shape(e)
+    if swmr is None and exclusive is None:
         return None
-    top = e[1]
-    if not (isinstance(top, list) and len(top) == 3 and top[0] == "and"):
-        return None
-    lhs, addr = top[1], top[2]
-    if not (isinstance(lhs, list) and len(lhs) == 3 and lhs[0] == "and"):
-        return None
-    a = _fn_app(lhs[1]); b = _fn_app(lhs[2])
-    if a is None or b is None or a[0] != b[0]:
-        return None
-    f, X, Y = a[0], a[1], b[1]
-    if not (isinstance(addr, list) and len(addr) == 3 and addr[0] == "eq"):
-        return None
-    Xa, Ya = _read_arg(addr[1]), _read_arg(addr[2])
-    if Xa is None or Ya is None:
-        return None
+    if swmr is not None:
+        f, X, Y, Xa, Ya = swmr
+        g = None
+    else:
+        f, g, X, Y, Xa, Ya = exclusive
 
     # 3. Exclusive value m from f's body (eq s m).
     mval = None
@@ -124,10 +201,24 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
     if mval is None:
         return None
 
+    # Input/state names (to classify the selector, flags and address as input- or
+    # state-typed).
+    state_names = set()
+    for s in (getattr(spec, "state_ops", None) or getattr(spec, "state", None) or []):
+        nm = s.get("name", "") if isinstance(s, dict) else (getattr(s, "state_name", None) or getattr(s, "name", ""))
+        if nm:
+            state_names.add(nm)
+    input_names = set()
+    for inp in (getattr(spec, "inputs", None) or []):
+        nm = inp.get("name", "") if isinstance(inp, dict) else getattr(inp, "name", "")
+        if nm:
+            input_names.add(nm)
+
     # 4. Granting rule: writes X (or Y) to a value containing mval, gated on a
-    #    selector; extract C, cval, the address A, and the flag set by the
-    #    clearing rule.
+    #    selector (either `ite`-gated in the value, or condition-gated); extract
+    #    C, cval, the address A, and the flag set by the clearing rule.
     C = cval = A = gname = None
+    is_input_selector = False
     for rule in (getattr(spec, "rule_ops", None) or getattr(spec, "rules", None) or []):
         rname = getattr(rule, "rule_name", None) or getattr(rule, "name", "")
         cond = parse_sexpr(getattr(rule, "condition", None) or "true")
@@ -139,11 +230,16 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
             state, val = w[1], w[2]
             if state in (X, Y) and _contains(val, mval):
                 sel = _selector_of(val, state)
+                if sel is None:
+                    # Condition-gated write: the selector lives in the condition
+                    # (e.g. `(eq req_core 0)`), and the write is a constant.
+                    sel = _selector_in_condition(cond)
                 if sel is not None:
                     C, cval = sel
+                    is_input_selector = C in input_names
                     gname = rname
                     # Address A: the write to the paired address register
-                    # (Xa if state == X else Ya).
+                    # (Xa if state == X else Ya); either `ite`-gated or constant.
                     for act2 in acts:
                         w2 = parse_sexpr(act2)
                         if (isinstance(w2, list) and len(w2) == 3 and w2[0] == "write"):
@@ -151,74 +247,152 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
                             if st2 == (Xa if state == X else Ya):
                                 sel2 = _selector_of(v2, st2)
                                 if sel2 is not None and sel2[0] == C:
-                                    A = sel2  # placeholder; resolved below
-                                    # the then-branch of the address write is (read A)
+                                    A = sel2
                                     if isinstance(v2, list) and len(v2) == 4:
                                         Aread = _read_arg(v2[2])
                                         if Aread is not None:
                                             A = Aread
+                                elif isinstance(v2, str):
+                                    # constant address write (e.g. c0_addr = req_addr)
+                                    A = v2
                     break
         if C is not None:
             break
     if C is None or A is None or gname is None:
         return None
 
-    # Flags: boolean states read in the granting rule's condition (other than C).
-    def _collect_reads(node, acc):
+    # Flags: boolean inputs/states read in the granting rule's condition (other
+    # than the selector C).  Function-call arguments are skipped (they are
+    # function parameters, not boolean flags).
+    function_names = set()
+    for fn in (getattr(spec, "functions", None) or []):
+        nm = fn.get("name") if isinstance(fn, dict) else getattr(fn, "name", "")
+        if nm:
+            function_names.add(nm)
+
+    def _collect_reads(node, acc, negated=False):
         if isinstance(node, list):
-            if len(node) == 2 and node[0] == "read":
-                acc.append(node[1])
+            if node and node[0] == "not" and len(node) == 2:
+                _collect_reads(node[1], acc, not negated)
+            elif len(node) == 2 and node[0] == "read":
+                acc.append((node[1], not negated))
+            elif node and isinstance(node[0], str) and node[0] in function_names:
+                return acc
             else:
-                for c in node:
-                    _collect_reads(c, acc)
+                for ch in node:
+                    _collect_reads(ch, acc, negated)
+        elif isinstance(node, str) and node in input_names:
+            acc.append((node, not negated))
         return acc
     reads = _collect_reads(cond, [])
-    flags = [r for r in dict.fromkeys(reads) if r not in (C,)]
+    seen = set()
+    flags = []
+    for name, is_true in reads:
+        if name in (C,) or name in seen:
+            continue
+        seen.add(name)
+        flags.append((name, is_true))
 
-    cval2 = (not cval) if isinstance(cval, bool) else ("true" if cval == "false" else "false")
-    flag_ty = " ".join(f"{fl} s = true ->" for fl in flags)
-
-    helper = (
-        f"Axiom swmr_peer0 : forall s, reachable s -> {flag_ty} {C} s = {str(cval).lower()} -> "
-        f"~ ({f} ({Y} s) = true /\\ {A} s = {Ya} s).\n"
-        f"Axiom swmr_peer1 : forall s, reachable s -> {flag_ty} {C} s = {str(cval2).lower()} -> "
-        f"~ ({f} ({X} s) = true /\\ {Xa} s = {A} s).\n"
-        f"Hint Resolve swmr_peer0 swmr_peer1 : core.\n"
-    )
-    fpat = ", ".join(f"Hx{i} : {fl} ?s0 = true" for i, fl in enumerate(flags))
-    farg = " ".join(f"Hx{i}" for i in range(len(flags)))
+    if isinstance(cval, bool):
+        cval2 = (not cval)
+    elif isinstance(cval, int):
+        cval2 = 1 - cval  # 2-core complement (0 <-> 1)
+    else:
+        cval2 = "true" if cval == "false" else "false"
     cval_s, cval2_s = str(cval).lower(), str(cval2).lower()
+
+    # Input- vs state-typed projections for the selector, flags and address.
+    sel_var = "inputs" if is_input_selector else "s"
+    quant = "forall s inputs, reachable s ->" if is_input_selector else "forall s, reachable s ->"
+    A_proj = f"{A} inputs" if A in input_names else f"{A} s"
+    A_isir = A if A in input_names else f"(read {A})"
+    flag_ty = " ".join(f"{fl} {'inputs' if fl in input_names else 's'} = {str(is_true).lower()} ->" for fl, is_true in flags)
+
+    # Peer predicate: the SWMR shape uses `f(peer) /\ peer_addr = addr`, the
+    # MESI-exclusive shape uses `g(peer, peer_addr, addr)` (a has-line predicate).
+    if g is None:
+        peer0_coq = f"{f} ({Y} s) = true /\\ {A_proj} = {Ya} s"
+        peer1_coq = f"{f} ({X} s) = true /\\ {Xa} s = {A_proj}"
+        peer0_isir = f"(and ({f} (read {Y})) (eq {A_isir} (read {Ya})))"
+        peer1_isir = f"(and ({f} (read {X})) (eq {A_isir} (read {Xa})))"
+        unfold_names = f
+        destr = "[[HA HB] HC]"
+        arg0 = "(conj HB HC)"
+        arg1 = "(conj HA HC)"
+    else:
+        peer0_coq = f"{g} ({Y} s) ({Ya} s) ({Xa} s) = true"
+        peer1_coq = f"{g} ({X} s) ({Xa} s) ({Ya} s) = true"
+        peer0_isir = f"({g} (read {Y}) (read {Ya}) (read {Xa}))"
+        peer1_isir = f"({g} (read {X}) (read {Xa}) (read {Ya}))"
+        unfold_names = f"{f}, {g}"
+        destr = "[HA HB]"
+        arg0 = "HB"
+        arg1 = "HA"
+
+    h0 = f"swmr_peer0_{theorem_name}"
+    h1 = f"swmr_peer1_{theorem_name}"
+    helper = (
+        f"Axiom {h0} : {quant} {flag_ty} {C} {sel_var} = {cval_s} -> "
+        f"~ ({peer0_coq}).\n"
+        f"Axiom {h1} : {quant} {flag_ty} {C} {sel_var} = {cval2_s} -> "
+        f"~ ({peer1_coq}).\n"
+        f"Hint Resolve {h0} {h1} : core.\n"
+    )
+    fpat = ", ".join(f"Hx{i} : {fl} {'?inputs' if fl in input_names else '?s0'} = {str(is_true).lower()}" for i, (fl, is_true) in enumerate(flags))
+    farg = " ".join(f"Hx{i}" for i in range(len(flags)))
+    sel_pat = "?inputs" if is_input_selector else "?s0"
+    helper_args = "s0 inputs" if is_input_selector else "s0"
+    if g is None:
+        base_cmd = f"simpl; intro Hc; destruct Hc as {destr}; unfold {unfold_names} in *; simpl in *; congruence"
+        ih_cmd = "match goal with [ IH : ~ _ |- _ ] => apply IH end"
+        split_cmd = ""
+    else:
+        # MESI-exclusive: (and clause0 clause1) — split into the two clauses and
+        # prove each `not (and …)` independently.
+        base_cmd = f"simpl; split; intro Hc; destruct Hc as {destr}; unfold {unfold_names} in *; simpl in *; congruence"
+        ih_cmd = "match goal with [ IH : _ /\\ _ |- _ ] => destruct IH end"
+        split_cmd = "    all: split.\n"
+    ih_line = ""
+    if g is not None:
+        ih_line = "    all: try (intro Hc; destruct Hc as [HA HB]; match goal with [ H : ~ _ |- _ ] => exact (H (conj HA HB)) end).\n"
     directed = (
         f"Proof.\n  intros.\n  match goal with [ H : reachable _ |- _ ] => induction H end.\n"
-        f"  - simpl; intro Hc; destruct Hc as [[HA HB] HC]; unfold {f} in *; simpl in *; congruence.\n"
+        f"  - {base_cmd}.\n"
         f"  - match goal with [ Hs : step ?a ?b ?c |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
-        f"    all: try (match goal with [ IH : ~ _ |- _ ] => apply IH end).\n"
+        f"    all: try ({ih_cmd}).\n"
+        f"{split_cmd}"
         f"    all: try (repeat (match goal with [ |- context[if Bool.eqb ?x ?c then _ else _] ] => destruct x eqn:?; simpl end)).\n"
         f"    all: try (repeat (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:?; simpl end)).\n"
         f"    all: try (repeat (match goal with [ H : _ /\\ _ |- _ ] => destruct H end)).\n"
-        f"    all: try (intro Hc; destruct Hc as [[HA HB] HC]; unfold {f} in *; simpl in *; congruence).\n"
-        f"    all: try (intro Hc; destruct Hc as [[HA HB] HC]; match goal with [ Hr : reachable ?s0, {fpat}, Hp : {C} ?s0 = {cval_s} |- _ ] => exact (swmr_peer0 s0 Hr {farg} Hp (conj HB HC)) end).\n"
-        f"    all: try (intro Hc; destruct Hc as [[HA HB] HC]; match goal with [ Hr : reachable ?s0, {fpat}, Hp : {C} ?s0 = {cval2_s} |- _ ] => exact (swmr_peer1 s0 Hr {farg} Hp (conj HA HC)) end).\n"
+        f"{ih_line}"
+        f"    all: try (intro Hc; destruct Hc as {destr}; unfold {unfold_names} in *; simpl in *; nat_eqb_norm; simpl in *; congruence).\n"
+        f"    all: try (intro Hc; destruct Hc as {destr}; match goal with [ Hr : reachable ?s0, {fpat}, Hp : {C} {sel_pat} = {cval_s} |- _ ] => exact ({h0} {helper_args} Hr {farg} Hp {arg0}) end).\n"
+        f"    all: try (intro Hc; destruct Hc as {destr}; match goal with [ Hr : reachable ?s0, {fpat}, Hp : {C} {sel_pat} = {cval2_s} |- _ ] => exact ({h1} {helper_args} Hr {farg} Hp {arg1}) end).\n"
         f"Qed."
     )
-    flags_expr = " ".join(f"(read {fl})" for fl in flags)
+    flags_expr = " ".join(
+        (fl if fl in input_names else f"(read {fl})") if is_true
+        else f"(not {fl if fl in input_names else '(read ' + fl + ')'})"
+        for fl, is_true in flags
+    )
+    C_isir = C if is_input_selector else f"(read {C})"
     isir_invariants = [
-        (f"swmr_peer0",
-         f"(not (and (and (and {flags_expr}) (eq (read {C}) {cval_s}))"
-         f" (and ({f} (read {Y})) (eq (read {A}) (read {Ya})))))"),
-        (f"swmr_peer1",
-         f"(not (and (and (and {flags_expr}) (eq (read {C}) {cval2_s}))"
-         f" (and ({f} (read {X})) (eq (read {A}) (read {Xa})))))"),
+        (f"{h0}",
+         f"(not (and (and (and {flags_expr}) (eq {C_isir} {cval_s}))"
+         f" {peer0_isir}))"),
+        (f"{h1}",
+         f"(not (and (and (and {flags_expr}) (eq {C_isir} {cval2_s}))"
+         f" {peer1_isir}))"),
     ]
     # Plain-form Coq operands (for the bounded model-check gate): the helper's
-    # conclusion expressed as `~ (flags /\ selector /\ predicate /\ addr)` with
-    # `(X s)` projections, so the generic `_gate_invariant` can check it.
-    flag_conds = " /\\ ".join(f"({fl} s) = true" for fl in flags)
+    # conclusion expressed as `~ (flags /\ selector /\ predicate)` with `(X s)`
+    # projections, so the generic `_gate_invariant` can check it.
+    flag_conds = " /\\ ".join(f"({fl} {'inputs' if fl in input_names else 's'}) = {str(is_true).lower()}" for fl, is_true in flags)
     coq_invariants = [
-        (f"swmr_peer0",
-         f"~ ({flag_conds} /\\ ({C} s) = {cval_s} /\\ (({f} ({Y} s)) = true /\\ ({A} s) = ({Ya} s)))"),
-        (f"swmr_peer1",
-         f"~ ({flag_conds} /\\ ({C} s) = {cval2_s} /\\ (({f} ({X} s)) = true /\\ ({A} s) = ({Xa} s)))"),
+        (f"{h0}",
+         f"~ ({flag_conds} /\\ ({C} {sel_var}) = {cval_s} /\\ ({peer0_coq}))"),
+        (f"{h1}",
+         f"~ ({flag_conds} /\\ ({C} {sel_var}) = {cval2_s} /\\ ({peer1_coq}))"),
     ]
     return helper, directed, isir_invariants, coq_invariants
 
@@ -277,6 +451,8 @@ def try_coherence_synthesis(prover, coq_file: Path, theorem_name: str) -> Option
                 )
                 return None
             remove(coq_file, name)
+    if "Ltac nat_eqb_norm" not in content:
+        helper = NAT_EQB_NORM_LTAC + helper
     new_content = content.replace(
         f"{kind} {theorem_name} :", helper + f"{kind} {theorem_name} :", 1)
     pat = re.compile(rf"{kind} {re.escape(theorem_name)}\s+:.*?Admitted\.", re.DOTALL)

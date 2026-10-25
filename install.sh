@@ -181,6 +181,11 @@ install_python_deps() {
         "click>=8.0"
         "pytest>=7.0"
         "mcp>=0.1.0,<2"
+        # fastmcp 4.x needs mcp.server.request_state (only in mcp 2.x), which
+        # conflicts with the mcp<2 pin above and with acl2-mcp's mcp 1.x API
+        # (app.list_tools). Pin the 3.x line, which is mcp-1.x compatible, so
+        # rocq-mcp and acl2-mcp both start cleanly.
+        "fastmcp>=3.1,<4"
     )
 
     local optional=(
@@ -918,6 +923,12 @@ if [[ "$INSTALL_EXTERNAL" == "true" ]]; then
         log_warning "pet not found.  Interactive Coq features (skeleton proof, PERF) will not work."
         echo "  Install coq-lsp with: opam install coq-lsp"
     fi
+fi
+
+# Create a local .env from the committed template (never overwrites an existing one).
+if [[ -f "$SCRIPT_DIR/.env.example" && ! -f "$SCRIPT_DIR/.env" ]]; then
+    cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+    log_info "Created .env from .env.example. Edit it to set your LLM API keys."
 fi
 
 log_success "Installation completed successfully."
