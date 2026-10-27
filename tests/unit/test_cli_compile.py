@@ -20,8 +20,10 @@ def _make_args(tmp_path, backend="koika", output_format="text",
         backend=backend,
         assert_lang="sva",
         no_rtl=no_rtl,
+        rtl_direct=False,
         simulate=simulate,
         cycles=None,
+        seed=0,
         verilator_path=None,
         koika_path=None,
         output_format=output_format,
@@ -49,7 +51,7 @@ class TestArgumentParser:
     def test_defaults(self):
         args = _setup_arg_parser().parse_args(["in.isir"])
         assert args.input == "in.isir"
-        assert args.backend == "koika"
+        assert args.backend == "direct"
         assert args.assert_lang == "sva"
         assert args.out_dir is None
         assert args.no_rtl is False
@@ -59,8 +61,9 @@ class TestArgumentParser:
         assert args.debug is False
 
     def test_backend_choices(self):
-        args = _setup_arg_parser().parse_args(["in.isir", "--backend", "acl2"])
-        assert args.backend == "acl2"
+        for backend in ("direct", "koika", "acl2", "assert", "diff"):
+            args = _setup_arg_parser().parse_args(["in.isir", "--backend", backend])
+            assert args.backend == backend
         with pytest.raises(SystemExit):
             _setup_arg_parser().parse_args(["in.isir", "--backend", "bogus"])
 
@@ -178,6 +181,33 @@ class TestCompileSpec:
             ret = compile_spec(args)
         assert ret == 0
         mock_assert.assert_called_once()
+
+    def test_direct_backend_routed(self, tmp_path):
+        args = _make_args(tmp_path, backend="direct", output_format="json")
+        spec = _make_spec_module("my_design")
+        results = [BackendResult(backend="direct", success=True, output_file="my_design_direct.v")]
+        with patch("isir.cli.compile.load_config", return_value={"verification": {}}), \
+             patch("isir.cli.compile.validate_isir_file"), \
+             patch("isir.cli.compile.parse_isir", return_value=_make_ast()), \
+             patch("isir.cli.compile.convert_ast_to_isir_module", return_value=spec), \
+             patch("isir.cli.compile._compile_direct", return_value=results) as mock_direct, \
+             patch("isir.cli.compile._compile_koika") as mock_koika:
+            ret = compile_spec(args)
+        assert ret == 0
+        mock_direct.assert_called_once()
+        mock_koika.assert_not_called()
+
+    def test_diff_backend_routed(self, tmp_path):
+        args = _make_args(tmp_path, backend="diff", output_format="json")
+        spec = _make_spec_module("my_design")
+        with patch("isir.cli.compile.load_config", return_value={"verification": {}}), \
+             patch("isir.cli.compile.validate_isir_file"), \
+             patch("isir.cli.compile.parse_isir", return_value=_make_ast()), \
+             patch("isir.cli.compile.convert_ast_to_isir_module", return_value=spec), \
+             patch("isir.cli.compile._run_differential", return_value=0) as mock_diff:
+            ret = compile_spec(args)
+        assert ret == 0
+        mock_diff.assert_called_once()
 
     def test_unsupported_backend(self, tmp_path):
         args = _make_args(tmp_path, backend="unknown")

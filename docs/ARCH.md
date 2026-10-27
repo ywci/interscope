@@ -48,7 +48,10 @@ interscope/
 │       │   ├── assert_to_sva.py       # AssertModule → SystemVerilog SVA (Yosys‑compatible)
 │       │   ├── assert_to_vhdl.py      # AssertModule → VHDL PSL
 │       │   ├── assert_to_verilog_ovl.py # AssertModule → Verilog OVL
-│       │   └── koika_to_rtl.py        # ISIR → Verilog synthesis via Kōika's Coq DSL
+│       │   ├── koika_to_rtl.py        # ISIR → Verilog synthesis via Kōika's Coq DSL (long path)
+│       │   ├── isir_to_rtl_direct.py  # ISIR → Verilog direct lowering (short path, no Coq/Kōika)
+│       │   ├── rtl_differential.py    # Short‑vs‑long lockstep replay harness
+│       │   └── verify_direct.py       # Direct‑path RTL vs reference‑interpreter checker
 │       ├── lifting/                   # Lifting passes (simulation → abstract spec)
 │       │   ├── vcd_to_trace.py        # VCD file → trace dialect
 │       │   └── trace_to_isir.py       # trace dialect + mapping → abstract trace YAML

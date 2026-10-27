@@ -26,11 +26,6 @@ module:
       type: "bits<16>"
       initial: 0
 
-  # --------------------------------------------------------------------------
-  # bfloat16 special-value predicates and helpers (concrete, defined functions).
-  #   layout: [ sign (1) | exponent (8) | mantissa (7) ], bias 127
-  #   exp all-ones = 255;  +inf = 0x7F80 = 32640;  quiet NaN = 0x7FC0 = 32704
-  # --------------------------------------------------------------------------
   functions:
     - name: is_nan
       params: [{name: x, type: "bits<16>"}]

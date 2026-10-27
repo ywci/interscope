@@ -33,16 +33,21 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", type=str, help="Path to the .isir file")
     parser.add_argument("--out-dir", "-o", type=str, default=None,
                         help="Output directory (default: build/<design_name>/ under project root)")
-    parser.add_argument("--backend", "-b", choices=["koika", "acl2", "assert"], default="koika",
-                        help="Target backend (default: koika)")
+    parser.add_argument("--backend", "-b", choices=["direct", "koika", "acl2", "assert", "diff"], default="direct",
+                        help="Target backend: direct (short-path RTL, default), koika (long-path RTL), "
+                             "acl2, assert, diff (short-vs-long differential)")
     parser.add_argument("--assert-lang", choices=["sva", "vhdl", "verilog_ovl"], default="sva",
                         help="When backend=assert, choose assertion language (default: sva)")
     parser.add_argument("--no-rtl", action="store_true",
                         help="Skip RTL generation (only produce Coq/ACL2/assert files)")
+    parser.add_argument("--rtl-direct", action="store_true",
+                        help="Also emit the independent ISIR→RTL direct-lowering path (differential/replay reference)")
     parser.add_argument("--simulate", action="store_true",
                         help="After RTL generation, run Verilator simulation and produce a VCD trace")
     parser.add_argument("--cycles", type=int, default=None,
-                        help="Number of cycles for simulation (default from config)")
+                        help="Number of cycles for simulation/differential (default from config)")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="Random seed for differential simulation (default: 0)")
     parser.add_argument("--verilator-path", type=str, default=None,
                         help="Path to verilator executable (auto‑detected if omitted)")
     parser.add_argument("--koika-path", type=str, default=None,
@@ -147,12 +152,16 @@ def compile_spec(args: argparse.Namespace) -> int:
     logger.info(f"Compiling '{design_name}' → {args.backend} (output: {out_dir})")
 
     try:
-        if args.backend == "koika":
+        if args.backend == "direct":
+            results = _compile_direct(spec_module, out_dir, args)
+        elif args.backend == "koika":
             results = _compile_koika(spec_module, out_dir, args, config)
         elif args.backend == "acl2":
             results = _compile_acl2(spec_module, out_dir, args)
         elif args.backend == "assert":
             results = _compile_assert(spec_module, out_dir, args)
+        elif args.backend == "diff":
+            return _run_differential(spec_module, out_dir, args)
         else:
             logger.error(f"Unsupported backend: {args.backend}")
             return 1
@@ -262,7 +271,108 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
                 error_message=str(e)
             ))
 
+    if getattr(args, "rtl_direct", False):
+        logger.info("Lowering ISIR → RTL (direct path, independent)...")
+        start = time.time()
+        from isir.lowering.isir_to_rtl_direct import emit as direct_emit
+        direct_dir = out_dir / "rtl_direct"
+        try:
+            rtl_path, mapping_path = direct_emit(spec_module, direct_dir, policy="sim")
+            results.append(BackendResult(
+                backend="rtl_direct",
+                success=True,
+                duration=time.time() - start,
+                output_file=str(rtl_path)
+            ))
+            results.append(BackendResult(
+                backend="rtl_direct_mapping",
+                success=True,
+                duration=time.time() - start,
+                output_file=str(mapping_path)
+            ))
+        except Exception as e:
+            logger.error(f"Direct RTL generation failed: {e}")
+            results.append(BackendResult(
+                backend="rtl_direct",
+                success=False,
+                duration=time.time() - start,
+                error_message=str(e)
+            ))
+
     return results
+
+
+def _compile_direct(spec_module, out_dir, args) -> List[BackendResult]:
+    """Short path: independent ISIR→RTL direct lowering (no Coq/Kōika toolchain)."""
+    from isir.lowering.isir_to_rtl_direct import emit as direct_emit
+
+    results = []
+    logger.info("Lowering ISIR → RTL (direct path)...")
+    start = time.time()
+    direct_dir = out_dir / "rtl_direct"
+    direct_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        rtl_path, mapping_path = direct_emit(spec_module, direct_dir, policy="sim")
+        results.append(BackendResult(
+            backend="direct",
+            success=True,
+            duration=time.time() - start,
+            output_file=str(rtl_path)
+        ))
+        results.append(BackendResult(
+            backend="direct_mapping",
+            success=True,
+            duration=time.time() - start,
+            output_file=str(mapping_path)
+        ))
+    except Exception as e:
+        logger.error(f"Direct RTL generation failed: {e}")
+        results.append(BackendResult(
+            backend="direct",
+            success=False,
+            duration=time.time() - start,
+            error_message=str(e)
+        ))
+    return results
+
+
+def _run_differential(spec_module, out_dir, args) -> int:
+    """Short-vs-long differential: generate both RTL models and compare lockstep."""
+    from isir.lowering.rtl_differential import diff_design
+
+    design = spec_module.name
+    cycles = args.cycles or 8
+    short_dir = out_dir / "rtl_direct"
+    long_dir = out_dir / "rtl"
+    logger.info(f"Running short-path vs long-path differential for '{design}' "
+                f"(cycles={cycles}, seed={args.seed})...")
+
+    try:
+        result = diff_design(spec_module, short_dir, long_dir, cycles=cycles, seed=args.seed)
+    except Exception as e:
+        logger.error(f"Differential failed: {e}")
+        return 1
+
+    if args.output_format == "json":
+        print(json.dumps({
+            "design": design,
+            "status": result.status,
+            "observable": result.observable,
+            "short_value": result.short_value,
+            "long_value": result.long_value,
+            "message": result.message,
+        }, indent=2))
+    else:
+        print(f"{design}: {result.status}"
+              + (f" ({result.observable}: short={result.short_value} long={result.long_value})"
+                 if result.observable else "")
+              + (f" — {result.message}" if result.message else ""))
+
+    # `agreed_long_short` and `long_path_unsupported` are both non-failing outcomes;
+    # a genuine divergence or an error is a failure.
+    if result.status in ("agreed_long_short", "long_path_unsupported"):
+        return 0
+    return 1
 
 
 def _compile_acl2(spec_module, out_dir, args) -> List[BackendResult]:

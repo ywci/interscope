@@ -69,7 +69,7 @@ class TestCoqGeneration:
         assert "Inductive reg_t :=" in coq
         assert "Cnt" in coq
         assert "Inductive rule_name_t :=" in coq
-        assert "Inc_act_0" in coq
+        assert "Step_merged" in coq
         assert "bits_t 8" in coq
         assert "read0(Cnt)" in coq
         assert "write0(Cnt" in coq
@@ -123,7 +123,7 @@ class TestCoqGeneration:
             isir.SpecRuleOp(rule_name="step2", condition="true", actions=["(write a 2)"])
         )
         coq = _generate_coq_design(mod, {})
-        assert "Step1_act_0 |> Step2_act_0 |> done" in coq
+        assert "Step_merged |> done" in coq
 
     def test_initial_values(self):
         mod = _make_spec_module("init")

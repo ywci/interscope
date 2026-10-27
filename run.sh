@@ -262,6 +262,10 @@ ${BOLD}Commands:${RESET}
   --verify-examples [flags]     Verify all examples/ (backend: koika by default)
   --validate-config             Validate config.yaml (checks for conflicts)
   --compile <file> ...          Compile an .isir file
+                                 backends: direct (short-path RTL, default),
+                                           koika (long-path RTL), acl2, assert,
+                                           diff (short-vs-long differential)
+                                 e.g. --compile f.isir --backend diff --cycles 8
   --verify <file> ...           Verify proof obligations
   --sim <file> ...              Simulate a design (compile + Verilator)
   --lift <vcd> ...              Lift VCD trace to abstract trace

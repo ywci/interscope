@@ -15,6 +15,17 @@ class ExprError(Exception):
     pass
 
 
+def _parse_int_literal(token: str) -> Optional[int]:
+    """Parse a decimal / 0b / 0x / 0o integer literal, or None."""
+    try:
+        return int(token, 0)
+    except ValueError:
+        try:
+            return int(token)
+        except ValueError:
+            return None
+
+
 def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
     """
     Parse a string S-expression into a nested list structure.
@@ -43,14 +54,14 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
         raise ExprError("Empty expression string")
 
     if not s.startswith('('):
-        try:
-            return int(s)
-        except ValueError:
-            if s.lower() == 'true':
-                return True
-            if s.lower() == 'false':
-                return False
-            return s
+        iv = _parse_int_literal(s)
+        if iv is not None:
+            return iv
+        if s.lower() == 'true':
+            return True
+        if s.lower() == 'false':
+            return False
+        return s
 
     tokens = []
     i = 0
@@ -70,15 +81,15 @@ def parse_sexpr(s: Union[str, List, int, bool]) -> Any:
             while i < n and not s[i].isspace() and s[i] not in '()':
                 i += 1
             token = s[start:i]
-            try:
-                tokens.append(int(token))
-            except ValueError:
-                if token.lower() == 'true':
-                    tokens.append(True)
-                elif token.lower() == 'false':
-                    tokens.append(False)
-                else:
-                    tokens.append(token)
+            iv = _parse_int_literal(token)
+            if iv is not None:
+                tokens.append(iv)
+            elif token.lower() == 'true':
+                tokens.append(True)
+            elif token.lower() == 'false':
+                tokens.append(False)
+            else:
+                tokens.append(token)
 
     stack = [[]]
     for tok in tokens:
@@ -118,7 +129,9 @@ def eval_expr(expr: Union[str, List],
               inputs: Optional[Dict[str, Any]] = None,
               memories: Optional[Dict[str, Dict[int, Any]]] = None,
               previous_state: Optional[Dict[str, Any]] = None,
-              next_state: Optional[Dict[str, Any]] = None) -> Any:
+              next_state: Optional[Dict[str, Any]] = None,
+              width: Optional[int] = None,
+              widths: Optional[Dict[str, int]] = None) -> Any:
     """
     Evaluate a ISIR expression in the context of current state, inputs, and memories.
 
@@ -142,7 +155,7 @@ def eval_expr(expr: Union[str, List],
         memories = {}
 
     parsed = parse_sexpr(expr)
-    return _eval_internal(parsed, state, inputs, memories, previous_state, next_state)
+    return _eval_internal(parsed, state, inputs, memories, previous_state, next_state, width, widths)
 
 
 def _eval_internal(expr: Any,
@@ -150,7 +163,9 @@ def _eval_internal(expr: Any,
                    inputs: Dict[str, Any],
                    memories: Dict[str, Dict[int, Any]],
                    previous_state: Optional[Dict[str, Any]],
-                   next_state: Optional[Dict[str, Any]]) -> Any:
+                   next_state: Optional[Dict[str, Any]],
+                   width: Optional[int] = None,
+              widths: Optional[Dict[str, int]] = None) -> Any:
     """Internal recursive evaluator."""
     if isinstance(expr, bool):
         return expr
@@ -173,53 +188,75 @@ def _eval_internal(expr: Any,
     args = expr[1:]
 
     # Arithmetic
-    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max', 'shl', 'shr', 'lshift', 'rshift'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments, got {len(args)}")
-        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
-        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
+        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
+        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
+
+        def _expr_width(e):
+            w = 1
+            def _walk(x):
+                nonlocal w
+                if isinstance(x, str):
+                    w = max(w, (widths or {}).get(x, 1))
+                elif isinstance(x, list):
+                    for y in x:
+                        _walk(y)
+            _walk(e)
+            return w
+
+        def _wrap(v):
+            op_w = max(_expr_width(args[0]), _expr_width(args[1])) if widths else width
+            return (int(v) & ((1 << op_w) - 1)) if op_w else v
+
         if op == 'add':
-            return a + b
+            return _wrap(a + b)
         elif op == 'sub':
-            return a - b
+            return _wrap(a - b)
         elif op == 'mul':
-            return a * b
+            return _wrap(a * b)
         elif op == 'div':
             if b == 0:
                 raise ExprError("Division by zero")
-            # Integer division (truncates toward zero for positive; hardware usually truncates)
-            return int(a / b) if a >= 0 else -int(-a / b)
+            return _wrap(int(a / b) if a >= 0 else -int(-a / b))
         elif op == 'mod':
             if b == 0:
                 raise ExprError("Modulo by zero")
-            return a % b
+            return _wrap(a % b)
+        elif op in ('shl', 'lshift'):
+            return _wrap(a << b)
+        elif op in ('shr', 'rshift'):
+            return _wrap(a >> b)
         elif op == 'min':
             return min(a, b)
         elif op == 'max':
             return max(a, b)
 
-    # Logical
-    elif op in ('and', 'or'):
+    # Logical / bitwise
+    elif op in ('and', 'or', 'xor'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments, got {len(args)}")
-        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
-        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
+        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
+        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
         if op == 'and':
-            return a and b
+            return a & b
+        elif op == 'or':
+            return a | b
         else:
-            return a or b
+            return a ^ b
 
     elif op == 'not':
         if len(args) != 1:
             raise ExprError("not expects 1 argument")
-        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
+        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
         return not a
 
     elif op == 'implies':
         if len(args) != 2:
             raise ExprError("implies expects 2 arguments")
-        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
-        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
+        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
+        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
         # classical implication: (not a) or b
         return (not a) or b
 
@@ -227,8 +264,8 @@ def _eval_internal(expr: Any,
     elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'le', 'ge'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments, got {len(args)}")
-        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
-        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
+        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
+        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
         if op == 'eq':
             return a == b
         elif op == 'neq':
@@ -248,11 +285,15 @@ def _eval_internal(expr: Any,
 
     # Bit‑vector operations
     elif op == 'concat':
-        if len(args) != 2:
-            raise ExprError("concat expects 2 arguments")
-        high = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
-        low = _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
-        # Width assumption: default width of low is 8 bits
+        if len(args) not in (2, 3):
+            raise ExprError("concat expects 2 or 3 arguments: high low [low_width]")
+        high = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
+        low = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
+        if len(args) == 3:
+            low_width = args[2]
+            if not isinstance(low_width, int):
+                raise ExprError("concat low_width must be an integer")
+            return (high << low_width) | (low & ((1 << low_width) - 1))
         try:
             return (high << 8) | low
         except TypeError:
@@ -261,9 +302,9 @@ def _eval_internal(expr: Any,
     elif op == 'slice':
         if len(args) != 3:
             raise ExprError("slice expects 3 arguments: expr high low")
-        val = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
-        high = _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
-        low = _eval_internal(args[2], state, inputs, memories, previous_state, next_state)
+        val = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
+        high = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
+        low = _eval_internal(args[2], state, inputs, memories, previous_state, next_state, width, widths)
         if not isinstance(high, int) or not isinstance(low, int):
             raise ExprError("slice bounds must be integers")
         if high < low:
@@ -275,11 +316,11 @@ def _eval_internal(expr: Any,
     elif op == 'ite':
         if len(args) != 3:
             raise ExprError("ite expects 3 arguments: cond then else")
-        cond = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
+        cond = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
         if cond:
-            return _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
+            return _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
         else:
-            return _eval_internal(args[2], state, inputs, memories, previous_state, next_state)
+            return _eval_internal(args[2], state, inputs, memories, previous_state, next_state, width, widths)
 
     # State / memory access
     elif op == 'read':
@@ -304,7 +345,7 @@ def _eval_internal(expr: Any,
         mem_name = args[0]
         if not isinstance(mem_name, str):
             raise ExprError(f"mem_read expects memory name as literal string, got {type(mem_name)}")
-        addr = _eval_internal(args[1], state, inputs, memories, previous_state, next_state)
+        addr = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
         if mem_name not in memories:
             raise ExprError(f"Unknown memory '{mem_name}'")
         # Python booleans are a subclass of int; reject them explicitly
@@ -335,7 +376,7 @@ def _eval_internal(expr: Any,
             raise ExprError("rose expects 1 argument")
         if previous_state is None:
             raise ExprError("'rose' operator requires previous_state context")
-        curr = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
+        curr = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
         prev = _eval_internal(args[0], previous_state, inputs, memories, previous_state, next_state)
         return bool(curr) and not bool(prev)
 
@@ -344,7 +385,7 @@ def _eval_internal(expr: Any,
             raise ExprError("fell expects 1 argument")
         if previous_state is None:
             raise ExprError("'fell' operator requires previous_state context")
-        curr = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
+        curr = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
         prev = _eval_internal(args[0], previous_state, inputs, memories, previous_state, next_state)
         return not bool(curr) and bool(prev)
 
@@ -353,7 +394,7 @@ def _eval_internal(expr: Any,
             raise ExprError("stable expects 1 argument")
         if previous_state is None:
             raise ExprError("'stable' operator requires previous_state context")
-        curr = _eval_internal(args[0], state, inputs, memories, previous_state, next_state)
+        curr = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
         prev = _eval_internal(args[0], previous_state, inputs, memories, previous_state, next_state)
         return curr == prev
 
@@ -409,7 +450,7 @@ def _type_check_internal(expr: Any, context: Dict[str, str]) -> str:
         raise ExprError(f"Operator must be a string, got {type(op)}")
     args = expr[1:]
 
-    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max', 'shl', 'shr', 'lshift', 'rshift'):
         for arg in args:
             t = _type_check_internal(arg, context)
             if t not in ('int', 'any', 'bits'):

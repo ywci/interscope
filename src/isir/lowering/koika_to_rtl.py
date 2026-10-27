@@ -26,6 +26,7 @@ logger = get_logger(__name__)
 # extcall-able; multi-argument ones are skipped in the RTL lowering.
 _BLACKBOX_NAMES = set()
 _MULTIARG_BLACKBOXES = set()
+_BLACKBOX_SIGNATURES: Dict[str, Dict[str, Any]] = {}
 
 
 class KoikaToRTLError(Exception):
@@ -126,19 +127,34 @@ def convert(
     
     # Post-process to inject the expected Inp_ top-level ports into the Verilog module
     port_declarations = []
+    input_assigns = []
     for inp in original_inputs:
         # Resolve parameterised type before computing width
         resolved_type = _resolve_type(inp.data_type, params)
         w = _safe_width(resolved_type)
         cap_name = inp.name[0].upper() + inp.name[1:] if inp.name else inp.name
         port_declarations.append(f"  input [{w-1}:0] Inp_{inp.name},")
-        
-        # Intercept Kōika's self-assignments inside the always block
+
+        # Make the internalized input a combinational wire driven by the port,
+        # instead of a register latched on the clock.  The Kōika backend registers
+        # every input (X <= Inp_x), which shifts all input-dependent state one
+        # cycle later; exposing the port directly removes that latency.
         modified_verilog = re.sub(
-            rf"({cap_name}\s*<=\s*){cap_name}\s*;",
-            rf"\1Inp_{inp.name};",
-            modified_verilog
+            rf"reg(\[[^\]]+\])?\s*{cap_name}\b(\s*/\*[^*]*\*/)?",
+            rf"wire\1 {cap_name}\2",
+            modified_verilog, count=1
         )
+        # Drop the reset, the self-hold, and the latch to the (now wire) input.
+        modified_verilog = re.sub(
+            rf"{cap_name}\b\s*<=\s*\d+'[bdh][0-9a-fA-F_xXzZ?]+\s*;", "", modified_verilog
+        )
+        modified_verilog = re.sub(
+            rf"{cap_name}\b\s*<=\s*{cap_name}\b\s*;", "", modified_verilog
+        )
+        modified_verilog = re.sub(
+            rf"{cap_name}\b\s*<=\s*Inp_{inp.name}\s*;", "", modified_verilog
+        )
+        input_assigns.append(f"  assign {cap_name} = Inp_{inp.name};")
 
     if port_declarations:
         # Inject input ports right after the module declaration statement
@@ -146,9 +162,34 @@ def convert(
         ports_str = "\n" + "\n".join(port_declarations) + "\n"
         modified_verilog = re.sub(module_pattern, r"\1" + ports_str, modified_verilog)
 
+    if input_assigns:
+        # Add the continuous assignments after the module declaration (before
+        # the first always block).
+        modified_verilog = re.sub(
+            r"(module\s+\w+\s*\([^)]*\)\s*;)\n",
+            r"\1\n" + "\n".join(input_assigns) + "\n",
+            modified_verilog, count=1
+        )
+
     # Add suppression for initialization layouts and format limits
     lint_suppression = "/* verilator lint_off PROCASSINIT */\n"
     modified_verilog = lint_suppression + modified_verilog
+
+    # Append a zero-returning stub for each blackbox so the extcall'd module
+    # resolves. The direct path and the reference both treat an uninterpreted
+    # function as returning 0, so the stub matches that semantics.
+    for name, sig in _BLACKBOX_SIGNATURES.items():
+        ret_type = sig.get("return", "bits<1>")
+        rw = _safe_width(_resolve_type(ret_type, params))
+        param_types = sig.get("params", [])
+        pw = _safe_width(_resolve_type(param_types[0], params)) if param_types else 1
+        modified_verilog += (
+            f"\nmodule {name}(input clk, input rst_n, input [{pw - 1}:0] arg, "
+            f"output reg [{rw - 1}:0] out);\n"
+            f"  always @(posedge clk) out <= {rw}'d0;\n"
+            f"endmodule\n"
+        )
+
     verilog_path.write_text(modified_verilog, encoding="utf-8")
 
     # 6. Build RTL container and populate mapping entries using proper MappingEntry
@@ -181,6 +222,23 @@ def _internalize_inputs(spec_module: isir.SpecModule) -> isir.SpecModule:
         mod.state_ops.append(isir.SpecStateOp(
             state_name=inp.name, kind="register", data_type=inp.data_type, initial=init
         ))
+    # Also internalize outputs that a rule writes (they become registers, since
+    # the Kōika reg_t is register-only and cannot express combinational outputs).
+    output_types = {o.name: o.data_type for o in mod.outputs}
+    state_names = {s.state_name for s in mod.state_ops}
+    for r in mod.rule_ops:
+        for act in r.actions:
+            try:
+                e = parse_sexpr(act)
+            except ExprError:
+                continue
+            if isinstance(e, list) and e and e[0] == "write" and len(e) == 3 and isinstance(e[1], str):
+                name = e[1]
+                if name in output_types and name not in state_names:
+                    mod.state_ops.append(isir.SpecStateOp(
+                        state_name=name, kind="register", data_type=output_types[name], initial=0
+                    ))
+                    state_names.add(name)
     mod.inputs = []
     return mod
 
@@ -304,7 +362,7 @@ def _has_unsupported_ops(expr: Any) -> bool:
     """Return True if the expression contains operators that cannot be lowered."""
     if isinstance(expr, list) and len(expr) > 0:
         op = expr[0]
-        if op in ("mem_read", "mem_write", "slice", "mul", "div"):
+        if op in ("mem_read", "mem_write", "slice", "mul", "div", "mod"):
             return True
         if op in _MULTIARG_BLACKBOXES:
             return True
@@ -312,6 +370,18 @@ def _has_unsupported_ops(expr: Any) -> bool:
             if _has_unsupported_ops(arg):
                 return True
     return False
+
+
+def _collect_reads(expr: Any, acc: Optional[set] = None) -> set:
+    """Return the set of register names read by an S-expression (`read` nodes)."""
+    if acc is None:
+        acc = set()
+    if isinstance(expr, list):
+        if expr and expr[0] == "read" and len(expr) > 1 and isinstance(expr[1], str):
+            acc.add(expr[1])
+        for a in expr:
+            _collect_reads(a, acc)
+    return acc
 
 
 def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -> str:
@@ -331,8 +401,9 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
             blackboxes.append({"name": name, "params": param_types, "return": ret})
         else:
             logger.warning("Blackbox '%s' has %d arguments; Kōika extcall supports 1. Skipping its rules in RTL.", name, len(param_types))
-    global _BLACKBOX_NAMES, _MULTIARG_BLACKBOXES
+    global _BLACKBOX_NAMES, _MULTIARG_BLACKBOXES, _BLACKBOX_SIGNATURES
     _BLACKBOX_NAMES = {bb["name"] for bb in blackboxes}
+    _BLACKBOX_SIGNATURES = {bb["name"]: bb for bb in blackboxes}
     _MULTIARG_BLACKBOXES = {
         (f.get("name") if isinstance(f, dict) else getattr(f, "name", None))
         for f in functions
@@ -345,22 +416,74 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
         # Unfold user functions in the rule's condition so the Coq DSL sees only
         # primitive operators.
         condition = unfold_user_functions(rule.condition or "true", functions)
+        try:
+            cond_parsed = parse_sexpr(condition)
+        except ExprError:
+            cond_parsed = None
+        if cond_parsed is not None and _has_unsupported_ops(cond_parsed):
+            continue  # condition uses an unsupported op (e.g. slice in a function)
         for action_str in rule.actions:
             try:
                 parsed = parse_sexpr(action_str)
             except ExprError:
                 continue
-            # Skip memory operations and unsupported arithmetic
-            if isinstance(parsed, list) and len(parsed) >= 1:
-                if _has_unsupported_ops(parsed):
-                    continue
             if isinstance(parsed, list) and len(parsed) >= 3 and parsed[0] == 'write':
                 dest = parsed[1]
                 if isinstance(dest, str):
                     sub = f"{rule.rule_name}_act_{ridx}"
                     expr_val = parse_sexpr(unfold_user_functions(parsed[2], functions))
+                    # Skip memory ops and unsupported arithmetic AFTER inlining, so
+                    # an unsupported op inside a user-function body is also caught.
+                    if _has_unsupported_ops(expr_val):
+                        continue
                     flattened_rules.append((sub, condition, dest, expr_val))
                     ridx += 1
+
+    # Merge multiple writes to the same register into ONE sub-rule with a nested
+    # `ite` (last writer wins).  The Kōika `|>` scheduler drops the second write
+    # to a register, so a register written by two rules would lose all but the
+    # first write.  Merging keeps the observable semantics: later rules override
+    # earlier ones when both fire.
+    _by_dest: Dict[str, List[Tuple[str, Any]]] = {}
+    for _sub, _cond, dest, expr_val in flattened_rules:
+        _by_dest.setdefault(dest, []).append((_cond, expr_val))
+    flattened_rules = []
+    for dest, writes in _by_dest.items():
+        merged_expr: Any = ["read", dest]
+        # Forward order: the LAST writer becomes the OUTER ite (highest priority),
+        # matching the ISIR "last write wins" semantics.
+        for cond, expr_val in writes:
+            merged_expr = ["ite", parse_sexpr(cond), expr_val, merged_expr]
+        flattened_rules.append((f"{dest}_merged", "true", dest, merged_expr))
+
+    # Topologically sort the merged writes so a register is written AFTER every
+    # register that READS it.  The single {{ ...; ... }} action composes writes
+    # sequentially, so a writer must come after its readers: then each reader
+    # still sees the cycle-old value, matching the ISIR `parallel` schedule.
+    _dest_set = {dest for _, _, dest, _ in flattened_rules}
+    _reads = {dest: (_collect_reads(expr) & _dest_set) for _, _, dest, expr in flattened_rules}
+    # _deps[X] = the destinations that READ X (X's write must come after them).
+    _deps = {d: set() for d in _dest_set}
+    for d in _dest_set:
+        for r in _reads[d]:
+            if r in _deps:
+                _deps[r].add(d)
+    _order: List[str] = []
+    _avail = [d for d in _dest_set if not _deps[d]]
+    while _avail:
+        d = _avail.pop()
+        _order.append(d)
+        for other in _dest_set:
+            if d in _deps[other]:
+                _deps[other].discard(d)
+                if not _deps[other]:
+                    _avail.append(other)
+    # Fallback for any cycle (shouldn't happen): keep original order.
+    for d in _dest_set:
+        if d not in _order:
+            _order.append(d)
+    _by_name = {dest: (name, "true", dest, expr) for name, _, dest, expr in flattened_rules}
+    flattened_rules = [_by_name[d] for d in _order]
 
     lines = [
         "Require Import Koika.Frontend.",
@@ -392,9 +515,9 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
     lines.append("  end.\n")
 
     lines.append("Inductive rule_name_t :=")
-    for rname, _, _, _ in flattened_rules:
-        lines.append(f"  | {_capitalize(rname)}")
-    if not flattened_rules:
+    if flattened_rules:
+        lines.append("  | Step_merged")
+    else:
         lines.append("  | Dummy_rule")
     lines.append(".\n")
 
@@ -419,21 +542,19 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
         lines.append("Definition Sigma := empty_Sigma.\n")
 
     lines.append("Definition urules (rl : rule_name_t) : uaction reg_t ext_fn_t := match rl with")
-    for rname, condition, dest, expr_val in flattened_rules:
-        target_width = reg_widths.get(_capitalize(dest), 32)
-        coq_expr = _coq_bits_expr(expr_val, reg_widths, target_width)
-        cap_dest = _capitalize(dest)
-        
-        if condition and condition != "true":
-            cond_coq = _coq_bits_expr(parse_sexpr(condition), reg_widths, 1)
-            # Maintain notation-safe balanced format by rewriting register to itself on fallback
-            action = f"{{{{ if {cond_coq} then write0({cap_dest}, {coq_expr}) else write0({cap_dest}, read0({cap_dest})) }}}}"
-        else:
-            action = f"{{{{ write0({cap_dest}, {coq_expr}) }}}}"
-            
-        lines.append(f"  | {_capitalize(rname)} => {action}")
-        
-    if not flattened_rules:
+    if flattened_rules:
+        # One combined rule performs every register write in topologically sorted
+        # order (readers before writers).  A single {{ ...; ...; ... }} action
+        # avoids the Kōika `|>` scheduler's read-after-write hazard, which dropped
+        # a write whenever the register was read by an earlier rule.
+        actions = []
+        for rname, condition, dest, expr_val in flattened_rules:
+            target_width = reg_widths.get(_capitalize(dest), 32)
+            coq_expr = _coq_bits_expr(expr_val, reg_widths, target_width)
+            cap_dest = _capitalize(dest)
+            actions.append(f"write0({cap_dest}, {coq_expr})")
+        lines.append(f"  | Step_merged => {{{{ {'; '.join(actions)} }}}}")
+    else:
         if registers:
             first_reg = _capitalize(registers[0].state_name)
             lines.append(f"  | Dummy_rule => {{{{ write0({first_reg}, read0({first_reg})) }}}}")
@@ -460,7 +581,7 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
     lines.append("Definition is_external (_ : rule_name_t) := false.\n")
 
     if flattened_rules:
-        sched_expr = " |> ".join([f"{_capitalize(r[0])}" for r in flattened_rules]) + " |> done"
+        sched_expr = "Step_merged |> done"
     else:
         sched_expr = "done"
 
@@ -532,28 +653,43 @@ def _coq_bits_expr(expr, reg_widths: dict, current_width: int) -> str:
 
     if op in ('add', 'sub'):
         sym = {'add': '+', 'sub': '-'}[op]
-        return f"({_coq_bits_expr(args[0], reg_widths, current_width)} {sym} {_coq_bits_expr(args[1], reg_widths, current_width)})"
+        body = f"({_coq_bits_expr(args[0], reg_widths, current_width)} {sym} {_coq_bits_expr(args[1], reg_widths, current_width)})"
+        # `+`/`-` wrap to the operand width; widen to `current_width` when the
+        # enclosing comparison needs a wider common width (e.g. `ge (add x y) 256`).
+        op_w = _infer_expr_width(expr, reg_widths)
+        if op_w != 32 and op_w < current_width:
+            # `zeroExtend(a, b)` extends `a` to *target* width `b`.
+            return f"zeroExtend({body}, {current_width})"
+        return body
 
     if op in ('min', 'max'):
         a = _coq_bits_expr(args[0], reg_widths, current_width)
         b = _coq_bits_expr(args[1], reg_widths, current_width)
-        cmp = '<' if op == 'min' else '>'
-        return f"({a} {cmp} {b} ? {a} : {b})"
+        # Kōika's frontend has no C ternary; use its `if ... then ... else`.
+        if op == 'min':
+            return f"(if ({a} < {b}) then {a} else {b})"
+        return f"(if ({b} < {a}) then {a} else {b})"
     
-    elif op in ('and', 'band', 'land', 'or', 'bor', 'lor', 'not'):
+    elif op in ('and', 'band', 'land', 'or', 'bor', 'lor', 'not', 'xor'):
         op_width = _infer_expr_width(expr, reg_widths)
         if op_width == 32:
             op_width = current_width
             
         if op == 'not':
             return f"(! {_coq_bits_expr(args[0], reg_widths, op_width)})"
-        sym = '&&' if op in ('and', 'band', 'land') else '||'
+        sym = '^' if op == 'xor' else ('&&' if op in ('and', 'band', 'land') else '||')
         return f"({_coq_bits_expr(args[0], reg_widths, op_width)} {sym} {_coq_bits_expr(args[1], reg_widths, op_width)})"
         
     elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'le', 'ge'):
-        operand_width = _infer_expr_width(args[0], reg_widths)
-        if operand_width == 32 and len(args) > 1:
-            operand_width = _infer_expr_width(args[1], reg_widths)
+        w0 = _infer_expr_width(args[0], reg_widths)
+        w1 = _infer_expr_width(args[1], reg_widths)
+        # An integer literal wider than the operand must widen the comparison so
+        # it isn't truncated (e.g. `ge (add x y) 256` needs 9 bits, not 8).
+        if isinstance(args[0], int):
+            w0 = max(1, args[0].bit_length())
+        if isinstance(args[1], int):
+            w1 = max(1, args[1].bit_length())
+        operand_width = max(w0, w1)
             
         a = _coq_bits_expr(args[0], reg_widths, operand_width)
         b = _coq_bits_expr(args[1], reg_widths, operand_width)

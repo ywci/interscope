@@ -9,6 +9,7 @@ The project provides:
 - **Dual proof backends** (Kōika/Coq + ACL2) with LLM‑assisted proof generation and iterative repair.
 - **Model checking** of generated assertions using SymbiYosys (sby).
 - **Trace lifting** from Verilator VCD simulations back to abstract ISIR traces.
+- **Two independent ISIR→RTL lowering paths** — a self-contained *direct* (short) path and the *Kōika* (long) path — plus a **differential harness** that replays both and reports agreement, and a **reference interpreter** that cross-checks the direct path semantically (currently 72/72 example designs agree).
 - **Evidence registry** for tracking proven theorems, counterexamples, and coverage.
 - A **user‑customisable proof library** (`src/lib/koika/assist.py`) that can be extended with new theorems.
 - **PERF (Proof tree Exploration with Reflective Feedback)** – an advanced test‑time proof search that uses tree exploration, Pareto pruning, and LLM reflection to tackle hard proof obligations, with explicit integration of model‑checking counterexamples. PERF is the utilization of ISIR for proof suspension and advanced proof search.
@@ -143,7 +144,7 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 
 | Command | Description |
 |---------|-------------|
-| `./run.sh --compile <file.isir>` | Compile an ISIR design to Kōika/ACL2/assert dialects and optionally generate RTL. |
+| `./run.sh --compile <file.isir>` | Compile an ISIR design to a backend. Defaults to `direct` (short-path RTL). Backends: `direct` (short-path RTL), `koika` (long-path RTL), `acl2`, `assert`, `diff` (short-vs-long differential). |
 | `./run.sh --verify <file.isir>` | Run proof obligations (theorem proving **or** model checking) on the design. |
 | `./run.sh --sim <file.isir>` | Compile to RTL and run Verilator simulation (produces a VCD trace). |
 | `./run.sh --lift <vcd_file>` | Lift a VCD trace to an abstract ISIR trace (YAML). |
@@ -386,6 +387,38 @@ For RTL quality experiments, InterScope integrates Yosys synthesis:
 ```
 
 The synthesis results (area, cell count, delay) are included in the structured output and can be saved with `--report-file`.
+
+---
+
+## RTL Generation Paths and Differential Verification
+
+InterScope ships two independent ISIR→RTL lowerings plus a differential harness that replays both against identical stimulus and reports agreement.
+
+| Path | Command | What it produces |
+|------|---------|------------------|
+| **Short path** (direct) | `./run.sh --compile <f.isir>` (default) or `--backend direct` | Self-contained ISIR→RTL lowering (`rtl_direct/<design>_direct.v` + source mapping). No Coq/Kōika toolchain required. |
+| **Long path** (Kōika) | `./run.sh --compile <f.isir> --backend koika` | ISIR→Kōika→RTL (`rtl/<design>.v`): a Coq verification model synthesized to RTL. |
+| **Differential** | `./run.sh --compile <f.isir> --backend diff` | Generates both paths and compares their state traces cycle-by-cycle. |
+
+```bash
+# Short path (default)
+./run.sh --compile examples/counter/counter.isir
+
+# Long path (Kōika)
+./run.sh --compile examples/counter/counter.isir --backend koika
+
+# Differential: short vs long, 8 cycles, seeded stimulus
+./run.sh --compile examples/saturating_adder/saturating_adder.isir --backend diff --cycles 8 --seed 1
+```
+
+The differential classifies each design as:
+
+- `agreed_long_short` — both paths produce identical state traces.
+- `long_path_unsupported` — the design uses `slice`/`mul`/`div`/`mod`/`mem_*`, which the Kōika long path cannot lower (a clean skip, not a failure).
+- `divergent_long_short` — a genuine semantic divergence.
+- `error` — a path failed to generate or compile.
+
+The direct path is additionally cross-checked against a Python **reference interpreter** (`src/isir/verification/reference_semantics.py` via `src/isir/lowering/verify_direct.py`) that evaluates the ISIR expression semantics directly. As of this checkout, all 72 example designs agree (`verify_direct`) and the Kōika differential reports `37 agreed / 35 unsupported / 0 divergent / 0 error`.
 
 ---
 
