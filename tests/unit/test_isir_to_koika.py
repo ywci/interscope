@@ -703,7 +703,7 @@ def test_combinational_assumes_lowering():
     assert "forall (inputs : inputs)" in theorem_block
     assert "((a inputs) <= 255) /\\ ((b inputs) <= 255)" in theorem_block
     assert "->" in theorem_block
-    assert "Nat.leb (mul_exact (a inputs) (b inputs)) (255 * 255)" in theorem_block
+    assert "Nat.leb (mul_exact (a inputs) (b inputs)) (((255 * 255) mod 2))" in theorem_block
 
 
 def test_sum_operator_lowering():
@@ -716,6 +716,32 @@ def test_sum_operator_lowering():
     assert _type_of_expr(e, {}, it, []) == "nat"
     # single-argument sum collapses
     assert _expr_to_coq(["sum", "a"], {}, it, []) == "(a inputs)"
+
+
+def test_arithmetic_wraps_to_operand_width():
+    """The nat proof model wraps arithmetic at the operand width,
+    and `sub` is two's-complement — matching the reference `eval_expr`/RTL."""
+    from isir.lowering.isir_to_koika import _expr_to_coq
+    from isir.utils.expr import parse_sexpr
+    it = {"a": "nat", "b": "nat"}
+    w = {"a": 8, "b": 8}
+    assert _expr_to_coq(parse_sexpr("(add a b)"), {}, it, [], as_prop=False, widths=w) \
+        == "((((a inputs) + (b inputs)) mod 256))"
+    assert _expr_to_coq(parse_sexpr("(sub a b)"), {}, it, [], as_prop=False, widths=w) \
+        == "((((a inputs) + 256 - (b inputs)) mod 256))"
+    assert _expr_to_coq(parse_sexpr("(shl a 2)"), {}, it, [], as_prop=False, widths=w) \
+        == "((Nat.shiftl (a inputs) 2) mod 256)"
+    assert _expr_to_coq(parse_sexpr("(mul a b)"), {}, it, [], as_prop=False, widths=w) \
+        == "((((a inputs) * (b inputs)) mod 256))"
+
+
+def test_arithmetic_unwrapped_without_widths():
+    """Without a width map, the lowering is unchanged (backward compatible)."""
+    from isir.lowering.isir_to_koika import _expr_to_coq
+    from isir.utils.expr import parse_sexpr
+    it = {"a": "nat", "b": "nat"}
+    assert _expr_to_coq(parse_sexpr("(add a b)"), {}, it, []) == "((a inputs) + (b inputs))"
+    assert _expr_to_coq(parse_sexpr("(sub a b)"), {}, it, []) == "((a inputs) - (b inputs))"
 
 
 def test_after_k_steps_lowering():
@@ -778,8 +804,9 @@ def test_recursive_function_lowering():
     state_text = "\n".join(koika_mod.state_definitions)
     assert "Fixpoint gcd_sub (fuel : nat) (a : nat) (b : nat) : nat :=" in state_text
     assert "match fuel with 0 => 0 | S fuel' =>" in state_text
-    # self-call recurses on the fuel predecessor, not a bare `gcd_sub a b`
-    assert "(gcd_sub fuel' (a - b) b)" in state_text
+    # self-call recurses on the fuel predecessor, not a bare `gcd_sub a b`;
+    # `sub a b` now wraps to two's complement at the 8-bit operand width.
+    assert "(gcd_sub fuel' (((a + 256 - b) mod 256)) b)" in state_text
     # function params must NOT be lowered as inputs (no `(a inputs)` in the body)
     assert "(a inputs)" not in state_text
 

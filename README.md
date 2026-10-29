@@ -152,6 +152,9 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 | `./run.sh --query ...` | Query the evidence registry (SQLite) – supports `export`, `stats`, and `filter` sub‑commands. |
 | `./run.sh --test unit\|integration\|all` | Run the unit / integration / full test suites. |
 | `./run.sh --verify-examples [--backend NAME]` | Verify every `.isir` under `examples/` and print a pass/fail summary. Defaults to the `koika` backend; use `--backend` to pick another. |
+| `./run.sh --verify-semantics` | Type-check the ISIR Coq semantics (`src/semantics/isir.v` + `koika/*.v`). |
+| `./run.sh --verify-acl2` | Verify the ISIR to ACL2 path: books load, lowering of all examples, differential check, example `ld`. |
+| `./run.sh --refine-check <file> ...` | Lowering-refinement evidence per item. |
 | `./run.sh --validate-config` | Validate `config.yaml` (checks for conflicting settings such as PERF + proof‑library cache). |
 | `./run.sh --clean` | Remove build artifacts (`build/`, `*.pyc`, Coq `.vo`/`.glob`/etc.). |
 | `./run.sh --clean-all [--yes] [--no-tools]` | Remove build artifacts, `.venv/`, and cloned tool repos under `tools/`. Prompts on a TTY unless `--yes` is passed; `--no-tools` keeps the cloned tool repos. System tools (opam switches, ACL2, SymbiYosys, Coq) are never touched. |
@@ -191,7 +194,7 @@ Flags `--perf`, `--no-perf`, `--perf-stats`, `--no-pareto`, `--no-trace-alignmen
 |-------------------|--------------------------------------------------------------------------|-------------|
 | `model_checking`  | Boolean safety properties, complex control logic, multi‑rule designs     | No bit‑selects (`slice`) |
 | `koika`           | Single‑rule designs with simple arithmetic, alignment invariants         | Deeply nested `ite`, multiple rules |
-| `acl2`            | First‑order functional models, simple invariants                        | Same as Kōika; currently experimental |
+| `acl2`            | First‑order functional models; full single-cycle + temporal + liveness lowering | Deep inductive invariants/liveness are admitted with `skip-proofs` + hints and discharged by the prover |
 
 ---
 
@@ -493,6 +496,10 @@ The SVA backend emits **Yosys‑compatible procedural assertions** and uses **no
 ### Testing
 
 ```bash
+# Semantics type-check (Coq) and ACL2 path verification
+./run.sh --verify-semantics
+./run.sh --verify-acl2
+
 # Unit tests only
 ./run.sh --test unit
 

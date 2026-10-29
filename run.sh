@@ -246,6 +246,61 @@ run_verify_examples() {
     log_success "All ${total} examples passed."
 }
 
+run_verify_semantics() {
+    log_info "Verifying ISIR Coq semantics (src/semantics/isir.v + koika/*.v)..."
+
+    local koika_coq="$SCRIPT_DIR/tools/koika/_build/default/coq"
+    if [[ ! -d "$koika_coq" ]]; then
+        log_error "Kōika Coq libraries not found at tools/koika/_build/default/coq. Run './install.sh' first."
+    fi
+    command -v opam &>/dev/null || log_error "opam not found. Run './install.sh' first."
+
+    # Resolve coqc under the opam env in a subshell so it does not leak.
+    local coqc_bin
+    coqc_bin="$(eval "$(opam env 2>/dev/null)" && command -v coqc 2>/dev/null || true)"
+    if [[ -z "$coqc_bin" ]]; then
+        log_error "coqc not found. Activate the Kōika opam switch (eval \$(opam env)) and retry."
+    fi
+    log_info "Using coqc: $coqc_bin"
+
+    log_info "Compiling src/semantics/isir.v ..."
+    (eval "$(opam env 2>/dev/null)" && \
+        coqc -Q "$SCRIPT_DIR/src/semantics" ISIR "$SCRIPT_DIR/src/semantics/isir.v") \
+        || log_error "isir.v failed to type-check"
+
+    log_info "Compiling src/semantics/koika/koika_correspondence.v ..."
+    (eval "$(opam env 2>/dev/null)" && \
+        coqc -Q "$SCRIPT_DIR/src/semantics" ISIR -Q "$koika_coq" Koika \
+             "$SCRIPT_DIR/src/semantics/koika/koika_correspondence.v") \
+        || log_error "koika_correspondence.v failed to type-check"
+
+    log_info "Compiling src/semantics/koika/refinement.v ..."
+    (eval "$(opam env 2>/dev/null)" && \
+        coqc -Q "$SCRIPT_DIR/src/semantics" ISIR -Q "$koika_coq" Koika \
+             "$SCRIPT_DIR/src/semantics/koika/refinement.v") \
+        || log_error "refinement.v failed to type-check"
+
+    log_info "Compiling src/semantics/koika/refinement_proofs.v ..."
+    (eval "$(opam env 2>/dev/null)" && \
+        coqc -Q "$SCRIPT_DIR/src/semantics" ISIR -Q "$koika_coq" Koika \
+             "$SCRIPT_DIR/src/semantics/koika/refinement_proofs.v") \
+        || log_error "refinement_proofs.v failed to type-check"
+
+    log_success "ISIR Coq semantics type-checks (isir.v + koika/koika_correspondence.v + koika/refinement.v + koika/refinement_proofs.v)."
+}
+
+run_verify_acl2() {
+    log_info "Verifying ISIR -> ACL2 (books + lowering + differential + examples)..."
+    PYTHONPATH=src .venv/bin/python -m pytest \
+        tests/unit/test_acl2_semantics.py \
+        tests/unit/test_acl2_refinement.py \
+        tests/unit/test_isir_to_acl2.py \
+        tests/unit/test_acl2_verification.py -q \
+        -W ignore::pytest.PytestUnknownMarkWarning \
+        || log_error "ACL2 verification failed"
+    log_success "ISIR -> ACL2 verification passed (books load, lowering, differential, examples)."
+}
+
 show_help() {
     cat <<EOF
 ${BOLD}InterScope run.sh wrapper${RESET} – Version 0.0.3 (ISIR, batch, structured output)
@@ -260,6 +315,9 @@ ${BOLD}Global options:${RESET}
 ${BOLD}Commands:${RESET}
   --test unit|integration|all   Run tests
   --verify-examples [flags]     Verify all examples/ (backend: koika by default)
+  --verify-semantics            Type-check the ISIR Coq semantics
+  --verify-acl2                Verify ISIR -> ACL2 (books, lowering, differential, examples)
+  --refine-check <file> ...     Lowering-refinement evidence
   --validate-config             Validate config.yaml (checks for conflicts)
   --compile <file> ...          Compile an .isir file
                                  backends: direct (short-path RTL, default),
@@ -345,6 +403,18 @@ case "${1:-}" in
         check_uv
         shift
         run_verify_examples "$@"
+        ;;
+    --verify-semantics)
+        run_verify_semantics
+        ;;
+    --verify-acl2)
+        check_uv
+        run_verify_acl2
+        ;;
+    --refine-check)
+        check_uv
+        shift
+        exec env PYTHONPATH=src uv run python -m isir.cli.refine_check "$@"
         ;;
     --validate-config)
         check_uv

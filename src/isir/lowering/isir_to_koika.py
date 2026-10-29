@@ -34,6 +34,38 @@ def _get_coq_type(data_type: str) -> str:
     return "bool" if data_type == "bool" else "nat"
 
 
+def _width_of_type(data_type: str) -> int:
+    """Bit width of an ISIR data type (bool -> 1, bits<N> -> N, else 1)."""
+    if data_type == "bool":
+        return 1
+    m = re.match(r"bits<(\d+)>", (data_type or "").strip())
+    if m:
+        return int(m.group(1))
+    return 1
+
+
+def _width_of_expr(expr: Any, widths: Optional[Dict[str, int]],
+                   local_widths: Optional[Dict[str, int]] = None,
+                   default: int = 1) -> int:
+    """Mirror eval_expr._expr_width: the max bit width of the state/input/local
+    names appearing in `expr` (the operand width used for wrapping)."""
+    w = default
+    def walk(x):
+        nonlocal w
+        if isinstance(x, str):
+            v = default
+            if local_widths and x in local_widths:
+                v = local_widths[x]
+            elif widths and x in widths:
+                v = widths[x]
+            w = max(w, v)
+        elif isinstance(x, list):
+            for y in x:
+                walk(y)
+    walk(expr)
+    return w
+
+
 def _rewrite_recursive_calls(expr: Any, fname: str, fuel_var: str) -> Any:
     """Rewrite self-calls `(fname args…)` into `(fname fuel_var args…)`.
 
@@ -50,7 +82,9 @@ def _type_of_expr(expr: Any, state_types: Dict[str, str],
                  input_types: Dict[str, str], memory_names: List[str],
                  function_types: Optional[Dict[str, str]] = None,
                  local_types: Optional[Dict[str, str]] = None,
-                 prev_state_var: str = "s") -> str:
+                 prev_state_var: str = "s",
+                 widths: Optional[Dict[str, int]] = None,
+                 local_widths: Optional[Dict[str, int]] = None) -> str:
     if isinstance(expr, bool):
         return "bool"
     if isinstance(expr, int):
@@ -94,7 +128,9 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                  inputs_var: str = "inputs",
                  function_types: Optional[Dict[str, str]] = None,
                  local_types: Optional[Dict[str, str]] = None,
-                 prev_state_var: str = "s") -> str:
+                 prev_state_var: str = "s",
+                 widths: Optional[Dict[str, int]] = None,
+                 local_widths: Optional[Dict[str, int]] = None) -> str:
     if isinstance(expr, bool):
         if as_prop:
             return "True" if expr else "False"
@@ -127,7 +163,7 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     # Function call (defined or uninterpreted)
     if function_types and op in function_types:
         coq_args = [
-            _expr_to_coq(a, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+            _expr_to_coq(a, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
             for a in args
         ]
         result = f"({op} " + " ".join(coq_args) + ")"
@@ -141,11 +177,17 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd', 'min', 'max'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
-        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         if op == 'shl':
+            if widths is not None:
+                op_w = max(_width_of_expr(args[0], widths, local_widths), _width_of_expr(args[1], widths, local_widths))
+                return f"((Nat.shiftl {a} {b}) mod {2 ** op_w})"
             return f"(Nat.shiftl {a} {b})"
         if op == 'shr':
+            if widths is not None:
+                op_w = max(_width_of_expr(args[0], widths, local_widths), _width_of_expr(args[1], widths, local_widths))
+                return f"((Nat.shiftr {a} {b}) mod {2 ** op_w})"
             return f"(Nat.shiftr {a} {b})"
         if op == 'gcd':
             return f"(Nat.gcd {a} {b})"
@@ -154,6 +196,12 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         if op == 'max':
             return f"(Nat.max {a} {b})"
         omap = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/', 'mod': 'mod'}
+        if widths is not None:
+            op_w = max(_width_of_expr(args[0], widths, local_widths), _width_of_expr(args[1], widths, local_widths))
+            mask = 2 ** op_w
+            if op == 'sub':
+                return f"((({a} + {mask} - {b}) mod {mask}))"
+            return f"((({a} {omap[op]} {b}) mod {mask}))"
         return f"({a} {omap[op]} {b})"
 
     # sum: n-ary reduction with + (left-associative)
@@ -161,9 +209,9 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         if len(args) == 0:
             raise ExprError("sum expects at least 1 argument")
         if len(args) == 1:
-            return _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+            return _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         coq_args = [
-            _expr_to_coq(a, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+            _expr_to_coq(a, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
             for a in args
         ]
         result = coq_args[-1]
@@ -175,24 +223,24 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     elif op == 'concat':
         if len(args) != 3:
             raise ExprError("concat expects 3 arguments: high low low_width")
-        high = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        low = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        high = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        low = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         # Pre-compute 2^width when width is a literal to keep the term reducible
         # (a raw `2 ^ 15` unfolds into a huge product and blows up `simpl`).
         if isinstance(args[2], int):
             shift = 1 << args[2]
             return f"({high} * {shift} + {low})"
-        width = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        width = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         return f"({high} * (2 ^ {width}) + {low})"
 
     # bitset (bit-slice assignment: replace bits [high:low] of x with value)
     elif op == 'bitset':
         if len(args) != 4:
             raise ExprError("bitset expects 4 arguments: x high low value")
-        x = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        high = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        low = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        value = _expr_to_coq(args[3], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        x = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        high = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        low = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        value = _expr_to_coq(args[3], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         if isinstance(args[2], int):
             shift = 1 << args[2]
             return f"({x} - (slice {x} {high} {low}) * {shift} + {value} * {shift})"
@@ -205,10 +253,10 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                 raise ExprError("not expects 1 argument")
             a_type = _type_of_expr(args[0], state_types, input_types, memory_names, function_types, local_types, prev_state_var)
             if as_prop:
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
                 return f"(~ {a})"
             else:
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
                 if a_type == "bool":
                     return f"(negb {a})"
                 else:
@@ -216,8 +264,8 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         elif op == 'implies':
             if len(args) != 2:
                 raise ExprError("implies expects 2 arguments")
-            a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var)
-            b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var)
+            a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+            b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
             return f"({a} -> {b})"
         else:
             if len(args) != 2:
@@ -225,22 +273,22 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
             a_type = _type_of_expr(args[0], state_types, input_types, memory_names, function_types, local_types, prev_state_var)
             b_type = _type_of_expr(args[1], state_types, input_types, memory_names, function_types, local_types, prev_state_var)
             if op == 'xor':
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-                b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+                b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
                 if a_type == "bool" and b_type == "bool":
                     return f"(xorb {a} {b})"
                 else:
                     return f"(Nat.lxor {a} {b})"
             if as_prop and a_type == "bool" and b_type == "bool":
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var)
-                b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+                b = _expr_to_coq(args[1], state_types, input_types, memory_names, True, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
                 if op == 'and':
                     return f"({a} /\\ {b})"
                 else:
                     return f"({a} \\/ {b})"
             else:
-                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-                b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+                a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+                b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
                 if a_type == "bool" and b_type == "bool":
                     if op == 'and':
                         return f"(andb {a} {b})"
@@ -256,8 +304,8 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'le', 'ge'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
-        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         left_type = _type_of_expr(args[0], state_types, input_types, memory_names, function_types, local_types, prev_state_var)
         right_type = _type_of_expr(args[1], state_types, input_types, memory_names, function_types, local_types, prev_state_var)
         is_bool_cmp = (left_type == "bool" and right_type == "bool")
@@ -295,18 +343,18 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     elif op == 'ite':
         if len(args) != 3:
             raise ExprError("ite expects 3 arguments")
-        cond = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        then_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        else_expr = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        cond = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        then_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        else_expr = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         return f"(if {cond} then {then_expr} else {else_expr})"
 
     # slice
     elif op == 'slice':
         if len(args) != 3:
             raise ExprError("slice expects 3 arguments: expr high low")
-        val = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        high = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
-        low = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        val = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        high = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        low = _expr_to_coq(args[2], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         return f"(slice {val} {high} {low})"
 
     # read
@@ -339,7 +387,7 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         mem_name = args[0]
         if not isinstance(mem_name, str):
             raise ExprError("mem_read expects memory name string")
-        addr_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var)
+        addr_expr = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         return f"(nth_default 0 ({mem_name} {state_var}) {addr_expr})"
 
     # mem_write (action)
@@ -354,6 +402,7 @@ def property_to_coq_lemma_statement(
     state_types: Dict[str, str],
     input_types: Dict[str, str],
     memory_names: List[str],
+    widths: Optional[Dict[str, int]] = None,
 ) -> str:
     operand = prop_op.expression.get("operand")
     if operand is None:
@@ -362,10 +411,10 @@ def property_to_coq_lemma_statement(
         parsed = parse_sexpr(operand) if isinstance(operand, str) else operand
     except ExprError as e:
         raise ValueError(f"Failed to parse property '{prop_op.prop_name}': {e}")
-    coq_prop = _expr_to_coq(parsed, state_types, input_types, memory_names, as_prop=True)
+    coq_prop = _expr_to_coq(parsed, state_types, input_types, memory_names, as_prop=True, widths=widths)
     return f"forall (s : state) (inputs : inputs), reachable s -> ({coq_prop})"
 
-def _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s", function_types=None):
+def _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s", function_types=None, widths=None):
     updates = {}
     mem_writes = []
     for action in rule.actions:
@@ -377,7 +426,7 @@ def _process_rule_actions(rule, state_types, input_types, memory_names, state_na
             field = parsed[1]
             if isinstance(field, str) and field in state_names:
                 try:
-                    val_expr = _expr_to_coq(parsed[2], state_types, input_types, memory_names, False, state_var, function_types=function_types)
+                    val_expr = _expr_to_coq(parsed[2], state_types, input_types, memory_names, False, state_var, function_types=function_types, widths=widths)
                     updates[field] = val_expr
                 except ExprError as e:
                     logger.warning(f"Rule '{rule.rule_name}' write error: {e}")
@@ -385,8 +434,8 @@ def _process_rule_actions(rule, state_types, input_types, memory_names, state_na
             mem_name = parsed[1]
             if isinstance(mem_name, str) and mem_name in memory_names:
                 try:
-                    addr_expr = _expr_to_coq(parsed[2], state_types, input_types, memory_names, False, state_var, function_types=function_types)
-                    data_expr = _expr_to_coq(parsed[3], state_types, input_types, memory_names, False, state_var, function_types=function_types)
+                    addr_expr = _expr_to_coq(parsed[2], state_types, input_types, memory_names, False, state_var, function_types=function_types, widths=widths)
+                    data_expr = _expr_to_coq(parsed[3], state_types, input_types, memory_names, False, state_var, function_types=function_types, widths=widths)
                     mem_writes.append((mem_name, addr_expr, data_expr))
                 except ExprError as e:
                     logger.warning(f"Rule '{rule.rule_name}' mem_write error: {e}")
@@ -408,7 +457,7 @@ def _mk_state_expr(registers, memories, updates, state_var="s"):
     parts.append(")")
     return " ".join(parts)
 
-def _build_sequential_step(ordered_rules, registers, memories, state_types, input_types, memory_names, state_names, function_types=None):
+def _build_sequential_step(ordered_rules, registers, memories, state_types, input_types, memory_names, state_names, function_types=None, widths=None):
     if not ordered_rules:
         return "", []
     let_bindings = []
@@ -421,7 +470,7 @@ def _build_sequential_step(ordered_rules, registers, memories, state_types, inpu
         if rule.condition:
             try:
                 cond_parsed = parse_sexpr(rule.condition)
-                cond_str = _expr_to_coq(cond_parsed, state_types, input_types, memory_names, as_prop=True, state_var=current_var, function_types=function_types)
+                cond_str = _expr_to_coq(cond_parsed, state_types, input_types, memory_names, as_prop=True, state_var=current_var, function_types=function_types, widths=widths)
             except ExprError as e:
                 raise ExprError(
                     f"Rule '{rule.rule_name}' has an invalid condition "
@@ -429,7 +478,7 @@ def _build_sequential_step(ordered_rules, registers, memories, state_types, inpu
                 ) from e
         if cond_str != "True":
             conds.append(cond_str)
-        updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var=current_var, function_types=function_types)
+        updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var=current_var, function_types=function_types, widths=widths)
         state_expr = _mk_state_expr(registers, memories, updates, current_var)
         rule_ops.append(koika.KoikaRuleOp(rule_name=rule.rule_name, condition=cond_str, actions=rule.actions))
         if idx < len(ordered_rules) - 1:
@@ -493,6 +542,16 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
     for inp in spec_module.inputs:
         input_types[inp.name] = _get_coq_type(inp.data_type)
 
+    # Bit widths of state registers and inputs (bool -> 1, bits<N> -> N).
+    # Used to wrap arithmetic in the nat proof model so it matches the
+    # wrapping `bits<N>` semantics of the reference interpreter and the RTL.
+    widths: Dict[str, int] = {}
+    for s in state_ops:
+        if s.kind == "register":
+            widths[s.state_name] = _width_of_type(s.data_type)
+    for inp in spec_module.inputs:
+        widths[inp.name] = _width_of_type(inp.data_type)
+
     # Functions (defined with a body -> Coq Definition; else -> Coq Parameter)
     # and axioms (lowered to Coq Axiom).
     function_types: Dict[str, str] = {}
@@ -517,9 +576,10 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             try:
                 body_parsed = parse_sexpr(body) if isinstance(body, str) else body
                 local_types = {p.get("name"): _get_coq_type(p.get("type", "bits<1>")) for p in params}
+                local_widths = {p.get("name"): _width_of_type(p.get("type", "bits<1>")) for p in params}
                 body_coq = _expr_to_coq(
                     body_parsed, state_types, input_types, memory_names,
-                    as_prop=False, function_types=function_types, local_types=local_types
+                    as_prop=False, function_types=function_types, widths=widths, local_types=local_types, local_widths=local_widths
                 )
             except ExprError as e:
                 logger.warning(f"Could not translate function body '{fname}': {e}")
@@ -537,7 +597,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 rewritten = _rewrite_recursive_calls(body_parsed, fname, "fuel'")
                 rewritten_coq = _expr_to_coq(
                     rewritten, state_types, input_types, memory_names,
-                    as_prop=False, function_types=function_types, local_types=local_types
+                    as_prop=False, function_types=function_types, widths=widths, local_types=local_types, local_widths=local_widths
                 )
                 function_decls.append(
                     f"Fixpoint {fname} {full_binders} : {ret_type} := "
@@ -560,7 +620,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             stmt_parsed = parse_sexpr(statement) if isinstance(statement, str) else statement
             stmt_coq = _expr_to_coq(
                 stmt_parsed, state_types, input_types, memory_names,
-                as_prop=True, function_types=function_types
+                as_prop=True, function_types=function_types, widths=widths
             )
         except ExprError as e:
             logger.warning(f"Could not translate axiom '{aname}': {e}")
@@ -580,7 +640,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             operand_parsed = parse_sexpr(operand) if isinstance(operand, str) else operand
             operand_coq = _expr_to_coq(
                 operand_parsed, state_types, input_types, memory_names,
-                as_prop=True, state_var="s", function_types=function_types
+                as_prop=True, state_var="s", function_types=function_types, widths=widths
             )
         except ExprError as e:
             logger.warning(f"Could not translate invariant '{iname}': {e}")
@@ -599,7 +659,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         if directive.kind == "assume":
             try:
                 parsed = parse_sexpr(directive.expression)
-                coq_cond = _expr_to_coq(parsed, state_types, input_types, memory_names, as_prop=True, state_var="s", function_types=function_types)
+                coq_cond = _expr_to_coq(parsed, state_types, input_types, memory_names, as_prop=True, state_var="s", function_types=function_types, widths=widths)
                 global_assumptions.append(coq_cond)
             except ExprError as e:
                 logger.warning(f"Could not translate assume directive '{directive.directive_name}': {e}")
@@ -832,7 +892,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         if ordered_rules:
             ctor_str, ops = _build_sequential_step(ordered_rules, registers, memories,
                                                    state_types, input_types, memory_names, state_names,
-                                                   function_types=function_types)
+                                                   function_types=function_types, widths=widths)
             step_ctors.append(ctor_str)
             rule_ops.extend(ops)
     else:
@@ -841,13 +901,13 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             if rule.condition:
                 try:
                     cond_parsed = parse_sexpr(rule.condition)
-                    cond_str = _expr_to_coq(cond_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types)
+                    cond_str = _expr_to_coq(cond_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types, widths=widths)
                 except ExprError as e:
                     raise ExprError(
                         f"Rule '{rule.rule_name}' has an invalid condition "
                         f"{rule.condition!r}: {e}"
                     ) from e
-            updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s", function_types=function_types)
+            updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s", function_types=function_types, widths=widths)
             new_state = _mk_state_expr(registers, memories, updates, "s")
             ctor_name = f"step_{rule.rule_name}"
             step_ctors.append(
@@ -932,13 +992,13 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 cond_str, new_state = rule_info[scoped_rule]
                 coq_operand = _expr_to_coq(
                     operand_parsed, state_types, input_types, memory_names, as_prop=True,
-                    state_var=new_state, function_types=function_types, prev_state_var="s"
+                    state_var=new_state, function_types=function_types, widths=widths, prev_state_var="s"
                 )
                 theorem_name = f"{prop_name}_proved"
                 theorem_stmt = f"forall (s : state) (inputs : inputs), {cond_str} -> {coq_operand}"
             else:
                 coq_operand = _expr_to_coq(
-                    operand_parsed, state_types, input_types, memory_names, as_prop=True, state_var="s'", function_types=function_types
+                    operand_parsed, state_types, input_types, memory_names, as_prop=True, state_var="s'", function_types=function_types, widths=widths
                 )
                 theorem_name = f"{prop_name}_proved"
                 theorem_stmt = (
@@ -975,9 +1035,9 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             for inp in spec_module.inputs:
                 if inp.name not in independent_set:
                     agreements.append(f"({inp.name} inputs) = ({inp.name} inputs')")
-            lhs_coq = _expr_to_coq(operand_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types)
+            lhs_coq = _expr_to_coq(operand_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths)
             rhs_coq = _expr_to_coq(
-                operand_parsed, state_types, input_types, memory_names, as_prop=False, inputs_var="inputs'", function_types=function_types
+                operand_parsed, state_types, input_types, memory_names, as_prop=False, inputs_var="inputs'", function_types=function_types, widths=widths
             )
 
             theorem_name = f"{prop_name}_proved"
@@ -1012,8 +1072,8 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             if impl_parsed is None or ref_parsed is None:
                 logger.warning(f"Could not parse combinational expressions for '{prop_name}'")
                 continue
-            impl_coq = _expr_to_coq(impl_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types)
-            ref_coq = _expr_to_coq(ref_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types)
+            impl_coq = _expr_to_coq(impl_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths)
+            ref_coq = _expr_to_coq(ref_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths)
 
             # Optional input-bound assumptions (antecedents over the inputs).
             assumptions = prop_op.assumes if hasattr(prop_op, 'assumes') and prop_op.assumes else []
@@ -1021,7 +1081,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             for assum in assumptions:
                 try:
                     assum_parsed = parse_sexpr(assum) if isinstance(assum, str) else assum
-                    assum_coq = _expr_to_coq(assum_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types)
+                    assum_coq = _expr_to_coq(assum_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types, widths=widths)
                     assumption_hypotheses.append(assum_coq)
                 except ExprError as e:
                     logger.warning(f"Could not convert assumption '{assum}' for property '{prop_name}': {e}")
@@ -1061,7 +1121,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 continue
             coq_operand = _expr_to_coq(
                 operand_parsed, state_types, input_types, memory_names, as_prop=True,
-                state_var="s", function_types=function_types
+                state_var="s", function_types=function_types, widths=widths
             )
             theorem_name = f"{prop_name}_proved"
             theorem_stmt = f"forall (s : state), stepn {bound} initial_state s -> {coq_operand}"
@@ -1083,7 +1143,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             except ExprError:
                 operand_parsed = None
             if operand_parsed is not None:
-                coq_operand = _expr_to_coq(operand_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types)
+                coq_operand = _expr_to_coq(operand_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types, widths=widths)
             else:
                 coq_operand = "True"
         else:
@@ -1094,7 +1154,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         for assum in assumptions:
             try:
                 assum_parsed = parse_sexpr(assum) if isinstance(assum, str) else assum
-                assum_coq = _expr_to_coq(assum_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types)
+                assum_coq = _expr_to_coq(assum_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types, widths=widths)
                 assumption_hypotheses.append(assum_coq)
             except ExprError as e:
                 logger.warning(f"Could not convert assumption '{assum}' for property '{prop_name}': {e}")

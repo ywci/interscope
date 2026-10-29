@@ -60,7 +60,6 @@ module:
       return: "bits<16>"
       body: (concat s 0 15)
 
-    # --- finite (non-special) operations: uninterpreted, laws via axioms ---
     - name: abstract_finite_add
       params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
       return: "bits<16>"
@@ -77,7 +76,6 @@ module:
       params: [{name: x, type: "bits<16>"}]
       return: "bits<16>"
 
-    # --- the five FPU operations (defined functions over special values) ---
     - name: fadd
       params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
       return: "bits<16>"
@@ -138,7 +136,6 @@ module:
         - (write result (fadd a b))
 
   properties:
-    # --- structural / algebraic (provable by Kōika) ---
     - name: fsub_equals_negated_fadd
       kind: combinational
       expression:
@@ -163,8 +160,6 @@ module:
         kind: combinational
         operand: (abstract_finite_mul a b)
         reference: (abstract_finite_mul b a)
-
-    # --- concrete bfloat16 special-value bit patterns ---
     - name: signed_infinity_pattern
       kind: combinational
       expression:
@@ -183,9 +178,6 @@ module:
         kind: combinational
         operand: (or 32640 64)
         reference: 32704
-
-    # --- fdiv / fmul / fsqrt special-value branches (leverage the otherwise
-    #     unused operations) ---
     - name: fmul_inf_zero_is_nan
       kind: combinational
       expression:

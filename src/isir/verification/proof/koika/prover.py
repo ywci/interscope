@@ -55,6 +55,15 @@ Opaque Nat.mul.
 Opaque Nat.leb Nat.ltb.
 Hint Resolve eq_refl : core.
 Hint Rewrite Nat.eqb_refl : core.
+Hint Resolve Nat.lt_0_succ Nat.mod_upper_bound Nat.mod_small Nat.Div0.mod_mod : core.
+
+(* Wrap-aware upper bound: `a mod b <= b - 1` (used to prove wrapped-arithmetic
+   invariants such as `(count + 1) mod 16 <= 15`). *)
+Lemma mod_le_pred (a b : nat) : b > 0 -> a mod b <= b - 1.
+Proof.
+  intros H. assert (a mod b < b) by (apply Nat.mod_upper_bound; lia). lia.
+Qed.
+Hint Resolve mod_le_pred : core.
 
 Ltac nat_eqb_norm :=
   repeat (match goal with

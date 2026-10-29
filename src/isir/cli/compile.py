@@ -54,6 +54,8 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Path to the Kōika compiler executable (default from config or PATH)")
     parser.add_argument("--output-format", choices=["json", "text"], default="text",
                         help="Output format: json for structured data, text for human-readable summary (default: text)")
+    parser.add_argument("--refine", action="store_true",
+                        help="Run the lowering-refinement check and gate on divergence")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser
 
@@ -167,6 +169,9 @@ def compile_spec(args: argparse.Namespace) -> int:
             return 1
 
         report.results.extend(results)
+
+        if getattr(args, "refine", False):
+            _run_refinement_gate(spec_module, out_dir, report)
 
         if args.simulate and args.backend == "koika" and not args.no_rtl:
             _run_simulation(spec_module, out_dir, args, config)
@@ -373,6 +378,60 @@ def _run_differential(spec_module, out_dir, args) -> int:
     if result.status in ("agreed_long_short", "long_path_unsupported"):
         return 0
     return 1
+
+
+def _run_refinement_gate(spec_module, out_dir, report: CompilationReport) -> None:
+    from isir.verification.lowering_refinement import (
+        LoweringRefinementStatus, run_lowering_refinement,
+    )
+    from isir.evidence.registry import EvidenceRegistry
+
+    logger.info("Running lowering-refinement check...")
+    start = time.time()
+    registry = EvidenceRegistry()
+    cache_dir = out_dir / "refinement_cache"
+    try:
+        ref_report = run_lowering_refinement(spec_module, cache_dir=cache_dir, registry=registry)
+    except Exception as e:
+        logger.error("Lowering-refinement check failed: %s", e)
+        report.results.append(BackendResult(
+            backend="refinement",
+            success=False,
+            duration=time.time() - start,
+            error_message=str(e),
+        ))
+        return
+
+    duration = time.time() - start
+    n_fail = sum(1 for i in ref_report.items if i.status == LoweringRefinementStatus.BOUNDED_FAIL)
+    n_pass = sum(1 for i in ref_report.items if i.status in (
+        LoweringRefinementStatus.BOUNDED_PASS, LoweringRefinementStatus.PROOF_PASS))
+    n_skip = sum(1 for i in ref_report.items if i.status == LoweringRefinementStatus.PROOF_OUT_OF_SCOPE)
+
+    from isir.verification.attribution import attribute_report
+    try:
+        ar = attribute_report(ref_report, spec_module)
+        report_file = out_dir / "refinement_attribution.json"
+        import json as _json
+        report_file.write_text(_json.dumps(ar.to_dict(), indent=2), encoding="utf-8")
+        by_cat = ar.to_dict()["summary"]
+    except Exception as e:
+        logger.warning("Attribution failed: %s", e)
+        by_cat = {}
+
+    blocked = n_fail > 0
+    logger.info("Refinement: %d pass, %d fail, %d out-of-scope (attribution %s).",
+                n_pass, n_fail, n_skip, by_cat)
+    report.results.append(BackendResult(
+        backend="refinement",
+        success=not blocked,
+        duration=duration,
+        metadata={"bounded_pass": n_pass, "bounded_fail": n_fail,
+                  "proof_out_of_scope": n_skip, "blocked": blocked,
+                  "attribution": by_cat},
+    ))
+    if blocked:
+        logger.error("Lowering refinement found %d bounded_fail item(s); blocking pipeline.", n_fail)
 
 
 def _compile_acl2(spec_module, out_dir, args) -> List[BackendResult]:
