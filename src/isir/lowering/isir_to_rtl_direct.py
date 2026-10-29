@@ -7,7 +7,7 @@
 # and *replay* reference, not a golden model: the trusted reference RTL remains
 # the long path (ISIR → Kōika → RTL).
 #
-# Independence requirements (see the development plan):
+# Independence requirements:
 #   * Shared, syntactic only: `parse_isir`, `convert_ast_to_isir_module`,
 #     `parse_sexpr` (S-expression tokenization — no desugaring, no coercion).
 #   * Independent here: expression lowering, scheduling derivation, state
@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -107,11 +108,52 @@ class RtlDirectEmitter:
         self.schedule = spec.schedule_op
         self.reset = spec.resets[0] if spec.resets else None
         self.clock = spec.clocks[0] if spec.clocks else None
+        self._raw_sig_map: Dict[str, str] = {}
+        self._build_sig_map()
 
-    @staticmethod
-    def _sig(name: str) -> str:
-        """Escape a Verilog reserved keyword as an escaped identifier."""
-        return f"\\{name} " if name in _VERILOG_KEYWORDS else name
+    def _sanitize_token(self, name: str) -> str:
+        """Sanitize a name to a legal Verilog identifier token (alphanumeric +
+        underscore, never starting with a digit)."""
+        s = re.sub(r"[^A-Za-z0-9_]", "_", name)
+        if not s or s[0].isdigit():
+            s = "_" + s
+        return s
+
+    def _build_sig_map(self) -> None:
+        """Precompute a deterministic, collision-free identifier per name."""
+        names: List[str] = []
+        for s in self.spec.state_ops:
+            if s.state_name not in names:
+                names.append(s.state_name)
+        for i in self.spec.inputs:
+            if i.name not in names:
+                names.append(i.name)
+        for o in self.spec.outputs:
+            if o.name not in names:
+                names.append(o.name)
+        for r in self.spec.rule_ops:
+            if r.rule_name not in names:
+                names.append(r.rule_name)
+        used: set = set()
+        for name in names:
+            token = self._sanitize_token(name)
+            candidate = token
+            k = 2
+            while candidate in used:
+                candidate = f"{token}_{k}"
+                k += 1
+            used.add(candidate)
+            self._raw_sig_map[name] = candidate
+
+    def _raw_sig(self, name: str) -> str:
+        """Sanitized identifier token (no keyword escaping), for prefixed names
+        like `next_*` / `fire_*` / `grant_*` / `prev_*`."""
+        return self._raw_sig_map.get(name, self._sanitize_token(name))
+
+    def _sig(self, name: str) -> str:
+        """Sanitized, keyword-escaped Verilog identifier."""
+        raw = self._raw_sig(name)
+        return f"\\{raw} " if raw in _VERILOG_KEYWORDS else raw
 
     def _type_of_name(self, name: str) -> str:
         if name in self.state_types:
@@ -184,11 +226,11 @@ class RtlDirectEmitter:
             return "1'b0"  # uninterpreted-function stub
 
         if op == "read":
-            return str(args[0]) if args else "1'b0"
+            return self._sig(args[0]) if args else "1'b0"
         if op == "prev":
-            return f"prev_{args[0]}" if args else "1'b0"
+            return f"prev_{self._raw_sig(args[0])}" if args else "1'b0"
         if op == "mem_read":
-            return f"{args[0]}[{self._lower(args[1])}]" if len(args) >= 2 else "1'b0"
+            return f"{self._sig(args[0])}[{self._lower(args[1])}]" if len(args) >= 2 else "1'b0"
         if op == "ite":
             return f"({self._lower(args[0], 1)} ? {self._lower(args[1], width)} : {self._lower(args[2], width)})"
         if op in _BIN_BITWISE:
@@ -252,16 +294,16 @@ class RtlDirectEmitter:
         kind = self.schedule.kind if self.schedule else "parallel"
         order = self.schedule.rule_order if self.schedule else [r.rule_name for r in rules]
         for r in rules:
-            fire = f"fire_{r.rule_name}"
+            fire = f"fire_{self._raw_sig(r.rule_name)}"
             if kind == "sequential":
                 try:
                     idx = order.index(r.rule_name)
                 except ValueError:
                     idx = len(order)
-                mask = "".join(f" && ! fire_{e}" for e in order[:idx])
-                lines.append(f"  assign grant_{r.rule_name} = {fire}{mask};")
+                mask = "".join(f" && ! fire_{self._raw_sig(e)}" for e in order[:idx])
+                lines.append(f"  assign grant_{self._raw_sig(r.rule_name)} = {fire}{mask};")
             else:
-                lines.append(f"  assign grant_{r.rule_name} = {fire};")
+                lines.append(f"  assign grant_{self._raw_sig(r.rule_name)} = {fire};")
         return lines
 
     def emit_module(self, module_name: Optional[str] = None) -> str:
@@ -293,38 +335,38 @@ class RtlDirectEmitter:
         for s in self.spec.state_ops:
             if s.kind == "memory":
                 _, w, depth = _parse_type(s.data_type)
-                lines.append(f"  {self._decl(s.data_type)} {s.state_name} [0:{depth - 1}];")
+                lines.append(f"  {self._decl(s.data_type)} {self._sig(s.state_name)} [0:{depth - 1}];")
             else:
                 if s.state_name not in self.output_names:
-                    lines.append(f"  {self._decl(s.data_type)} {s.state_name};")
-                lines.append(f"  {self._decl(s.data_type)} next_{s.state_name};")
+                    lines.append(f"  {self._decl(s.data_type)} {self._sig(s.state_name)};")
+                lines.append(f"  {self._decl(s.data_type)} next_{self._raw_sig(s.state_name)};")
         for r in self.spec.rule_ops:
-            lines.append(f"  logic fire_{r.rule_name};")
-            lines.append(f"  logic grant_{r.rule_name};")
+            lines.append(f"  logic fire_{self._raw_sig(r.rule_name)};")
+            lines.append(f"  logic grant_{self._raw_sig(r.rule_name)};")
         return "\n".join(lines)
 
     def _combinational(self) -> str:
         lines: List[str] = ["  // Combinational: rule conditions, grants, next-state shadows."]
         for r in self.spec.rule_ops:
             cond = self._lower(parse_sexpr(r.condition or "true"), 1)
-            lines.append(f"  assign fire_{r.rule_name} = {cond};")
+            lines.append(f"  assign fire_{self._raw_sig(r.rule_name)} = {cond};")
         lines.extend(self._grant_expr())
         lines.append("  always_comb begin")
         for name in sorted(self.reg_names):
-            lines.append(f"    next_{name} = {name};")
+            lines.append(f"    next_{self._raw_sig(name)} = {self._sig(name)};")
         for r in self.spec.rule_ops:
             actions = self._reg_actions(r)
             if not actions:
                 continue
-            lines.append(f"    if (grant_{r.rule_name}) begin")
+            lines.append(f"    if (grant_{self._raw_sig(r.rule_name)}) begin")
             for state, v in actions:
-                lines.append(f"      next_{state} = {v};")
+                lines.append(f"      next_{self._raw_sig(state)} = {v};")
             lines.append("    end")
         lines.append("  end")
         # Combinational outputs written by a rule: `output = (grant ? expr : 0)`.
         for r in self.spec.rule_ops:
             for name, v in self._comb_actions(r):
-                lines.append(f"  assign {self._sig(name)} = (grant_{r.rule_name} ? {v} : '0);")
+                lines.append(f"  assign {self._sig(name)} = (grant_{self._raw_sig(r.rule_name)} ? {v} : '0);")
         # Unconnected outputs (declared but not a state nor driven) — leave them
         # undriven; they are spec-visible dead outputs.
         return "\n".join(lines)
@@ -337,14 +379,14 @@ class RtlDirectEmitter:
             rst = self.reset["name"]
             lines.append(f"    if ({'' if active_high else '!'}{rst}) begin")
             for name in sorted(self.reg_names):
-                lines.append(f"      {name} <= {self._initial_of(name)};")
+                lines.append(f"      {self._sig(name)} <= {self._initial_of(name)};")
             lines.append("    end else begin")
             for name in sorted(self.reg_names):
-                lines.append(f"      {name} <= next_{name};")
+                lines.append(f"      {self._sig(name)} <= next_{self._raw_sig(name)};")
             lines.append("    end")
         else:
             for name in sorted(self.reg_names):
-                lines.append(f"    {name} <= next_{name};")
+                lines.append(f"    {self._sig(name)} <= next_{self._raw_sig(name)};")
         lines.append("  end")
         return "\n".join(lines)
 
@@ -356,7 +398,7 @@ class RtlDirectEmitter:
             return ""
         lines: List[str] = [f"  // Memory writes.", f"  always_ff @(posedge {clk}) begin"]
         for r, (mem, addr, data) in writes:
-            lines.append(f"    if (grant_{r.rule_name}) {mem}[{addr}] <= {data};")
+            lines.append(f"    if (grant_{self._raw_sig(r.rule_name)}) {self._sig(mem)}[{addr}] <= {data};")
         lines.append("  end")
         return "\n".join(lines)
 
@@ -409,11 +451,11 @@ class RtlDirectEmitter:
     def emit_mapping(self, rtl_file: str, isir_source: str) -> str:
         items: List[Dict[str, Any]] = []
         for s in self.spec.state_ops:
-            sigs = [s.state_name] + ([] if s.kind == "memory" else [f"next_{s.state_name}"])
+            sigs = [self._sig(s.state_name)] + ([] if s.kind == "memory" else [f"next_{self._raw_sig(s.state_name)}"])
             items.append({"spec_item_id": s.state_name, "rtl_signals": sigs, "rtl_lines": [], "kind": "state"})
         for r in self.spec.rule_ops:
             items.append({"spec_item_id": r.rule_name,
-                          "rtl_signals": [f"fire_{r.rule_name}", f"grant_{r.rule_name}"],
+                          "rtl_signals": [f"fire_{self._raw_sig(r.rule_name)}", f"grant_{self._raw_sig(r.rule_name)}"],
                           "rtl_lines": [], "kind": "rule"})
         reset = {}
         if self.reset:

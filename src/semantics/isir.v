@@ -169,7 +169,7 @@ Fixpoint eval (e : expr) (w : nat) (st : state) (inp : inputs) (mem : memories) 
 (** [eval_nd e w st inp mem v] means [v] is a *possible* value of [e].  For a
     deterministic expression it is the singleton result of [eval]; for
     [EPartial n] it is every value of width [n].  This is the set-valued
-    semantics the plan calls "explicit non-determinism": a partial_spec
+    semantics of explicit non-determinism: a partial_spec
     placeholder yields a value from an unconstrained set, never a silent
     default. *)
 Inductive eval_nd : expr -> nat -> state -> inputs -> memories -> value -> Prop :=

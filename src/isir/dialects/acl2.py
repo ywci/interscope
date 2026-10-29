@@ -135,7 +135,7 @@ class ACL2Module:
         return "\n".join(lines)
 
     def to_acl2_code(self) -> str:
-        """Loadable ACL2 Lisp: defun/defthm/defaxiom forms plus raw forms."""
+        """Loadable ACL2 Lisp: raw forms, defun, defun-sk, defthm/defaxiom."""
         parts = [f";; Generated from ISIR design {self.name}",
                  '(in-package "ACL2")',
                  '(include-book "arithmetic-5/top" :dir :system)']

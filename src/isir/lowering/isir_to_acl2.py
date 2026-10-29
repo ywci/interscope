@@ -1,8 +1,10 @@
 # src/isir/lowering/isir_to_acl2.py
 #
-# Lowers a SpecModule (spec dialect) to an ACL2Module (acl2 dialect).
-# Automatically adds :induct hints for simple safety properties,
-# enabling automatic proof without LLM intervention.
+# Lowers a SpecModule (spec dialect) to a loadable ACL2Module (acl2 dialect):
+# defun/defthm/defaxiom/defun-sk/encapsulate forms covering the single-cycle,
+# temporal, and liveness subset of ISIR.  Generated defthms carry kind-aware
+# best-effort hints and are admitted with skip-proofs so the output always
+# loads; the prover (proof/acl2/prover.py) discharges them.
 
 import re
 from typing import Dict, List, Any, Optional, Set, Tuple
@@ -412,11 +414,11 @@ def _maybe_auto_hint(prop_op: isir.SpecPropertyOp,
                      input_names: List[str],
                      step_name: str = "step") -> Optional[List[str]]:
     """
-    Return an ACL2 :hints list if the property matches a simple pattern,
-    otherwise return None.
-    Currently recognised pattern: safety property whose operand is
-    a simple implication or a boolean condition that should hold in all
-    reachable states.  For those we suggest induction on the step function.
+    Best-effort ACL2 :hints by property kind:
+
+    - safety/invariant/transition : induct on the n-cycle step (stepn);
+    - bounded eventually/until     : induct on the cycle bound n;
+    - combinational                : disable generalization (arithmetic-5).
     """
     expr_kind = prop_op.expression.get("kind", "always")
     in_args = " ".join(input_names)
@@ -675,8 +677,8 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
 
         expr_kind = prop_op.expression.get("kind", "always")
 
-        # Liveness (unbounded eventually/until) is handled via defun-sk
-        # (existential quantification over the trace); no skip needed.
+        # Liveness (unbounded eventually/until) is handled below via defun-sk
+        # (existential quantification over the trace).
 
         operand = prop_op.expression.get("operand", None)
         assumes_acl2 = []
@@ -837,17 +839,14 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         if not aname:
             continue
         statement = a.get("statement", "true")
-        forall_vars = a.get("forall", [])
         try:
             stmt_parsed = parse_sexpr(_unfold(statement))
             stmt_acl2 = _expr_to_acl2(stmt_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names)
         except ExprError as e:
             logger.warning(f"Could not translate axiom '{aname}': {e}")
             continue
-        binder_names = " ".join(v.get("name", "?") for v in forall_vars)
-        if binder_names:
-            # universal binders become free variables in the defaxiom
-            pass
+        # Axiom `forall` binders stay free variables: `_expr_to_acl2` returns
+        # unknown names bare, so the defaxiom keeps them universally quantified.
         defthms.append(acl2.ACL2DefthmOp(thm_name=aname, statement=stmt_acl2, axiom=True))
 
     # 4c. Directives: assume -> hypothesis (added to every property below);

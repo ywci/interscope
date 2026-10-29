@@ -4,7 +4,7 @@
  * and a Kōika `bits_t N` design, stated in three dimensions and composed into
  * a single `refines` predicate.
  *
- * Dimensions (per the revised plan):
+ * Dimensions:
  *   1. definedness_preservation — an ISIR-defined step implies a defined
  *      Kōika step (no new undefined behavior: uninitialized registers, width
  *      truncation, rule ordering that leaves a state element undriven).
