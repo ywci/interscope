@@ -95,6 +95,8 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true",
                         help="Parse and validate only (no execution)")
 
+    parser.add_argument("--candidate-rtl", type=str, default=None,
+                        help="Path to a Candidate RTL (.v) for RTL Conformance checking (Mode B)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser
 
@@ -235,6 +237,26 @@ def verify_spec(args: argparse.Namespace) -> int:
         base_out = project_root / config.get("directories", {}).get("build", "build") / "verify"
     out_dir = base_out / design_name
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # RTL Conformance (Mode B): check an externally provided Candidate RTL.
+    if getattr(args, "candidate_rtl", None):
+        from isir.lowering.verify_candidate import verify_candidate_rtl
+        try:
+            result = verify_candidate_rtl(spec_module, args.candidate_rtl)
+        except Exception as e:  # noqa: BLE001
+            logger.error("Candidate RTL conformance check failed: %s", e)
+            return 1
+        if args.output_format == "json":
+            import json as _json
+            print(_json.dumps(result.to_dict(), indent=2))
+        else:
+            print(f"design: {result.design}")
+            print(f"status: {result.status}")
+            for rec in result.records:
+                print(f"  divergent: {rec.primary_spec_item_id} (counterexample @ {rec.counterexample})")
+            if result.message:
+                print(f"message: {result.message}")
+        return 0 if result.status != "error" else 1
 
     obligations = spec_module.proof_obligations
     if not obligations:

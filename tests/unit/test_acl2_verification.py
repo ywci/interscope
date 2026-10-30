@@ -2,14 +2,12 @@
 #
 # End-to-end ACL2 verification: every example lowers to loadable ACL2 without exception.
 
+import pytest
 import glob
 import os
 import shutil
 import subprocess
 from pathlib import Path
-
-import pytest
-
 from isir.parser.parser import parse_isir
 from isir.lowering.ast_to_isir import convert_ast_to_isir_module
 from isir.lowering import isir_to_acl2

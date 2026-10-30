@@ -4,7 +4,6 @@
 # (src/isir/lowering/split_rules.py).
 
 import pytest
-
 from isir.dialects.isir import SpecModule, SpecRuleOp, SpecScheduleOp
 from isir.lowering.split_rules import (
     split_rules,

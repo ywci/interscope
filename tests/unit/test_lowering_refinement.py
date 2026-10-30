@@ -3,10 +3,8 @@
 # Integration of lowering-refinement evidence into the pipeline.
 
 import json
-from pathlib import Path
-
 import pytest
-
+from pathlib import Path
 from isir.parser.parser import parse_isir
 from isir.lowering.ast_to_isir import convert_ast_to_isir_module
 from isir.verification.lowering_refinement import (

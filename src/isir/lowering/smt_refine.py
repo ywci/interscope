@@ -121,6 +121,12 @@ def expr_to_smt(expr: Any, width: int, widths: Dict[str, int],
         # eval_expr's `not` is LOGICAL (`return not a`), yielding a 1-bit bool.
         return f"(ite (= {a} (_ bv0 {op_w})) (_ bv1 1) (_ bv0 1))"
 
+    if op == "implies":
+        # Boolean implication `(not a) or b`, encoded as 1-bit bit-vectors.
+        a = expr_to_smt(args[0], 1, widths, decls, blackboxes)
+        b = expr_to_smt(args[1], 1, widths, decls, blackboxes)
+        return f"(ite (= {a} (_ bv0 1)) (_ bv1 1) {b})"
+
     if op in ("eq", "neq", "gt", "lt", "gte", "lte", "le", "ge"):
         wa = _expr_width(args[0], width, widths)
         wb = _expr_width(args[1], width, widths)

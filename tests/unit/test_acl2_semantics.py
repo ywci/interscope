@@ -5,11 +5,9 @@
 # example, which must agree with the reference `eval_expr`.
 
 import shutil
+import pytest
 import subprocess
 from pathlib import Path
-
-import pytest
-
 from isir.utils.expr import eval_expr, parse_sexpr
 
 
