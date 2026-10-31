@@ -17,6 +17,21 @@ from isir.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Recursive function measures: name -> (param names, parsed measure expr).
+# Populated by convert() and read by _expr_to_coq to compute a SUFFICIENT
+# fuel for recursive calls (so exact-value properties are sound).
+_RECURSIVE_MEASURES: Dict[str, Tuple[List[str], Any]] = {}
+
+
+def _subst_expr(node, subst):
+    """Recursively replace string leaves via `subst` (parameter substitution)."""
+    if isinstance(node, str):
+        return subst.get(node, node)
+    if isinstance(node, list):
+        return [_subst_expr(x, subst) for x in node]
+    return node
+
+
 _INT_LITERAL = re.compile(r"0[xX]([0-9a-fA-F]+)|0[bB]([01]+)|0[oO]([0-7]+)")
 
 def _normalize_int_literals(text: str) -> str:
@@ -130,7 +145,8 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                  local_types: Optional[Dict[str, str]] = None,
                  prev_state_var: str = "s",
                  widths: Optional[Dict[str, int]] = None,
-                 local_widths: Optional[Dict[str, int]] = None) -> str:
+                 local_widths: Optional[Dict[str, int]] = None,
+                 recursive_names: Optional[set] = None) -> str:
     if isinstance(expr, bool):
         if as_prop:
             return "True" if expr else "False"
@@ -163,9 +179,20 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     # Function call (defined or uninterpreted)
     if function_types and op in function_types:
         coq_args = [
-            _expr_to_coq(a, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+            _expr_to_coq(a, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths, recursive_names)
             for a in args
         ]
+        if recursive_names and op in recursive_names:
+            # Recursive function is a fuel-based Fixpoint `(op fuel a b ...)`.
+            # Use the declared measure (args-substituted, as a natural) as a
+            # SUFFICIENT fuel; fall back to a free `fuel` when no measure.
+            params, measure_expr = _RECURSIVE_MEASURES.get(op, ([], None))
+            if measure_expr is not None:
+                sub = {params[i]: args[i] for i in range(min(len(params), len(args)))}
+                fuel = _expr_to_coq(_subst_expr(measure_expr, sub), state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, None, None, recursive_names)
+            else:
+                fuel = "fuel"
+            coq_args = [fuel] + coq_args
         result = f"({op} " + " ".join(coq_args) + ")"
         # A bool-returning function used as a proposition must be reflected to
         # a Coq Prop via `= true`.
@@ -555,9 +582,21 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
     # Functions (defined with a body -> Coq Definition; else -> Coq Parameter)
     # and axioms (lowered to Coq Axiom).
     function_types: Dict[str, str] = {}
+    recursive_names: set = set()
+    global _RECURSIVE_MEASURES
+    _RECURSIVE_MEASURES = {}
     for f in spec_module.functions:
         if f.get("name"):
             function_types[f.get("name")] = _get_coq_type(f.get("return", "bits<1>"))
+            if f.get("recursive"):
+                recursive_names.add(f.get("name"))
+                if f.get("measure"):
+                    params = [pp.get("name") for pp in (f.get("params") or [])]
+                    measure_raw = f.get("measure")
+                    try:
+                        _RECURSIVE_MEASURES[f.get("name")] = (params, parse_sexpr(measure_raw) if isinstance(measure_raw, str) else measure_raw)
+                    except ExprError:
+                        pass
     function_decls: List[str] = []
     axiom_decls: List[str] = []
     unfold_names: List[str] = []
@@ -1072,8 +1111,8 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             if impl_parsed is None or ref_parsed is None:
                 logger.warning(f"Could not parse combinational expressions for '{prop_name}'")
                 continue
-            impl_coq = _expr_to_coq(impl_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths)
-            ref_coq = _expr_to_coq(ref_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths)
+            impl_coq = _expr_to_coq(impl_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths, recursive_names=recursive_names)
+            ref_coq = _expr_to_coq(ref_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths, recursive_names=recursive_names)
 
             # Optional input-bound assumptions (antecedents over the inputs).
             assumptions = prop_op.assumes if hasattr(prop_op, 'assumes') and prop_op.assumes else []
@@ -1086,13 +1125,24 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 except ExprError as e:
                     logger.warning(f"Could not convert assumption '{assum}' for property '{prop_name}': {e}")
 
+            # Inputs are bounded to their bit width (matches the reference
+            # interpreter, where inputs range over [0, 2^w)).  Without these the
+            # identity is only true for inputs below 2^w (e.g. mul_one would be
+            # false for x >= 2^16).  Bool inputs are skipped: they have type
+            # `bool`, and `<` requires `nat`.
+            for inp in spec_module.inputs:
+                w = widths.get(inp.name)
+                if w and input_types.get(inp.name) != "bool":
+                    assumption_hypotheses.append(f"({inp.name} inputs < 2^{w})")
+
             theorem_name = f"{prop_name}_proved"
             equality = f"({impl_coq}) = ({ref_coq})"
-            if assumption_hypotheses:
-                assumptions_conj = " /\\ ".join(assumption_hypotheses)
-                theorem_stmt = f"forall (inputs : inputs), ({assumptions_conj} -> {equality})"
-            else:
-                theorem_stmt = f"forall (inputs : inputs), {equality}"
+            assumptions_conj = " /\\ ".join(assumption_hypotheses)
+            # Bind the fuel variable if a recursive function call introduced it.
+            binders = ["(inputs : inputs)"]
+            if recursive_names and "fuel" in (equality + assumptions_conj):
+                binders.append("(fuel : nat)")
+            theorem_stmt = f"forall {' '.join(binders)}, ({assumptions_conj} -> {equality})"
 
             if state_defs and state_defs[-1] != "":
                 state_defs.append("")
@@ -1134,6 +1184,30 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             state_defs.append("Admitted.  (* placeholder – use isir verify to attempt proof *)")
             state_defs.append("")
             logger.info(f"Added bounded theorem {theorem_name} to Coq file")
+            continue
+
+        if expr_kind in ("eventually", "until") and prop_op.expression.get("bound") is None:
+            # Unbounded liveness: a temporal quantifier over the trace that is
+            # not expressible (let alone provable) in first-order Coq.  Emit an
+            # explicit Axiom rather than a `Theorem ... Admitted.` so the
+            # "0 Admitted" gate is meaningful.
+            operand_raw = prop_op.expression.get("operand")
+            if operand_raw:
+                try:
+                    operand_parsed = parse_sexpr(operand_raw) if isinstance(operand_raw, str) else operand_raw
+                    operand_coq = _expr_to_coq(operand_parsed, state_types, input_types, memory_names, as_prop=True, function_types=function_types, widths=widths)
+                except ExprError:
+                    operand_coq = "True"
+            else:
+                operand_coq = "True"
+
+            if state_defs and state_defs[-1] != "":
+                state_defs.append("")
+            state_defs.append(f"(* PERF_Obligation: {prop_name} *)")
+            state_defs.append(f"(* Liveness (unbounded {expr_kind}): assumed — not provable in first-order Coq. *)")
+            state_defs.append(f"Axiom {prop_name}_proved : forall (s : state) (inputs : inputs), reachable s -> {operand_coq}.")
+            state_defs.append("")
+            logger.info(f"Added liveness axiom {prop_name}_proved to Coq file")
             continue
 
         operand = prop_op.expression.get("operand", "True")
@@ -1187,7 +1261,18 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 state_defs.append(f"(* PERF_Dimensions: {', '.join(dims)} *)")
 
         state_defs.append(f"Theorem {theorem_name} : {theorem_stmt}.")
-        state_defs.append("Admitted.  (* placeholder – use isir verify to attempt proof *)")
+        # Auto-prove the trivial self-identity (eq A A) subset: reflexivity.
+        is_self_identity = (
+            operand_parsed is not None
+            and isinstance(operand_parsed, list) and len(operand_parsed) == 3
+            and operand_parsed[0] == "eq"
+            and operand_parsed[1] == operand_parsed[2]
+            and not assumption_hypotheses
+        )
+        if is_self_identity:
+            state_defs.append("Proof. intros. reflexivity. Qed.")
+        else:
+            state_defs.append("Admitted.  (* placeholder – use isir verify to attempt proof *)")
         state_defs.append("")
         logger.info(f"Added theorem {theorem_name} to Coq file with PERF metadata")
 

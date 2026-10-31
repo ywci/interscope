@@ -148,7 +148,7 @@ module:
         - (and (le x 255) (le y 255))
       expression:
         kind: combinational
-        operand: (le (mul_exact x y) (mul 255 255))
+        operand: (le (mul_exact x y) 65025)
         reference: true
   proof_obligations:
     - property: count_in_range
@@ -163,29 +163,57 @@ module:
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: mul_commutative
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: mul_distributive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: mul_distributive
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: mul_zero
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: mul_zero
       status: unproved
       engine: theorem_proving
+      backend: acl2
+    - property: mul_one
+      status: unproved
+      engine: theorem_proving
       backend: koika
     - property: mul_one
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: truncation_definitional
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: truncation_definitional
       status: unproved
       engine: theorem_proving
+      backend: acl2
+    - property: overflow_definitional
+      status: unproved
+      engine: theorem_proving
       backend: koika
     - property: overflow_definitional
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: unsigned_max_bound
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: unsigned_max_bound
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: acl2
     - property: count_in_range
       engine: model_checking

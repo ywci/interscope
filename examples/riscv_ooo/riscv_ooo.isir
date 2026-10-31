@@ -233,6 +233,10 @@ module:
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: branch_detected
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: flush_detected
       status: unproved
       engine: theorem_proving

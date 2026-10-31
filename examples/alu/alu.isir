@@ -255,34 +255,66 @@ module:
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: add_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: sub_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: sub_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: and_correctness
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: and_correctness
       status: unproved
       engine: theorem_proving
+      backend: acl2
+    - property: or_correctness
+      status: unproved
+      engine: theorem_proving
       backend: koika
     - property: or_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: cmp_correctness
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: cmp_correctness
       status: unproved
       engine: theorem_proving
+      backend: acl2
+    - property: xor_correctness
+      status: unproved
+      engine: theorem_proving
       backend: koika
     - property: xor_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: shl_correctness
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: shl_correctness
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: acl2
     - property: shr_correctness
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: shr_correctness
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     # NOTE: overflow_implies_result_neq_sum / sub_overflow_implies_result_neq_diff
     # are deliberately NOT theorem_proving obligations. Under the current
     # lowering (bits<N> -> unbounded nat, add/sub -> Nat.+/-), result_reg is

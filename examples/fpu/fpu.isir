@@ -75,6 +75,7 @@ module:
     - name: flip_sign_bit
       params: [{name: x, type: "bits<16>"}]
       return: "bits<16>"
+      body: (xor x 32768)
 
     - name: fadd
       params: [{name: x, type: "bits<16>"}, {name: y, type: "bits<16>"}]
@@ -202,39 +203,79 @@ module:
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: fsub_equals_negated_fadd
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: flip_sign_involutive
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: flip_sign_involutive
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: add_commutes
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: add_commutes
       status: unproved
       engine: theorem_proving
+      backend: acl2
+    - property: mul_commutes
+      status: unproved
+      engine: theorem_proving
       backend: koika
     - property: mul_commutes
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: signed_infinity_pattern
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: signed_infinity_pattern
       status: unproved
       engine: theorem_proving
+      backend: acl2
+    - property: signed_zero_pattern
+      status: unproved
+      engine: theorem_proving
       backend: koika
     - property: signed_zero_pattern
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: quiet_nan_pattern
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: quiet_nan_pattern
       status: unproved
       engine: theorem_proving
+      backend: acl2
+    - property: fmul_inf_zero_is_nan
+      status: unproved
+      engine: theorem_proving
       backend: koika
     - property: fmul_inf_zero_is_nan
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: fdiv_inf_inf_is_nan
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: fdiv_inf_inf_is_nan
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: acl2
     - property: fsqrt_negative_inf_is_nan
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: fsqrt_negative_inf_is_nan
+      status: unproved
+      engine: theorem_proving
+      backend: acl2

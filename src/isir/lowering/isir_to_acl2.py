@@ -129,11 +129,17 @@ def _contains_temporal(sexpr: Any) -> bool:
 
 
 def _state_access(idx: int, state_var: str, trace_stepn: Optional[str],
-                  trace_ct: Optional[str], inputs_str: str) -> str:
+                  trace_ct: Optional[str], inputs_str: str,
+                  mem_var: Optional[str] = None) -> str:
     """State access: `(nth idx st)` in single-cycle mode, or
-    `(nth idx (stepn <ct> st <inputs>))` in trace (temporal) mode."""
+    `(nth idx (stepn <ct> st <inputs> [mem]))` in trace (temporal) mode."""
     if trace_stepn:
-        return f"(nth {idx} ({trace_stepn} {trace_ct} st {inputs_str}))"
+        mem_arg = f" {mem_var}" if mem_var else ""
+        stepn_call = f"({trace_stepn} {trace_ct} {state_var} {inputs_str}{mem_arg})"
+        if mem_var:
+            # Memory design: stepn returns (cons st mem); the state is the car.
+            stepn_call = f"(car {stepn_call})"
+        return f"(nth {idx} {stepn_call})"
     return f"(nth {idx} {state_var})"
 
 
@@ -299,7 +305,7 @@ def _expr_to_acl2(expr: Any,
             raise ExprError("read expects a state name string")
         if name in state_indices:
             idx = state_indices[name]
-            return _state_access(idx, state_var, trace_stepn, trace_ct, " ".join(inputs))
+            return _state_access(idx, state_var, trace_stepn, trace_ct, " ".join(inputs), mem_var if memory_names else None)
         if name in inputs:
             return name
         raise ExprError(f"Unknown state or input '{name}' in expression")
@@ -349,6 +355,18 @@ def _expr_to_acl2(expr: Any,
         # Unknown operator: treat as a user function call (bodyless function,
         # e.g. partial_spec).  Defined functions are inlined before lowering.
         acl2_args = [_expr_to_acl2(a, state_indices, memory_names, inputs, widths, state_types, input_types, state_var, function_info, local_names, trace_stepn, trace_ct, mem_var) for a in args]
+        if function_info and op in function_info:
+            # Recursive function: fuel-based defun `(op fuel a b ...)`.  Use the
+            # declared measure (with arguments substituted, evaluated as a
+            # natural) as a SUFFICIENT fuel so exact-value properties are sound;
+            # fall back to a free fuel when no measure is declared.
+            params, measure_expr = _RECURSIVE_MEASURES.get(op, ([], None))
+            if measure_expr is not None:
+                sub = {params[i]: args[i] for i in range(min(len(params), len(args)))}
+                fuel = _expr_to_acl2(_subst_sexpr(measure_expr, sub), state_indices, memory_names, inputs, None, None, None, state_var, function_info, local_names, trace_stepn, trace_ct, mem_var)
+            else:
+                fuel = "fuel"
+            return f"({op} {fuel} {' '.join(acl2_args)})"
         return f"({op} {' '.join(acl2_args)})"
 
 
@@ -424,7 +442,20 @@ def _maybe_auto_hint(prop_op: isir.SpecPropertyOp,
     in_args = " ".join(input_names)
 
     if prop_op.kind in ("safety", "invariant") or expr_kind == "transition":
-        return [f'("Goal" :induct ({step_name}n n st {in_args}))']
+        # Self-identity (eq A A) is a reflexivity: no induction needed.
+        operand_raw = prop_op.expression.get("operand")
+        if operand_raw:
+            try:
+                op_parsed = parse_sexpr(operand_raw)
+                if (isinstance(op_parsed, list) and len(op_parsed) == 3
+                        and op_parsed[0] == "eq" and op_parsed[1] == op_parsed[2]):
+                    return None
+            except ExprError:
+                pass
+        # Otherwise: induct on the invariant-preservation trace from init.
+        mem_arg = " mem" if memory_names else ""
+        init_name = step_name[:-4] + "init" if step_name.endswith("_step") else "init_state"
+        return [f'("Goal" :induct ({step_name}n t {init_name} {in_args}{mem_arg}))']
     if expr_kind in ("eventually", "until") and prop_op.expression.get("bound") is not None:
         return ['("Goal" :induct n)']
     if expr_kind == "combinational":
@@ -484,6 +515,18 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
     recursive_names: Set[str] = {
         f.get("name") for f in functions if f.get("body") is not None and f.get("recursive") and f.get("name")
     }
+    global _RECURSIVE_MEASURES
+    _RECURSIVE_MEASURES = {}
+    for f in functions:
+        fname = f.get("name")
+        if fname and f.get("body") is not None and f.get("recursive") and f.get("measure"):
+            params = [pp.get("name") for pp in (f.get("params") or [])]
+            measure_raw = f.get("measure")
+            try:
+                measure_parsed = parse_sexpr(measure_raw) if isinstance(measure_raw, str) else measure_raw
+                _RECURSIVE_MEASURES[fname] = (params, measure_parsed)
+            except ExprError:
+                pass
 
     # 2. Build the transition function
     schedule_kind = spec_module.schedule_op.kind if spec_module.schedule_op else "parallel"
@@ -666,6 +709,11 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
     temporal_defuns: List[acl2.ACL2DefunOp] = []
     defun_sk_ops: List[acl2.ACL2DefunSkOp] = []
     for po in spec_module.proof_obligations:
+        # Honor the `backend` field (mirror isir_to_koika): only obligations
+        # explicitly tagged `acl2` are lowered to ACL2 theorems.
+        backend = (_po_backend(po) or "").lower().replace("ō", "o")
+        if backend != "acl2":
+            continue
         prop_name = _po_property(po)
         if not prop_name:
             continue
@@ -694,7 +742,13 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
                 # functional identity: (equal impl reference)
                 impl = _expr_to_acl2(parse_sexpr(_unfold(operand)), state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names)
                 ref = prop_op.expression.get("reference", None)
-                ref_acl2 = _expr_to_acl2(parse_sexpr(_unfold(ref)), state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names) if ref else "t"
+                ref_acl2 = _expr_to_acl2(parse_sexpr(_unfold(ref)), state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names) if (ref is not None and ref != "") else "t"
+                # Inputs are bounded to their bit width (matches the reference).
+                for inp in spec_module.inputs:
+                    w = widths.get(inp.name)
+                    if w:
+                        assumes_acl2.append(f"(natp {inp.name})")
+                        assumes_acl2.append(f"(< {inp.name} (expt 2 {w}))")
                 prop_acl2 = f"(equal {impl} {ref_acl2})"
             elif expr_kind == "transition":
                 # operand holds when the scoped rule fires; add the rule's
@@ -795,15 +849,23 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
                         ))
                         prop_acl2 = f"({fn} n st {inputs_str})"
             else:
-                # safety / invariant / always: operand holds in every cycle.
+                # safety / invariant / always: the operand holds in every
+                # reachable state, i.e. at every cycle t of the trace from the
+                # initial state (sound — mirrors Koika's `reachable s -> P`).
                 if operand:
                     operand_parsed = parse_sexpr(_unfold(operand))
-                    if _contains_temporal(operand_parsed):
-                        # temporal operand: quantify over the trace cycle t.
-                        prop_acl2 = _expr_to_acl2(operand_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names, trace_stepn=f"{spec_module.name}_stepn", trace_ct="t")
-                        assumes_acl2.insert(0, "(natp t)")
-                    else:
-                        prop_acl2 = _expr_to_acl2(operand_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names)
+                    tr = f"{spec_module.name}_stepn"
+                    init = f"{spec_module.name}_init"
+                    prop_acl2 = _expr_to_acl2(operand_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names, trace_stepn=tr, trace_ct="t", state_var=init)
+                    # Re-lower the assumes over the same trace state.
+                    assumes_acl2 = []
+                    for assume in prop_op.assumes:
+                        try:
+                            assume_parsed = parse_sexpr(_unfold(assume))
+                            assumes_acl2.append(_expr_to_acl2(assume_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names, trace_stepn=tr, trace_ct="t", state_var=init))
+                        except ExprError:
+                            pass
+                    assumes_acl2.insert(0, "(natp t)")
                 else:
                     prop_acl2 = "t"
         except ExprError as e:
@@ -829,7 +891,8 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             thm_name=f"{prop_name}_correct",
             statement=statement,
             hints=hints_list,
-            skip_proofs=True
+            skip_proofs=True,
+            rule_classes_nil=True,
         )
         defthms.append(defthm)
 
@@ -917,6 +980,30 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         )
 
     defuns.extend(temporal_defuns)
+
+    # 4c. Domain lemmas used by the proof obligations (mod bounds).
+    domain_lemmas = [
+        acl2.ACL2DefthmOp(
+            thm_name="isir-mod-<=-x",
+            statement="(implies (and (integerp x) (integerp y) (<= 0 x) (< 0 y)) (<= (mod x y) x))",
+            hints=['("Goal" :in-theory (enable mod))'],
+            rule_classes=[":linear"],
+        ),
+        acl2.ACL2DefthmOp(
+            thm_name="isir-mod-x-y-x",
+            statement="(implies (and (integerp x) (integerp y) (<= 0 x) (< x y)) (equal (mod x y) x))",
+            hints=['("Goal" :in-theory (enable mod))'],
+            rule_classes=[":rewrite"],
+        ),
+        acl2.ACL2DefthmOp(
+            thm_name="isir-natp-mod",
+            statement="(implies (and (integerp x) (integerp y) (< 0 y)) (natp (mod x y)))",
+            hints=['("Goal" :in-theory (enable mod))'],
+            rule_classes=[":rewrite", ":type-prescription"],
+        ),
+    ]
+    for lemma in domain_lemmas:
+        raw_forms.append(lemma.to_lisp())
 
     # 5. Build the ACL2 module
     acl2_mod = acl2.ACL2Module(

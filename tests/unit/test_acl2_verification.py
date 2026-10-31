@@ -60,6 +60,14 @@ class TestRepresentativeLoads:
         out, rc = _load(km)
         assert rc == 0, f"{name} ACL2 load failed (exit {rc})"
         assert "FAILED" not in out, f"{name} generated code FAILED:\n{out[-2000:]}"
+        # The two checks above miss the skip-proofs :rewrite rejection: ACL2
+        # exits 0 and prints "ACL2 Error ... :STOP-LD" (not "FAILED").  Guard
+        # against any early stop and verify the load reaches the final event.
+        assert "ACL2 Error" not in out, f"{name} had an ACL2 Error (load may have stopped):\n{out[-2000:]}"
+        assert ":STOP-LD" not in out, f"{name} load stopped early (:STOP-LD):\n{out[-2000:]}"
+        if km.defthms:
+            last = km.defthms[-1].thm_name
+            assert last.upper() in out, f"{name} load did not reach final defthm {last}:\n{out[-1500:]}"
 
 
 class TestDifferentialAgrees:

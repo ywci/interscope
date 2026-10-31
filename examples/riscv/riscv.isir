@@ -312,10 +312,18 @@ module:
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: pc_nonneg_after_3
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: branch_detected
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: branch_detected
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: pc_predicts
       status: unproved
       engine: theorem_proving

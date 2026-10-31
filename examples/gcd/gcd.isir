@@ -98,26 +98,26 @@ module:
       kind: combinational
       expression:
         kind: combinational
-        operand: (gcd x y)
-        reference: (gcd y x)
+        operand: (gcd_sub x y)
+        reference: (gcd_sub y x)
     - name: gcd_diag
       kind: combinational
       expression:
         kind: combinational
-        operand: (gcd x x)
+        operand: (gcd_sub x x)
         reference: x
     - name: gcd_sub_computes
       kind: combinational
       expression:
         kind: combinational
-        operand: (gcd_sub 10 6 4)
+        operand: (gcd_sub 10 6)
         reference: 2
     - name: gcd_sub_step
       kind: combinational
       expression:
         kind: combinational
-        operand: (gcd_sub 10 6 4)
-        reference: (gcd_sub 9 2 4)
+        operand: (gcd_sub 10 6)
+        reference: (gcd_sub 4 6)
   proof_obligations:
     - property: done_implies_equal
       status: unproved
@@ -135,17 +135,33 @@ module:
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: gcd_commutes
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: gcd_diag
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: gcd_diag
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
+    - property: gcd_sub_computes
       status: unproved
       engine: theorem_proving
       backend: koika
     - property: gcd_sub_computes
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: acl2
     - property: gcd_sub_step
       status: unproved
       engine: theorem_proving
       backend: koika
+    - property: gcd_sub_step
+      status: unproved
+      engine: theorem_proving
+      backend: acl2
     - property: done_implies_equal
       engine: model_checking

@@ -158,6 +158,7 @@ def eval_expr(expr: Union[str, List],
     return _eval_internal(parsed, state, inputs, memories, previous_state, next_state, width, widths)
 
 
+
 def _eval_internal(expr: Any,
                    state: Dict[str, Any],
                    inputs: Dict[str, Any],

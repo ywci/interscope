@@ -170,7 +170,9 @@ class TestAcl2TheoremGeneration:
         thm = acl2_mod.defthms[0]
         assert thm.thm_name == "count_bound_correct"
         assert "implies" in thm.statement
-        assert "(<= (nth 0 st) 255)" in thm.statement
+        # sound: the bound holds at every cycle t of the trace from init
+        assert "(counter_stepn t counter_init" in thm.statement
+        assert "(<= (nth 0 (car (counter_stepn t counter_init" in thm.statement
 
     def test_hints_from_metadata(self):
         acl2_mod = isir_to_acl2.convert(create_basic_spec_module())
@@ -391,7 +393,7 @@ class TestTemporalConstructs:
             inputs=[], outputs=[],
             property_ops=[SpecPropertyOp(prop_name="r_reaches", kind="safety",
                           expression={"kind": "eventually", "bound": 5, "operand": "(eq (read r) 3)"})],
-            proof_obligations=[{"property": "r_reaches"}],
+            proof_obligations=[{"property": "r_reaches", "backend": "acl2"}],
         )
         km = isir_to_acl2.convert(spec)
         ev = next(d for d in km.defuns if d.func_name == "r_reaches_eventually")
@@ -415,7 +417,7 @@ class TestUnboundedLiveness:
                 SpecPropertyOp(prop_name="r_then_5", kind="liveness",
                                expression={"kind": "until", "left": "(lt (read r) 5)", "right": "(eq (read r) 5)"}),
             ],
-            proof_obligations=[{"property": "r_reaches_3"}, {"property": "r_then_5"}],
+            proof_obligations=[{"property": "r_reaches_3", "backend": "acl2"}, {"property": "r_then_5", "backend": "acl2"}],
             fairness=[{"name": "r_fair", "type": "weak", "condition": "(lt (read r) 4)"}],
         )
 
@@ -460,9 +462,18 @@ class TestProofAutomation:
         assert "(skip-proofs" in thms[0].to_lisp()
 
     def test_safety_hint_uses_stepn(self):
-        km = isir_to_acl2.convert(self._gcd())
-        done = next(t for t in km.defthms if t.thm_name == "done_implies_equal_correct")
-        assert "gcd_stepn" in " ".join(done.hints)
+        from isir.dialects.isir import SpecModule, SpecStateOp, SpecRuleOp, SpecPropertyOp
+        spec = SpecModule(
+            name="st", state_ops=[SpecStateOp(state_name="c", kind="register", data_type="bits<8>")],
+            rule_ops=[SpecRuleOp(rule_name="tick", condition="t", actions=["(write c (add (read c) 1))"])],
+            inputs=[], outputs=[],
+            property_ops=[SpecPropertyOp(prop_name="c_bound", kind="safety",
+                          expression={"kind": "always", "operand": "(le (read c) 255)"})],
+            proof_obligations=[{"property": "c_bound", "backend": "acl2"}],
+        )
+        km = isir_to_acl2.convert(spec)
+        done = next(t for t in km.defthms if t.thm_name == "c_bound_correct")
+        assert "st_stepn" in " ".join(done.hints)
 
     def test_code_is_self_contained(self):
         km = isir_to_acl2.convert(self._gcd())

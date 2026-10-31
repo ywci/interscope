@@ -69,6 +69,7 @@ class ACL2DefthmOp(Operation):
     enabled: bool = True
     axiom: bool = False               # True => defaxiom (unproved)
     skip_proofs: bool = False         # True => wrap in (skip-proofs ...)
+    rule_classes_nil: bool = False    # True => :rule-classes nil (no rewrite rule)
 
     def __str__(self) -> str:
         hints_str = " ".join(self.hints)
@@ -77,8 +78,15 @@ class ACL2DefthmOp(Operation):
     def to_lisp(self) -> str:
         """Loadable ACL2 `(defthm ...)` / `(defaxiom ...)` / `(skip-proofs ...)`."""
         head = "defaxiom" if self.axiom else "defthm"
+        extra = []
         if self.hints:
-            form = f"({head} {self.thm_name}\n  {self.statement}\n  :hints ({' '.join(self.hints)}))"
+            extra.append(f":hints ({' '.join(self.hints)})")
+        if self.rule_classes_nil:
+            extra.append(":rule-classes nil")
+        elif self.rule_classes:
+            extra.append(f":rule-classes ({' '.join(self.rule_classes)})")
+        if extra:
+            form = f"({head} {self.thm_name}\n  {self.statement}\n  {' '.join(extra)})"
         else:
             form = f"({head} {self.thm_name}\n  {self.statement})"
         if self.skip_proofs and not self.axiom:

@@ -292,6 +292,7 @@ run_verify_semantics() {
 run_verify_acl2() {
     log_info "Verifying ISIR -> ACL2 (books + lowering + differential + examples)..."
     PYTHONPATH=src .venv/bin/python -m pytest \
+        tests/unit/test_combinational_check.py \
         tests/unit/test_acl2_semantics.py \
         tests/unit/test_acl2_refinement.py \
         tests/unit/test_isir_to_acl2.py \
