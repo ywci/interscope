@@ -288,48 +288,48 @@ module:
     - property: cache_l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: cache_l1d_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: cache_l1i_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: cache_l1i_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: ooo_lsu_l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: ooo_lsu_l1d_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: pc_increments
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: itlb_hit_sets_i_pa
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: dtlb_hit_sets_pa
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: l2_miss_issues_axi
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: tlb_miss_triggers_ptw
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: ptw_read_is_pipt
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

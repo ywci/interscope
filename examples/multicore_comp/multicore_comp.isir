@@ -241,88 +241,88 @@ module:
     - property: core0_cache_l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core0_cache_l1d_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core0_cache_l1i_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core0_cache_l1i_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core0_ooo_lsu_l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core0_ooo_lsu_l1d_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core1_cache_l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core1_cache_l1d_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core1_cache_l1i_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core1_cache_l1i_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core1_ooo_lsu_l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core1_ooo_lsu_l1d_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: e_at_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: has_at_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: home_is_exclusive_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: home_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: m_at_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core0_pc_increments
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: core1_pc_increments
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: single_writer
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: m_exclusive
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: e_exclusive
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

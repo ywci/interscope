@@ -439,51 +439,51 @@ module:
     - property: rn0_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_l1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_l1_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_l1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_l1_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: slice0_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: slice0_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: slice1_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: slice1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
   invariants:
     # SWMR over the RNs' L1D MESI: at most one core holds M at an address.
     - name: single_writer

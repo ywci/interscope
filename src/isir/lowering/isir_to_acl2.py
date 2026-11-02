@@ -712,7 +712,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         # Honor the `backend` field (mirror isir_to_koika): only obligations
         # explicitly tagged `acl2` are lowered to ACL2 theorems.
         backend = (_po_backend(po) or "").lower().replace("ō", "o")
-        if backend != "acl2":
+        if backend not in ("acl2", "koika_acl2"):
             continue
         prop_name = _po_property(po)
         if not prop_name:
@@ -911,6 +911,30 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         # Axiom `forall` binders stay free variables: `_expr_to_acl2` returns
         # unknown names bare, so the defaxiom keeps them universally quantified.
         defthms.append(acl2.ACL2DefthmOp(thm_name=aname, statement=stmt_acl2, axiom=True))
+
+    # 4b2. Invariants (loop invariants / shared lemmas for the koika_acl2
+    #       co-work backend): admitted defthms over the reachable trace, usable
+    #       as rewrite rules by the safety/invariant properties.
+    for inv in spec_module.invariants:
+        iname = inv.get("name")
+        operand = inv.get("operand")
+        if not iname or not operand:
+            continue
+        try:
+            inv_parsed = parse_sexpr(_unfold(operand))
+            tr = f"{spec_module.name}_stepn"
+            init = f"{spec_module.name}_init"
+            inv_acl2 = _expr_to_acl2(inv_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names, trace_stepn=tr, trace_ct="t", state_var=init)
+        except ExprError as e:
+            logger.warning(f"Could not translate invariant '{iname}': {e}")
+            continue
+        mem_arg = " mem" if has_mem else ""
+        defthms.append(acl2.ACL2DefthmOp(
+            thm_name=iname,
+            statement=f"(implies (natp t) {inv_acl2})",
+            hints=[f'("Goal" :induct ({tr} t {init} {inputs_str}{mem_arg}))'],
+            skip_proofs=True,
+        ))
 
     # 4c. Directives: assume -> hypothesis (added to every property below);
     #     assert/cover -> a theorem of the directive expression.

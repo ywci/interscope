@@ -131,7 +131,7 @@ module:
     - property: fifo_bound
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: write_ptr_self
       status: unproved
       engine: theorem_proving

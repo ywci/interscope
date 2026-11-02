@@ -70,9 +70,11 @@ def _llm_available(config_path: Path) -> bool:
             return False
 
     if provider in ("openai", "deepseek", "anthropic"):
-        env_var = f"{provider.upper()}_API_KEY"
-        api_key = cfg.get("llm", {}).get("api_key", "") or os.environ.get(env_var, "")
-        return bool(api_key)
+        # Reuse the production key resolution so this check stays consistent
+        # with llm_client.resolve_api_key (env-var auto-detect + placeholder
+        # fallback) instead of hand-rolling os.environ.get.
+        from isir.backends.llm_client import resolve_api_key
+        return resolve_api_key(provider, cfg.get("llm", {}).get("api_key")) is not None
 
     return True
 

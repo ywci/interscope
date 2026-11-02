@@ -288,43 +288,43 @@ module:
     - property: home_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: home_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_l1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_l1_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_l1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_l1_phys_index_bounded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
   invariants:
     - name: single_writer
       operand: (not (and (and (is_modified (read c0_mstate_signal)) (is_modified (read c1_mstate_signal)))

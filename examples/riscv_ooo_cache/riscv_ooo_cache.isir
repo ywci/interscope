@@ -847,132 +847,132 @@ module:
     - property: ic_lru_bool
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: l2_lru_bool
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: tlb_lru_bool
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: tlb_hit_way0_updates_lru
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: tlb_miss_fills_lru_way0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: dc_lru_bool
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: load_dc_hit
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: load_dc_miss_fills
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: store_writes_dc
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: fetch_sets_arvalid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: fetch_sets_araddr
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: fill_l1_tags_with_ppn
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: mem_response_fills_l2_way0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: mem_response_fills_l2_way1
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: mem_response_clears_arvalid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: store_allocates_rob
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: store_data_in_rob
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: store_commit_issues_write
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: store_commit_sets_awaddr
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: load_allocates_rob
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: load_addr_in_rob
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: load_exec_issues_read
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: load_response_completes_load
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: load_commit_writes_back
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: store_load_forward
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: forwarded_load_no_read
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: write_response_completes
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: fill_l1_fills_way0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: fill_l1_fills_way1
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: issue_hit_delivers_rob0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: issue_way0_hit_updates_lru
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: l1_hit_leaves_l2_lru
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: commit_in_order
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

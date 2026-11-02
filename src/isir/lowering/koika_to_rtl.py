@@ -250,8 +250,12 @@ def _find_or_build_koika_coq_path(koika_dir: str) -> Tuple[str, str]:
         return path, flag
 
     logger.info("Kōika Coq libraries not found; building and installing them now...")
+    # `make configure` regenerates the per-directory `dune.inc` files that
+    # examples/dune and tests/dune `(include ...)`; they are gitignored, so a
+    # fresh clone lacks them and `dune build @install` would otherwise fail with
+    # "File examples/dune.inc doesn't exist".
     _run_in_opam_env(
-        f"cd {koika_dir} && dune build @install && dune install",
+        f"cd {koika_dir} && make configure && dune build @install && dune install",
         timeout=600
     )
 

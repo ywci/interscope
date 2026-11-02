@@ -57,7 +57,7 @@ module:
     - property: counter_bound
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: no_overflow_when_not_full
       status: unproved
       engine: theorem_proving
@@ -65,7 +65,7 @@ module:
     - property: count_increments
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: counter_bound
       engine: model_checking
     - property: no_overflow_when_not_full

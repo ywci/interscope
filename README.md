@@ -6,7 +6,7 @@ The project provides:
 
 - A **YAML‑based specification language** (`.isir` files).
 - **Unified assertion dialect** lowering to SVA, VHDL PSL, or Verilog OVL.
-- **Dual proof backends** (Kōika/Coq + ACL2) with LLM‑assisted proof generation and iterative repair.
+- **Dual proof backends** (Kōika/Coq + ACL2) with LLM‑assisted proof generation and iterative repair, plus a **co‑work backend** (`koika_acl2`) that proves hard sub‑goals concurrently in both assistants.
 - **Model checking** of generated assertions using SymbiYosys (sby).
 - **Trace lifting** from Verilator VCD simulations back to abstract ISIR traces.
 - **Two independent ISIR→RTL lowering paths** — a self-contained *direct* (short) path and the *Kōika* (long) path — plus a **differential harness** that replays both and reports agreement, and a **reference interpreter** that cross-checks the direct path semantically (currently 72/72 example designs agree).
@@ -153,7 +153,7 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 | `./run.sh --test unit\|integration\|all` | Run the unit / integration / full test suites. |
 | `./run.sh --verify-examples [--backend NAME]` | Verify every `.isir` under `examples/` and print a pass/fail summary. Defaults to the `koika` backend; use `--backend` to pick another. |
 | `./run.sh --verify-semantics` | Type-check the ISIR Coq semantics (`src/semantics/isir.v` + `koika/*.v`). |
-| `./run.sh --verify-acl2` | Verify the ISIR to ACL2 path: books load, lowering of all examples, differential check, example `ld`. |
+| `./run.sh --verify-acl2` | Verify the ISIR to ACL2 path: books load, combinational proof gate, lowering, differential check, candidate RTL conformance, example `ld`. |
 | `./run.sh --refine-check <file> ...` | Lowering-refinement evidence per item. |
 | `./run.sh --validate-config` | Validate `config.yaml` (checks for conflicting settings such as PERF + proof‑library cache). |
 | `./run.sh --clean` | Remove build artifacts (`build/`, `*.pyc`, Coq `.vo`/`.glob`/etc.). |
@@ -172,6 +172,7 @@ For compatibility, the old `--command` style is still accepted. The newer unifie
 **Additional flags**
 
 - `--show-proof` : When verifying, print the complete proof script for each successful obligation.
+- `--candidate-rtl <file.v>` (verify) : Check an externally generated Candidate RTL against the spec's safety properties (RTL Conformance / Mode B).
 - `--no-llm` : Disable LLM assistance (use built‑in provers only) – useful for fast integration tests.
 - `--assert-lang sva|vhdl|verilog_ovl` (for `--compile` with `--backend assert`): choose the target assertion language.
 - `--cycles N` : Override the simulation cycle count.
@@ -195,6 +196,40 @@ Flags `--perf`, `--no-perf`, `--perf-stats`, `--no-pareto`, `--no-trace-alignmen
 | `model_checking`  | Boolean safety properties, complex control logic, multi‑rule designs     | No bit‑selects (`slice`) |
 | `koika`           | Single‑rule designs with simple arithmetic, alignment invariants         | Deeply nested `ite`, multiple rules |
 | `acl2`            | First‑order functional models; full single-cycle + temporal + liveness lowering | Deep inductive invariants/liveness are admitted with `skip-proofs` + hints and discharged by the prover |
+| `koika_acl2`      | Hard inductive invariants/sub‑goals where either assistant may close the proof | Needs both the Coq and ACL2 toolchains; LLM/MCP clients should be per‑thread |
+
+---
+
+### The `koika_acl2` co-work backend
+
+`koika_acl2` lowers each obligation to **both** Kōika/Coq and ACL2 and runs the two provers **concurrently**:
+
+- **first‑wins** — the first assistant to close the sub‑goal finishes it; the other's proved `auxiliary_lemmas` are shared back;
+- **shared reflection** — if both fail, their progress (sub‑goals, tactics, checkpoints) is merged and fed to the LLM reflection for a retry with a different approach.
+
+Tags: set `backend: koika_acl2` on a proof obligation. See `src/isir/verification/cowork.py` (`run_cowork` / `merge_cowork`) and the tagged examples (`counter`, `fifo`, `riscv_ooo_cache`, `multicore_comp`, `chi_noc_multicore`, `core_comp`, `chi_multicore`, `axi4_lite`).
+
+---
+
+### Property kinds, the `backend` field, and proof gates
+
+Each `proof_obligation` carries a `backend` tag that routes it to the right prover:
+
+| Property kind | Recommended `backend` | Behaviour |
+|---|---|---|
+| `combinational`, `after`, `independence` | `acl2` | ground identities — ACL2 **proves** them (combinational proof gate) |
+| `safety`, `invariant`, `transition` | `koika` | inductive — lowered as `reachable s -> P` + hints, admitted and discharged by the prover |
+| hard inductive sub‑goals | `koika_acl2` | proved concurrently by both assistants (first‑wins) |
+
+A **proof gate** separates three states:
+
+- `Qed.` (Coq) / `Q.E.D` (ACL2) — **proved**;
+- `Admitted.` / `skip-proofs` / `Axiom` — **assumed** (the prover must discharge it);
+- a failing gate — the statement is **false**.
+
+`--verify-semantics` enforces the **0‑`Admitted`** gate on the Coq semantics books, and `--verify-acl2` enforces the **un‑skip + prove** gate on the combinational identities. Self‑identity properties (`(= x x)`) are auto‑proved by reflexivity in both backends.
+
+**Loop invariants** are declared under the `invariants:` key of an `.isir` file and lowered to both backends as lemmas. **Recursive functions** are lowered with a decrementing `fuel` argument so they terminate structurally; exact‑value properties use the declared `measure` (with arguments substituted) as the fuel.
 
 ---
 

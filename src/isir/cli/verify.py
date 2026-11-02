@@ -45,6 +45,8 @@ def _canonical_backend(backend: Optional[str]) -> Optional[str]:
     if not backend:
         return None
     b = backend.lower().replace("ō", "o")
+    if b in ("koika_acl2", "koika-acl2", "cowork", "co-work"):
+        return "koika_acl2"
     if b.startswith("koi"):
         return "koika"
     if b == "acl2":
@@ -64,7 +66,7 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("input", type=str, help="Path to the .isir file")
     parser.add_argument(
-        "--backend", "-b", choices=["koika", "acl2", "model_checking"], default=None,
+        "--backend", "-b", choices=["koika", "acl2", "model_checking", "koika_acl2"], default=None,
         help="Override backend for all obligations (otherwise uses obligation's backend)"
     )
     parser.add_argument("--out-dir", "-o", type=str, default=None,
@@ -380,6 +382,9 @@ def verify_spec(args: argparse.Namespace) -> int:
                 backends_needed.add("koika")
             elif canonical == "acl2":
                 backends_needed.add("acl2")
+            elif canonical == "koika_acl2":
+                backends_needed.add("koika")
+                backends_needed.add("acl2")
 
         if "koika" in backends_needed:
             coq_dir = out_dir / "coq"
@@ -429,6 +434,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             po_context = dict(context)  # copy
             po_context["obligation"] = po
 
+            cowork_result = None
             if canonical == "koika":
                 if "koika" not in backend_files:
                     logger.error("Coq file not generated; cannot prove.")
@@ -441,7 +447,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     continue
                 po_context["coq_file_path"] = backend_files["koika"]
                 po_context["theorem_name"] = f"{prop_name}_proved"
-            else:  # acl2
+            elif canonical == "acl2":
                 if "acl2" not in backend_files:
                     logger.error("ACL2 file not generated; cannot prove.")
                     results.append(ProofObligationResult(
@@ -455,19 +461,57 @@ def verify_spec(args: argparse.Namespace) -> int:
                 po_context["theorem_name"] = f"{prop_name}_correct"
                 statement = _extract_acl2_statement(acl2_mod, prop_name)
                 po_context["theorem_statement"] = statement
+            else:  # koika_acl2 co-work
+                if "koika" not in backend_files or "acl2" not in backend_files:
+                    logger.error("Coq/ACL2 files not generated; cannot co-work.")
+                    results.append(ProofObligationResult(
+                        property=prop_name,
+                        status=Status.ERROR,
+                        backend=canonical,
+                        error_message="Coq/ACL2 files missing"
+                    ))
+                    continue
+                po_context["coq_file_path"] = backend_files["koika"]
+                po_context["acl2_file_path"] = backend_files["acl2"]
+                po_context["theorem_statement"] = _extract_acl2_statement(acl2_mod, prop_name)
+                logger.info("Co-work (koika_acl2): dispatching both provers concurrently for '%s'", prop_name)
+                from isir.verification.cowork import run_cowork
+                koika_ctx = dict(po_context)
+                koika_ctx["theorem_name"] = f"{prop_name}_proved"
+                koika_ctx.pop("acl2_file_path", None)
+                koika_ctx.pop("theorem_statement", None)
+                acl2_ctx = dict(po_context)
+                acl2_ctx["theorem_name"] = f"{prop_name}_correct"
+                acl2_ctx.pop("coq_file_path", None)
+                cw = run_cowork(
+                    lambda: proof_skill.prove({**po, "backend": "koika"}, koika_ctx),
+                    lambda: proof_skill.prove({**po, "backend": "acl2"}, acl2_ctx),
+                )
+                cowork_result = ProofResult(
+                    success=cw.success,
+                    proof_script=cw.proof_script,
+                    error_message=cw.error_message,
+                    auxiliary_lemmas=cw.auxiliary_lemmas,
+                    metadata=cw.metadata,
+                    duration=time.time() - start_time,
+                    backend="koika_acl2",
+                )
 
-            try:
-                result: ProofResult = proof_skill.prove(po, po_context)
-            except Exception as e:
-                logger.error(f"Proof attempt for '{prop_name}' failed with exception: {e}")
-                results.append(ProofObligationResult(
-                    property=prop_name,
-                    status=Status.ERROR,
-                    backend=canonical,
-                    error_message=str(e),
-                    duration=time.time() - start_time
-                ))
-                continue
+            if cowork_result is not None:
+                result = cowork_result
+            else:
+                try:
+                    result: ProofResult = proof_skill.prove(po, po_context)
+                except Exception as e:
+                    logger.error(f"Proof attempt for '{prop_name}' failed with exception: {e}")
+                    results.append(ProofObligationResult(
+                        property=prop_name,
+                        status=Status.ERROR,
+                        backend=canonical,
+                        error_message=str(e),
+                        duration=time.time() - start_time
+                    ))
+                    continue
 
             duration = time.time() - start_time
             status = Status.PASS if result.success else Status.FAIL

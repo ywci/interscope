@@ -62,16 +62,26 @@ run_unit_tests() {
 
 run_integration_tests() {
     log_info "Running integration tests..."
-    PYTHONPATH=src .venv/bin/python -m pytest tests/integration -v \
-        -o "markers=${MARKER_DEF}" \
-        -W ignore::pytest.PytestUnknownMarkWarning
+    # Put the venv + Kōika opam switch on PATH so the integration tests can find
+    # rocq-mcp/coqc/koika (they probe these via shutil.which).
+    (
+        eval "$(opam env 2>/dev/null)"
+        export PATH="$SCRIPT_DIR/.venv/bin:$PATH"
+        PYTHONPATH=src .venv/bin/python -m pytest tests/integration -v \
+            -o "markers=${MARKER_DEF}" \
+            -W ignore::pytest.PytestUnknownMarkWarning
+    )
 }
 
 run_all_tests() {
     log_info "Running all tests..."
-    PYTHONPATH=src .venv/bin/python -m pytest tests/unit tests/integration -v \
-        -o "markers=${MARKER_DEF}" \
-        -W ignore::pytest.PytestUnknownMarkWarning
+    (
+        eval "$(opam env 2>/dev/null)"
+        export PATH="$SCRIPT_DIR/.venv/bin:$PATH"
+        PYTHONPATH=src .venv/bin/python -m pytest tests/unit tests/integration -v \
+            -o "markers=${MARKER_DEF}" \
+            -W ignore::pytest.PytestUnknownMarkWarning
+    )
 }
 
 run_clean() {
@@ -286,20 +296,29 @@ run_verify_semantics() {
              "$SCRIPT_DIR/src/semantics/koika/refinement_proofs.v") \
         || log_error "refinement_proofs.v failed to type-check"
 
-    log_success "ISIR Coq semantics type-checks (isir.v + koika/koika_correspondence.v + koika/refinement.v + koika/refinement_proofs.v)."
+    log_info "Verifying generated Coq (type-check + 0-Admitted gate)..."
+    PYTHONPATH=src .venv/bin/python -m pytest \
+        tests/unit/test_koika_combinational.py \
+        tests/unit/test_coq_verify.py -v \
+        -W ignore::pytest.PytestUnknownMarkWarning \
+        || log_error "generated-Coq verification failed"
+    log_success "ISIR Coq semantics type-checks (isir.v + koika/koika_correspondence.v + koika/refinement.v + koika/refinement_proofs.v) and the generated Coq passes the type-check + 0-Admitted gate."
 }
 
 run_verify_acl2() {
-    log_info "Verifying ISIR -> ACL2 (books + lowering + differential + examples)..."
+    log_info "Verifying ISIR -> ACL2 (books + lowering + differential + co-work + examples)..."
     PYTHONPATH=src .venv/bin/python -m pytest \
         tests/unit/test_combinational_check.py \
         tests/unit/test_acl2_semantics.py \
         tests/unit/test_acl2_refinement.py \
         tests/unit/test_isir_to_acl2.py \
-        tests/unit/test_acl2_verification.py -q \
+        tests/unit/test_acl2_verification.py \
+        tests/unit/test_acl2_combinational.py \
+        tests/unit/test_verify_candidate.py \
+        tests/unit/test_cowork.py -v \
         -W ignore::pytest.PytestUnknownMarkWarning \
         || log_error "ACL2 verification failed"
-    log_success "ISIR -> ACL2 verification passed (books load, lowering, differential, examples)."
+    log_success "ISIR -> ACL2 verification passed (books, combinational proof gate, lowering, differential, candidate RTL, koika_acl2 co-work, examples)."
 }
 
 show_help() {
@@ -315,7 +334,7 @@ ${BOLD}Global options:${RESET}
 
 ${BOLD}Commands:${RESET}
   --test unit|integration|all   Run tests
-  --verify-examples [flags]     Verify all examples/ (backend: koika by default)
+  --verify-examples [flags]     Verify all examples/ (backend: koika by default; also acl2, model_checking, koika_acl2)
   --verify-semantics            Type-check the ISIR Coq semantics
   --verify-acl2                Verify ISIR -> ACL2 (books, lowering, differential, examples)
   --refine-check <file> ...     Lowering-refinement evidence

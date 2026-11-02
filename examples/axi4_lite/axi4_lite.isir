@@ -169,36 +169,36 @@ module:
     - property: write_reg0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: write_reg1
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: write_reg2
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: write_reg3
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: write_responds
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: read_responds
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: read_data_correct
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: bvalid_held_until_bready
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rvalid_held_until_rready
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
