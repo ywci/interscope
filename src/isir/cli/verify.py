@@ -351,7 +351,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     w = _extract_width(outp.data_type)
                     if w is not None:
                         signal_widths[outp.name] = w
-                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths)
+                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths, bind_to=design_name)
                 assertions_file = assertions_dir / f"{design_name}_assertions.sv"
                 assertions_file.write_text(sva_code, encoding="utf-8")
             except Exception as e:
@@ -613,7 +613,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     w = _extract_width(outp.data_type)
                     if w is not None:
                         signal_widths[outp.name] = w
-                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths)
+                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths, bind_to=design_name)
                 assertions_file = assertions_dir / f"{design_name}_assertions.sv"
                 assertions_file.write_text(sva_code, encoding="utf-8")
             except Exception as e:

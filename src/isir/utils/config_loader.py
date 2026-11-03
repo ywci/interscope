@@ -256,7 +256,7 @@ def load_config(
 
     Args:
         config_path: Path to config.yaml. If None, uses <project_root>/conf/config.yaml,
-                     unless the environment variable SPECIR_CONFIG is set.
+                     unless the environment variable ISIR_CONFIG is set.
         force_reload: If True, reload the configuration even if already loaded.
         external_config_path: Optional path to an additional YAML file whose
                               contents will be deep‑merged into the main config.
@@ -275,7 +275,7 @@ def load_config(
         return _CONFIG
 
     if config_path is None:
-        env_path = os.environ.get("SPECIR_CONFIG")
+        env_path = os.environ.get("ISIR_CONFIG")
         if env_path:
             config_path = Path(env_path)
         else:

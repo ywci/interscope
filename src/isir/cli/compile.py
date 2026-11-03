@@ -500,7 +500,7 @@ def _compile_assert(spec_module, out_dir, args) -> List[BackendResult]:
     if args.assert_lang == "sva":
         converter = assert_to_sva_convert
         suffix = ".sv"
-        gen_func = lambda: converter(assert_mod, signal_widths=signal_widths)
+        gen_func = lambda: converter(assert_mod, signal_widths=signal_widths, bind_to=spec_module.name)
     elif args.assert_lang == "vhdl":
         converter = assert_to_vhdl_convert
         suffix = ".vhd"
@@ -521,11 +521,24 @@ def _compile_assert(spec_module, out_dir, args) -> List[BackendResult]:
         out_file = assert_dir / f"{spec_module.name}{suffix}"
         out_file.write_text(output_code, encoding="utf-8")
         logger.info(f"Assertions written to {out_file}")
+
+        # Also emit an inline assertion fragment (no module wrapper / bind) for
+        # SymbiYosys, which does not support SystemVerilog `bind`. The fragment
+        # is meant to be appended inside the generated RTL.
+        inline_file = None
+        if args.assert_lang == "sva":
+            from isir.lowering.assert_to_sva import convert_inline
+            inline_code = convert_inline(assert_mod, signal_widths=signal_widths)
+            inline_file = assert_dir / f"{spec_module.name}_inline{suffix}"
+            inline_file.write_text(inline_code, encoding="utf-8")
+            logger.info(f"Inline assertions written to {inline_file}")
+
         return [BackendResult(
             backend=args.assert_lang,
             success=True,
             duration=time.time() - start_gen,
-            output_file=str(out_file)
+            output_file=str(out_file),
+            metadata={"inline_file": str(inline_file)} if inline_file else {}
         )]
     except Exception as e:
         logger.error(f"Assertion generation failed: {e}")

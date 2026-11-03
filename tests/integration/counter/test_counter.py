@@ -125,7 +125,7 @@ def test_counter_verify_koika(counter_spec_path, build_dir):
 
     The proof library contains a verified proof for count_bound, so the
     verification should succeed without invoking the LLM.  A temporary
-    config is passed via the SPECIR_CONFIG environment variable to enable
+    config is passed via the ISIR_CONFIG environment variable to enable
     the library and prevent any LLM fallback.
     """
     conf_path = build_dir / "test_config.yaml"
@@ -141,7 +141,7 @@ def test_counter_verify_koika(counter_spec_path, build_dir):
     ]
 
     env = os.environ.copy()
-    env["SPECIR_CONFIG"] = str(conf_path)
+    env["ISIR_CONFIG"] = str(conf_path)
     result = subprocess.run(
         [sys.executable, "-m", "isir.cli.verify"] + cmd,
         capture_output=True,

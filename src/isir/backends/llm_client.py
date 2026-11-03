@@ -121,13 +121,28 @@ def resolve_api_base(provider: str, api_base: Optional[str] = None) -> Optional[
     provider = (provider or "").lower()
     base = (api_base or "").strip()
     if base:
-        return base
+        return _normalize_base_url(base)
 
     for env_var in PROVIDER_API_BASE_ENV.get(provider, ()):
         env_val = os.environ.get(env_var, "").strip()
         if env_val:
-            return env_val
+            return _normalize_base_url(env_val)
     return None
+
+
+def _normalize_base_url(url: str) -> str:
+    """Normalize an OpenAI-style base URL.
+
+    Strips a trailing ``/chat/completions`` / ``/completions`` segment so that a
+    value pointing at the full endpoint (e.g. ``https://api.deepseek.com/
+    chat/completions``) is reduced to the base the OpenAI SDK expects (the SDK
+    appends ``/chat/completions`` itself).
+    """
+    u = url.rstrip("/")
+    for suffix in ("/chat/completions", "/completions"):
+        if u.endswith(suffix):
+            return u[: -len(suffix)]
+    return u
 
 
 class LLMClientError(Exception):

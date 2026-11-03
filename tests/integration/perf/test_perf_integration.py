@@ -341,7 +341,7 @@ def test_perf_koika_alu(alu_spec_path, build_dir, perf_config_path):
         "--out-dir", str(build_dir / "verify"),
         "--perf",
     ]
-    env = {"SPECIR_CONFIG": str(perf_config_path)}
+    env = {"ISIR_CONFIG": str(perf_config_path)}
     result = _run_isir("verify", cmd, timeout=180, env=env)
 
     assert result.returncode in (0, 1), (
@@ -368,7 +368,7 @@ def test_perf_acl2_alu(alu_spec_path, build_dir, perf_config_path):
         "--out-dir", str(build_dir / "verify"),
         "--perf",
     ]
-    env = {"SPECIR_CONFIG": str(perf_config_path)}
+    env = {"ISIR_CONFIG": str(perf_config_path)}
     result = _run_isir("verify", cmd, timeout=180, env=env)
 
     assert result.returncode in (0, 1), (
@@ -396,7 +396,7 @@ def test_perf_with_model_checking_alu(alu_spec_path, build_dir, perf_config_path
         "--out-dir", str(build_dir / "verify"),
         "--perf",
     ]
-    env = {"SPECIR_CONFIG": str(perf_config_path)}
+    env = {"ISIR_CONFIG": str(perf_config_path)}
     result = _run_isir("verify", cmd, timeout=300, env=env)
 
     assert result.returncode in (0, 1), (
@@ -418,7 +418,7 @@ def test_perf_conflict_detection(alu_spec_path, build_dir, conflict_config_path)
         "--backend", "koika",
         "--out-dir", str(build_dir / "verify"),
     ]
-    env = {"SPECIR_CONFIG": str(conflict_config_path)}
+    env = {"ISIR_CONFIG": str(conflict_config_path)}
     result = _run_isir("verify", cmd, timeout=10, env=env)
 
     assert result.returncode != 0, "Expected conflict error but verification succeeded"
@@ -445,7 +445,7 @@ def test_perf_stats_flag_alu(alu_spec_path, build_dir, perf_config_path):
         "--perf",
         "--perf-stats",
     ]
-    env = {"SPECIR_CONFIG": str(perf_config_path)}
+    env = {"ISIR_CONFIG": str(perf_config_path)}
     result = _run_isir("verify", cmd, timeout=180, env=env)
 
     output = result.stdout + result.stderr

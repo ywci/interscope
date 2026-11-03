@@ -35,7 +35,7 @@ def _reset_config_state(monkeypatch):
     monkeypatch.setattr(config_loader, "_CONFIG", None)
     monkeypatch.setattr(config_loader, "_PROJECT_ROOT", None)
     for name in list(os.environ):
-        if name.startswith("PERF_") or name == "SPECIR_CONFIG":
+        if name.startswith("PERF_") or name == "ISIR_CONFIG":
             monkeypatch.delenv(name, raising=False)
     yield
 
@@ -407,7 +407,7 @@ class TestGetAndReloadConfig:
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 42}}
         )
-        monkeypatch.setenv("SPECIR_CONFIG", str(cfg_file))
+        monkeypatch.setenv("ISIR_CONFIG", str(cfg_file))
         cfg = reload_config()
         assert cfg["verification"]["bmc_max_depth"] == 42
 
@@ -415,7 +415,7 @@ class TestGetAndReloadConfig:
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 1}}
         )
-        monkeypatch.setenv("SPECIR_CONFIG", str(cfg_file))
+        monkeypatch.setenv("ISIR_CONFIG", str(cfg_file))
         assert load_config(config_path=cfg_file, force_reload=True)["verification"]["bmc_max_depth"] == 1
         _write_yaml(tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 2}})
         assert reload_config()["verification"]["bmc_max_depth"] == 2

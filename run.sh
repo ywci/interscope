@@ -24,13 +24,32 @@ if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
     export PATH="$SCRIPT_DIR/.venv/bin:$PATH"
 fi
 # Load optional local secrets/overrides (e.g. DEEPSEEK_API_KEY, DEEPSEEK_API_BASE)
-# from .env. These are needed by the LLM-dependent integration tests and PERF.
-if [[ -f "$SCRIPT_DIR/.env" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "$SCRIPT_DIR/.env"
-    set +a
-fi
+# from .env and shell profiles. These are needed by the LLM-dependent
+# integration tests and PERF. Only non-empty values are imported, and existing
+# environment variables are never overridden (so a real key in the environment
+# wins over an empty `KEY=""` placeholder in `.env`).
+_load_keyval_file() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    local line key value
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line#"${line%%[![:space:]]*}"}"   # ltrim
+        line="${line%"${line##*[![:space:]]}"}"   # rtrim
+        [[ -n "$line" && "$line" != \#* && "$line" == *"="* ]] || continue
+        line="${line#export }"
+        key="${line%%=*}"; value="${line#*=}"
+        # Only accept a plain identifier key (skips shell control lines such as
+        # `[ -x ... ] && eval "$(SHELL=...)"` found in .bashrc).
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        value="${value#\"}"; value="${value%\"}"
+        value="${value#\'}"; value="${value%\'}"
+        if [[ -n "$value" && -z "${!key:-}" && "$value" != *"\$"* ]]; then
+            export "$key=$value"
+        fi
+    done < "$file"
+}
+_load_keyval_file "$HOME/.bashrc"
+_load_keyval_file "$SCRIPT_DIR/.env"
 for var in \
     PERF_BEAM_SIZE PERF_BRANCHES PERF_DEPTH PERF_ENABLED \
     PERF_DIMENSIONS PERF_PRIMARY_DIMENSION PERF_TEMPERATURE \
@@ -46,8 +65,8 @@ do
 done
 
 check_uv() {
-    if ! command -v uv &>/dev/null; then
-        log_error "uv not found. Please run './install.sh' first."
+    if [[ ! -x ".venv/bin/python" ]]; then
+        log_error "Virtual environment not found. Please run './install.sh' first."
     fi
 }
 
@@ -220,7 +239,7 @@ run_verify_examples() {
     for f in "${examples[@]}"; do
         name="$(basename "$f" .isir)"
         if [[ $quiet -eq 1 ]]; then
-            if env PYTHONPATH=src uv run python -m isir.cli.verify \
+            if env PYTHONPATH=src .venv/bin/python -m isir.cli.verify \
                     "$f" --backend "$backend" "${pass_args[@]}" >/dev/null 2>&1; then
                 ok=1
             else
@@ -229,7 +248,7 @@ run_verify_examples() {
         else
             echo ""
             log_info "--- ${name} ---"
-            if env PYTHONPATH=src uv run python -m isir.cli.verify \
+            if env PYTHONPATH=src .venv/bin/python -m isir.cli.verify \
                     "$f" --backend "$backend" "${pass_args[@]}"; then
                 ok=1
             else
@@ -434,12 +453,12 @@ case "${1:-}" in
     --refine-check)
         check_uv
         shift
-        exec env PYTHONPATH=src uv run python -m isir.cli.refine_check "$@"
+        exec env PYTHONPATH=src .venv/bin/python -m isir.cli.refine_check "$@"
         ;;
     --validate-config)
         check_uv
         shift
-        exec env PYTHONPATH=src uv run python -m isir.cli.validate_config "$@"
+        exec env PYTHONPATH=src .venv/bin/python -m isir.cli.validate_config "$@"
         ;;
     --version)
         echo "InterScope version 0.0.3"
@@ -458,20 +477,20 @@ case "${1:-}" in
         check_uv
         subcmd="${1#--}"
         shift
-        exec env PYTHONPATH=src uv run python -m isir.cli."$subcmd" "$@"
+        exec env PYTHONPATH=src .venv/bin/python -m isir.cli."$subcmd" "$@"
         ;;
     --vcd-to-trace)
         check_uv
         shift
-        exec env PYTHONPATH=src uv run python scripts/vcd_to_trace.py "$@"
+        exec env PYTHONPATH=src .venv/bin/python scripts/vcd_to_trace.py "$@"
         ;;
     --extract-mapping)
         check_uv
         shift
-        exec env PYTHONPATH=src uv run python scripts/extract_mapping.py "$@"
+        exec env PYTHONPATH=src .venv/bin/python scripts/extract_mapping.py "$@"
         ;;
     *)
         check_uv
-        exec env PYTHONPATH=src uv run python -m isir.cli.main "$@"
+        exec env PYTHONPATH=src .venv/bin/python -m isir.cli.main "$@"
         ;;
 esac

@@ -138,7 +138,7 @@ def test_fifo_verify_koika(fifo_spec_path, build_dir):
     ]
 
     env = os.environ.copy()
-    env["SPECIR_CONFIG"] = str(conf_path)
+    env["ISIR_CONFIG"] = str(conf_path)
     result = subprocess.run(
         [sys.executable, "-m", "isir.cli.verify"] + cmd,
         capture_output=True,

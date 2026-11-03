@@ -115,7 +115,7 @@ def _run_single(global_args: argparse.Namespace) -> int:
         import yaml
         with open(tmp_path, "w") as f:
             yaml.dump(config, f)
-        os.environ["SPECIR_CONFIG"] = str(tmp_path)
+        os.environ["ISIR_CONFIG"] = str(tmp_path)
         tmp_config = tmp_path
 
     try:
@@ -153,8 +153,8 @@ def _run_single(global_args: argparse.Namespace) -> int:
                 tmp_config.unlink()
             except Exception:
                 pass
-        if "SPECIR_CONFIG" in os.environ:
-            del os.environ["SPECIR_CONFIG"]
+        if "ISIR_CONFIG" in os.environ:
+            del os.environ["ISIR_CONFIG"]
 
 
 _BATCHABLE = {"compile", "verify", "sim"}
