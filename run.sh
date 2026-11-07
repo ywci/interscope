@@ -371,6 +371,7 @@ ${BOLD}Commands:${RESET}
   --query ...                   Query evidence registry
   --vcd-to-trace <vcd> ...      Convert VCD file to trace dialect (debug)
   --extract-mapping <vfile> ... Extract ISIR mapping from Verilog annotations
+  --gen-spec <file|--all> ...... Generate a natural-language Markdown spec (.md); --verify / --llm-roundtrip
   --clean                       Remove generated files (build artifacts only)
   --clean-all [--yes] [--no-tools]
                                 Also remove .venv, .uv-cache, and tools/* clones.
@@ -488,6 +489,11 @@ case "${1:-}" in
         check_uv
         shift
         exec env PYTHONPATH=src .venv/bin/python scripts/extract_mapping.py "$@"
+        ;;
+    --gen-spec)
+        check_uv
+        shift
+        exec env PYTHONPATH=src .venv/bin/python scripts/gen_spec.py "$@"
         ;;
     *)
         check_uv

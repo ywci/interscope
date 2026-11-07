@@ -160,6 +160,7 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 | `./run.sh --clean-all [--yes] [--no-tools]` | Remove build artifacts, `.venv/`, and cloned tool repos under `tools/`. Prompts on a TTY unless `--yes` is passed; `--no-tools` keeps the cloned tool repos. System tools (opam switches, ACL2, SymbiYosys, Coq) are never touched. |
 | `./run.sh --vcd-to-trace <vcd>` | Convert a VCD file to the trace dialect (debug helper). |
 | `./run.sh --extract-mapping <vfile>` | Extract ISIR mapping from Verilog annotations. |
+| `./run.sh --gen-spec <file.isir>\|--all` | Generate a natural‑language Markdown specification (`.md`) in the design's folder; `--verify` checks round‑trip behavioral equivalence, `--llm-roundtrip` regenerates the `.isir` via the configured LLM and differentially checks it (never overwriting the original). |
 | `./run.sh --help` | Show the wrapper's help text. |
 
 For compatibility, the old `--command` style is still accepted. The newer unified CLI also accepts commands without leading dashes, e.g.:
