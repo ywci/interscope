@@ -260,7 +260,7 @@ properties:
             status: { enum: [ unproved, proved, disproved, inconclusive ] }
             engine: { enum: [ theorem_proving, model_checking, simulation ] }
             backend:
-              enum: [ koika, kōika, acl2 ]
+              enum: [ koika, kōika, acl2, model_checking, koika_acl2 ]
               description: |
                 Prover backend.  `kōika` is accepted as an alias for `koika`;
                 the code normalizes the accented form to the ASCII form at

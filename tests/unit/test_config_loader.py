@@ -440,3 +440,27 @@ class TestFindProjectRoot:
     def test_no_marker_returns_cwd(self, tmp_path, monkeypatch):
         monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
         assert _find_project_root() == tmp_path
+
+
+class TestNewEnvOverrides:
+    def test_perf_try_skeleton_first_override(self, monkeypatch):
+        from isir.utils import config_loader
+        monkeypatch.setenv("PERF_TRY_SKELETON_FIRST", "false")
+        cfg = config_loader._apply_perf_env_overrides({})
+        assert cfg["proof"]["perf"]["try_skeleton_first"] is False
+
+    def test_llm_env_overrides(self, monkeypatch):
+        from isir.utils import config_loader
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
+        monkeypatch.setenv("LLM_MODEL", "gpt-6-sol-pro")
+        cfg = config_loader._apply_llm_env_overrides({})
+        assert cfg["llm"]["provider"] == "openai"
+        assert cfg["llm"]["model"] == "gpt-6-sol-pro"
+
+    def test_llm_env_overrides_additive_when_unset(self, monkeypatch):
+        from isir.utils import config_loader
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        cfg = config_loader._apply_llm_env_overrides({"llm": {"provider": "deepseek"}})
+        assert cfg["llm"]["provider"] == "deepseek"  # unchanged
+        assert "model" not in cfg["llm"]

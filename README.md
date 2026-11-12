@@ -185,6 +185,8 @@ For compatibility, the old `--command` style is still accepted. The newer unifie
 - `--no-pareto` : Disable Pareto pruning (ablation).
 - `--no-trace-alignment` : Disable the trace‑alignment dimension (ablation).
 - `--no-reflection` : Disable reflection feedback (ablation).
+- `--mc-lemmas` / `--no-mc-lemmas` (verify) : Enable/disable model-checking lemma injection (MC gating) for Koika — ablation.
+- `--no-cowork` (verify) : Disable the `koika_acl2` co-work dispatch, downgrading it to single-backend Koika — ablation.
 - `--dry-run` : Parse and validate only; do not execute provers.
 - `--no-validate` (check) : Skip schema validation of the abstract trace file.
 

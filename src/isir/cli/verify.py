@@ -56,6 +56,13 @@ def _canonical_backend(backend: Optional[str]) -> Optional[str]:
     return None
 
 
+def _effective_backend(canonical: Optional[str], no_cowork: bool) -> Optional[str]:
+    """Apply the --no-cowork ablation: downgrade koika_acl2 to single-backend Koika."""
+    if no_cowork and canonical == "koika_acl2":
+        return "koika"
+    return canonical
+
+
 def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir verify",
@@ -94,6 +101,12 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Disable trace alignment dimension (for ablation)")
     parser.add_argument("--no-reflection", action="store_true",
                         help="Disable reflection feedback (for ablation)")
+    parser.add_argument("--mc-lemmas", action="store_true",
+                        help="Enable MC lemma injection (model-checking gating) for Koika (ablation)")
+    parser.add_argument("--no-mc-lemmas", action="store_true",
+                        help="Disable MC lemma injection (ablation)")
+    parser.add_argument("--no-cowork", action="store_true",
+                        help="Disable the koika_acl2 co-work dispatch: downgrade to single-backend Koika (ablation)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Parse and validate only (no execution)")
 
@@ -169,6 +182,13 @@ def verify_spec(args: argparse.Namespace) -> int:
     if args.no_reflection:
         perf_cfg["use_reflection"] = False
         logger.info("Ablation: reflection feedback disabled")
+
+    if getattr(args, 'mc_lemmas', False):
+        config.setdefault("provers", {}).setdefault("koika", {})["use_mc_lemmas"] = True
+        logger.info("Ablation: MC lemma injection enabled")
+    elif getattr(args, 'no_mc_lemmas', False):
+        config.setdefault("provers", {}).setdefault("koika", {})["use_mc_lemmas"] = False
+        logger.info("Ablation: MC lemma injection disabled")
 
     try:
         _validate_config(config)
@@ -378,6 +398,7 @@ def verify_spec(args: argparse.Namespace) -> int:
         for po in theorem_obligations:
             backend = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend)
+            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False))
             if canonical == "koika":
                 backends_needed.add("koika")
             elif canonical == "acl2":
@@ -428,6 +449,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             prop_name = po.get("property") if isinstance(po, dict) else getattr(po, "property", "unknown")
             backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend_raw) or "koika"
+            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False))
             logger.info(f"Proving '{prop_name}' with backend {canonical}")
 
             start_time = time.time()

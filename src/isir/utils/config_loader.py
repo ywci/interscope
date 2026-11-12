@@ -103,6 +103,10 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
         val = os.environ["PERF_ENABLED"].lower()
         perf_cfg["enabled"] = val in ("true", "1", "yes")
 
+    if "PERF_TRY_SKELETON_FIRST" in os.environ:
+        val = os.environ["PERF_TRY_SKELETON_FIRST"].lower()
+        perf_cfg["try_skeleton_first"] = val in ("true", "1", "yes")
+
     if "PERF_BEAM_SIZE" in os.environ:
         try:
             perf_cfg["beam_size"] = int(os.environ["PERF_BEAM_SIZE"])
@@ -196,6 +200,24 @@ def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
         except ValueError:
             pass
 
+    return config
+
+
+def _apply_llm_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply LLM provider/model environment overrides (for multi-model runs).
+
+    Supported:
+      LLM_PROVIDER  (e.g. "openai", "deepseek", "anthropic", "ollama")
+      LLM_MODEL     (e.g. "gpt-6-sol-pro", "claude-opus-5.5", "deepseek-chat")
+
+    The API key and base URL are already resolved at client-build time from
+    ``<PROVIDER>_API_KEY`` / ``<PROVIDER>_API_BASE``.
+    """
+    llm = config.setdefault("llm", {})
+    if "LLM_PROVIDER" in os.environ:
+        llm["provider"] = os.environ["LLM_PROVIDER"].strip()
+    if "LLM_MODEL" in os.environ:
+        llm["model"] = os.environ["LLM_MODEL"].strip()
     return config
 
 
@@ -411,6 +433,7 @@ def load_config(
         config["directories"].setdefault(key, default)
 
     config = _apply_perf_env_overrides(config)
+    config = _apply_llm_env_overrides(config)
 
     if external_config_path is not None:
         external = load_external_config(external_config_path)
