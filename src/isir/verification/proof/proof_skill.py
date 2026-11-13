@@ -3,9 +3,8 @@
 # LLM‑driven proof orchestrator that delegates to specialized provers
 # (KoikaProver, ACL2Prover, ModelCheckProver) and manages the repair loop.
 
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional
 from pathlib import Path
-
 from isir.backends.llm_client import get_llm_client_from_config
 from isir.verification.proof.proof import ProofSkill, ProofResult
 from isir.verification.proof.koika.prover import KoikaProver
@@ -16,7 +15,6 @@ from isir.utils.config_loader import get_config
 from isir.verification.perf.perf_config import PERFConfig, validate_perf_against_config
 from isir.verification.perf.perf_stats import PERFStats
 from isir.verification.perf.perf_traversal import PERFTraversal
-from isir.verification.perf.mcts_traversal import MCTSTraversal
 from isir.verification.perf.perf_analyzer import PERFAnalyzer, ObligationAnalysis
 from isir.verification.proof.structural_validator import validate_structure
 from isir.verification.proof.tactic_modernizer import modernize_tactics
@@ -775,6 +773,17 @@ class LLMProofSkill(ProofSkill):
 
         if initial_script:
             context["initial_script"] = initial_script
+
+        # Greedy linear repair first (fast) — the PERF beam search below is the
+        # rescue fallback for obligations the greedy path cannot close (PERF is
+        # a rescue, not a speedup).
+        linear_result = self._prove_linear(
+            obligation, context, backend, initial_script=initial_script)
+        if linear_result.success:
+            if prop_name and design_name:
+                self._store_successful_proof(
+                    design_name, prop_name, linear_result.proof_script or "")
+            return linear_result
 
         perf_context = self._build_perf_context(obligation, context, perf_config)
 
