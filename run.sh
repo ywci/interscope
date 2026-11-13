@@ -372,6 +372,8 @@ ${BOLD}Commands:${RESET}
   --vcd-to-trace <vcd> ...      Convert VCD file to trace dialect (debug)
   --extract-mapping <vfile> ... Extract ISIR mapping from Verilog annotations
   --gen-spec <file|--all> ...... Generate a natural-language Markdown spec (.md); --verify / --llm-roundtrip
+  --check-specs [--verify] ...... Check every example has a natural-language spec (.md); --verify also round-trip checks
+  --search linear|perf|mcts ... Search strategy for --verify (PERF is the default)
   --clean                       Remove generated files (build artifacts only)
   --clean-all [--yes] [--no-tools]
                                 Also remove .venv, .uv-cache, and tools/* clones.
@@ -494,6 +496,10 @@ case "${1:-}" in
         check_uv
         shift
         exec env PYTHONPATH=src .venv/bin/python scripts/gen_spec.py "$@"
+        ;;
+    --check-specs)
+        shift
+        exec env PYTHONPATH=src .venv/bin/python scripts/check_specs.py "$@"
         ;;
     *)
         check_uv

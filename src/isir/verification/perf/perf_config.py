@@ -5,7 +5,7 @@
 # the global config.yaml or per‑obligation metadata.
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional, Set, Union
+from typing import Dict, Any, List, Optional, Set
 from isir.utils.logger import get_logger
 
 logger = get_logger(__name__)

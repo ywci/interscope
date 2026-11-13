@@ -63,6 +63,15 @@ def _effective_backend(canonical: Optional[str], no_cowork: bool) -> Optional[st
     return canonical
 
 
+def _property_kind(spec_module, prop_name: str) -> Optional[str]:
+    """Return the property's temporal-expression kind (e.g. 'always'), or None."""
+    for prop in getattr(spec_module, "property_ops", []):
+        if getattr(prop, "prop_name", "") == prop_name:
+            expr = getattr(prop, "expression", {})
+            return expr.get("kind") if isinstance(expr, dict) else None
+    return None
+
+
 def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir verify",
@@ -93,6 +102,8 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Enable PERF (Proof tree Exploration with Reflective Feedback)")
     parser.add_argument("--no-perf", action="store_true",
                         help="Disable PERF (fall back to greedy repair)")
+    parser.add_argument("--search", choices=["linear", "perf", "mcts"], default=None,
+                        help="Search strategy: linear (greedy), perf (PERF beam, default), mcts (MCTS)")
     parser.add_argument("--perf-stats", action="store_true",
                         help="Print PERF traversal statistics (nodes, depth, tokens, diagnostics)")
     parser.add_argument("--no-pareto", action="store_true",
@@ -168,6 +179,10 @@ def verify_spec(args: argparse.Namespace) -> int:
     elif args.no_perf:
         config['proof']['perf']['enabled'] = False
         logger.info("PERF disabled via --no-perf flag")
+
+    if getattr(args, "search", None):
+        config.setdefault("proof", {})["search_strategy"] = args.search
+        logger.info("Search strategy set to '%s' via --search flag", args.search)
 
     perf_cfg = config.setdefault("proof", {}).setdefault("perf", {})
     if args.no_pareto:
@@ -312,6 +327,19 @@ def verify_spec(args: argparse.Namespace) -> int:
         else:
             theorem_obligations.append(po)
 
+    # Lemma-share: prove transition step-identities BEFORE always inductions so
+    # the ACL2-proved lemmas are available to the induction.  Stable sort keeps
+    # the original relative order within each kind.
+    def _obligation_rank(po) -> int:
+        prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "")
+        kind = _property_kind(spec_module, prop)
+        if kind == "transition":
+            return 0
+        if kind == "always":
+            return 1
+        return 2
+    theorem_obligations = sorted(theorem_obligations, key=_obligation_rank)
+
     rtl_dir = None
     assertions_dir = None
     rtl_file = None
@@ -445,6 +473,11 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"Failed to initialize proof skill: {e}")
             return 1
 
+        # Lemma-share arm: transition step-identities proved by ACL2 are collected
+        # here (as their Coq theorem names) and shared into later `always`
+        # inductions, which may consume them via `Hint Resolve`.
+        shared_step_lemmas: List[str] = []
+
         for po in theorem_obligations:
             prop_name = po.get("property") if isinstance(po, dict) else getattr(po, "property", "unknown")
             backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
@@ -505,19 +538,74 @@ def verify_spec(args: argparse.Namespace) -> int:
                 acl2_ctx = dict(po_context)
                 acl2_ctx["theorem_name"] = f"{prop_name}_correct"
                 acl2_ctx.pop("coq_file_path", None)
-                cw = run_cowork(
-                    lambda: proof_skill.prove({**po, "backend": "koika"}, koika_ctx),
-                    lambda: proof_skill.prove({**po, "backend": "acl2"}, acl2_ctx),
-                )
-                cowork_result = ProofResult(
-                    success=cw.success,
-                    proof_script=cw.proof_script,
-                    error_message=cw.error_message,
-                    auxiliary_lemmas=cw.auxiliary_lemmas,
-                    metadata=cw.metadata,
-                    duration=time.time() - start_time,
-                    backend="koika_acl2",
-                )
+                prop_kind = _property_kind(spec_module, prop_name)
+                if prop_kind == "always":
+                    # Inductive safety/invariant properties need induction; ACL2 can
+                    # only skip-proof them, so its half of the co-work is wasted
+                    # work.  Prove with Koika alone.
+                    logger.info(
+                        "Inductive property '%s' (kind=%s): proving with Koika only "
+                        "(ACL2 cannot prove induction)", prop_name, prop_kind,
+                    )
+                    # Share the ACL2-proved transition step-identities into this
+                    # induction so Koika can `Hint Resolve` them.
+                    koika_ctx["shared_lemmas"] = list(shared_step_lemmas)
+                    cowork_result = proof_skill.prove({**po, "backend": "koika"}, koika_ctx)
+                else:
+                    # Bound each side so a slow loser can't hold resources forever;
+                    # run_cowork returns on the FIRST success (first-wins).
+                    # For combinational/transition (step-identity) kinds, ACL2's
+                    # fast path is the combinational hint (no generalization),
+                    # not the :induct t skeleton + full PERF traversal.
+                    def _acl2_side() -> ProofResult:
+                        if prop_kind == "transition":
+                            # Step-identity: ACL2's :induct t skeleton closes it fast.
+                            # Skip the (slow) PERF traversal and go straight to the
+                            # linear prover.
+                            return proof_skill._prove_linear(
+                                {**po, "backend": "acl2"}, acl2_ctx, "acl2")
+                        return proof_skill.prove({**po, "backend": "acl2"}, acl2_ctx)
+                    cw = run_cowork(
+                        lambda: proof_skill.prove({**po, "backend": "koika"}, koika_ctx),
+                        _acl2_side,
+                        timeout=60,
+                    )
+                    cowork_result = ProofResult(
+                        success=cw.success,
+                        proof_script=cw.proof_script,
+                        error_message=cw.error_message,
+                        auxiliary_lemmas=cw.auxiliary_lemmas,
+                        metadata=cw.metadata,
+                        duration=time.time() - start_time,
+                        backend="koika_acl2",
+                    )
+                    if not cw.success:
+                        # Both backends failed on the same sub-goal: reflect (LLM
+                        # proposes a complete Coq script) then re-dispatch + re-prove.
+                        from isir.verification.cowork import cowork_retry
+                        retry = cowork_retry(
+                            cw, proof_skill.llm,
+                            lambda s: proof_skill._prove_linear(
+                                {**po, "backend": "koika"}, koika_ctx, "koika",
+                                initial_script=s,
+                            ),
+                        )
+                        if retry is not None:
+                            retry.metadata["cross_backend_reflection"] = retry.proof_script or ""
+                            cowork_result = retry
+                            logger.info(
+                                "Co-work reflection proved '%s' (neither backend alone could)",
+                                prop_name,
+                            )
+
+                    # Lemma-share: a proved transition step-identity is a reusable
+                    # combinational lemma for later `always` inductions.
+                    if prop_kind == "transition" and cowork_result.success:
+                        shared_step_lemmas.append(f"{prop_name}_proved")
+                        logger.info(
+                            "Shared step-identity '%s_proved' for later inductions",
+                            prop_name,
+                        )
 
             if cowork_result is not None:
                 result = cowork_result

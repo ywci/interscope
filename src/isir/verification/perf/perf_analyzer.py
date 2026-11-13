@@ -5,13 +5,10 @@
 # duplicated sub‑expressions, and definitional properties to guide
 # proof search strategies.
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
+from typing import List, Optional, Tuple
 from isir.utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -179,6 +179,7 @@ class TestProofSkillKoika(unittest.TestCase):
             theorem_name="my_prop_proved",
             tactic_hints=None,
             initial_script=None,
+            shared_lemmas=None,
         )
 
     def test_prove_koika_missing_coq_file(self):

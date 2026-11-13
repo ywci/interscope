@@ -10,22 +10,17 @@
 # structural pre‑filtering applied to initial scripts and all generated
 # children**.
 
-import copy
-import math
 import random
 import time
 import tempfile
-import os
 import shutil
 import re
 import subprocess
 import hashlib
-import concurrent.futures
 import threading
 from typing import List, Dict, Any, Optional, Tuple, Set
 from pathlib import Path
-
-from isir.backends.llm_client import LLMClient, LLMClientError
+from isir.backends.llm_client import LLMClient
 from isir.verification.perf.perf_config import PERFConfig
 from isir.verification.perf.perf_scorer import (
     PERFScorer, PERFNode, compute_pareto_front, select_beam,
@@ -298,7 +293,8 @@ class PERFTraversal:
                 return adapted
         return None
 
-    def traverse(self) -> Tuple[Optional[str], PERFStats]:
+    def _prepare(self) -> Optional[PERFNode]:
+        """Run the shared setup and return the root node, or None on failure."""
         logger.info("Starting PERF traversal (backend=%s)", self.backend)
         self.stats.start()
 
@@ -329,22 +325,28 @@ class PERFTraversal:
         if not initial_script:
             logger.error("No initial script available for PERF")
             self.stats.finish()
-            return None, self.stats
+            return None
 
         if self._has_critical_structural_issues(initial_script):
             logger.error("Initial script has critical structural issues; PERF cannot proceed.")
             self.stats.finish()
-            return None, self.stats
+            return None
 
         if not self._validate_initial_script(initial_script):
             logger.warning("Initial script failed compilation; PERF cannot proceed.")
             self.stats.finish()
-            return None, self.stats
+            return None
 
         self._register_script_hash(initial_script)
 
         root = PERFNode(script=initial_script, depth=0)
         self.stats.record_node()
+        return root
+
+    def traverse(self) -> Tuple[Optional[str], PERFStats]:
+        root = self._prepare()
+        if root is None:
+            return None, self.stats
 
         if self.config.always_verify_children:
             logger.info("Verifying initial script...")
@@ -357,14 +359,14 @@ class PERFTraversal:
                 self.stats.finish()
                 self.evidence.register_proof(
                     property_name=self.obligation.get("property", "unknown"),
-                    proof_script=initial_script,
+                    proof_script=root.script,
                     backend=self.backend,
                     stats=self.stats,
                 )
-                self.best_candidate_script = initial_script
+                self.best_candidate_script = root.script
                 self.best_candidate_score = 1.0
-                self._record_successful_proof(self.obligation.get("property", ""), initial_script)
-                return initial_script, self.stats
+                self._record_successful_proof(self.obligation.get("property", ""), root.script)
+                return root.script, self.stats
 
         frontier = [root]
 

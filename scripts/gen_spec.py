@@ -4,12 +4,13 @@
 # Generate a natural-language Markdown specification from an .isir file.
 #
 # The Markdown is pure natural language (no S-expressions, no .isir syntax).
-# A separate sidecar `<name>.facts.yaml` holds the canonical behavioral facts
-# (inputs, state, rules, properties, functions) used for round-trip checking.
+# Round-trip checking keeps the canonical behavioral facts in memory (no
+# sidecar file is written): `_facts` extracts them, `_reconstruct` rebuilds an
+# ISIR module from them.
 #
 # Verification:
-#   --verify          re-parse the facts sidecar, reconstruct an ISIR module,
-#                     and differentially compare reference_trace(original) vs
+#   --verify          reconstruct an ISIR module from the in-memory facts and
+#                     differentially compare reference_trace(original) vs
 #                     reference_trace(reconstructed) over seeded inputs.
 #   --llm-roundtrip   additionally ask the configured LLM (conf/config.yaml) to
 #                     regenerate the .isir from the natural-language spec, then
@@ -65,6 +66,8 @@ def _nl(expr) -> str:
             return f"{_nl(args[0])} − {_nl(args[1])}"
         if op == "mul":
             return f"{_nl(args[0])} × {_nl(args[1])}"
+        if op == "mul_full":
+            return f"the full (non-wrapping) product of {_nl(args[0])} and {_nl(args[1])}"
         if op == "and":
             return f"{_nl(args[0])} and {_nl(args[1])}"
         if op == "or":

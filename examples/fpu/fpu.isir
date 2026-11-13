@@ -210,11 +210,7 @@ module:
     - property: flip_sign_involutive
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: flip_sign_involutive
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: add_commutes
       status: unproved
       engine: theorem_proving

@@ -9,10 +9,10 @@ import random
 import re
 import hashlib
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Set, Union
+from typing import List, Dict, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from isir.backends.llm_client import LLMClient
-from isir.verification.perf.perf_config import PERFConfig, VALID_DIMENSIONS
+from isir.verification.perf.perf_config import PERFConfig
 from isir.utils.logger import get_logger
 
 logger = get_logger(__name__)

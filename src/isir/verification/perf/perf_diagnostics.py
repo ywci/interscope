@@ -16,7 +16,7 @@
 # `print_diagnostics(stats)`.  The CLI can use `print_diagnostics` for
 # the `--perf-stats` flag.
 
-from typing import List, Dict, Any
+from typing import List
 from isir.verification.perf.perf_stats import PERFStats
 from isir.utils.logger import get_logger
 

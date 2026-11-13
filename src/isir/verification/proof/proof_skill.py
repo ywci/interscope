@@ -16,6 +16,7 @@ from isir.utils.config_loader import get_config
 from isir.verification.perf.perf_config import PERFConfig, validate_perf_against_config
 from isir.verification.perf.perf_stats import PERFStats
 from isir.verification.perf.perf_traversal import PERFTraversal
+from isir.verification.perf.mcts_traversal import MCTSTraversal
 from isir.verification.perf.perf_analyzer import PERFAnalyzer, ObligationAnalysis
 from isir.verification.proof.structural_validator import validate_structure
 from isir.verification.proof.tactic_modernizer import modernize_tactics
@@ -185,6 +186,25 @@ class LLMProofSkill(ProofSkill):
                         "Consider adding the 'split' attribute to monolithic rules."
                     )
 
+        strategy = (
+            proof_obligation.get("search_strategy")
+            or self.config.get("proof", {}).get("search_strategy", "perf")
+        )
+        if strategy == "mcts":
+            logger.info(
+                "MCTS search selected for obligation '%s' (backend=%s)",
+                proof_obligation.get("property", "unknown"),
+                backend,
+            )
+            return self._prove_with_mcts(proof_obligation, context, perf_config)
+        if strategy == "linear":
+            logger.info(
+                "Linear (greedy) search selected for obligation '%s' (backend=%s)",
+                proof_obligation.get("property", "unknown"),
+                backend,
+            )
+            return self._prove_linear(proof_obligation, context, backend)
+
         if perf_config.is_enabled_for_obligation(proof_obligation):
             logger.info(
                 "PERF enabled for obligation '%s' (backend=%s)",
@@ -241,6 +261,81 @@ class LLMProofSkill(ProofSkill):
                 logger.error("Model‑checking pre‑run exception: %s", e)
 
         self._mc_prepared[design_name] = True
+
+    def _prove_with_mcts(
+        self,
+        obligation: Dict[str, Any],
+        context: Dict[str, Any],
+        perf_config: PERFConfig,
+    ) -> ProofResult:
+        """Run MCTS (UCB1 + backpropagation) — de-coupled from PERF.
+
+        Does NOT run the PERF skeleton-first shortcut, the deterministic proof
+        strategies, or the LLM invariant proposal, so the result reflects MCTS's
+        own search rather than the shared skeleton.
+        """
+        from isir.verification.perf.mcts_traversal import MCTSConfig, MCTSTraversal
+
+        backend = obligation.get("backend", "koika").lower().replace("ō", "o")
+        prop_name = obligation.get("property", "")
+        design_name = context.get("design_name")
+        if not design_name and context.get("spec_module"):
+            design_name = getattr(context["spec_module"], "name", None)
+
+        # Build the initial script from generic reuse (proof library / cache /
+        # adapted similar proof) — not the PERF skeleton.
+        initial_script = None
+        use_library_allowed = self.config.get("provers", {}).get("koika", {}).get(
+            "use_proof_library", False
+        )
+        if use_library_allowed and backend.startswith("koi"):
+            from lib.koika.assist import PROOF_LIBRARY
+            lib_key = context.get("theorem_name", "")
+            if lib_key in PROOF_LIBRARY:
+                initial_script = self._prepare_initial_script(PROOF_LIBRARY[lib_key])
+        if initial_script is None and design_name and prop_name:
+            cached = self._get_cached_proof(design_name, prop_name)
+            if cached:
+                initial_script = self._prepare_initial_script(cached)
+        if initial_script is None and self._successful_proofs:
+            similar = self._find_and_adapt_similar_proof(prop_name, obligation, context)
+            if similar:
+                initial_script = self._prepare_initial_script(similar)
+        if initial_script:
+            context["initial_script"] = initial_script
+
+        perf_context = self._build_perf_context(obligation, context, perf_config)
+
+        mcts_cfg = MCTSConfig(
+            c=1.4142135623730951,
+            iterations=max(perf_config.depth_limit * perf_config.beam_size, 1),
+            branches_per_node=perf_config.branches_per_node,
+        )
+        traversal = MCTSTraversal(
+            config=perf_config, llm_client=self.llm, context=perf_context, mcts=mcts_cfg
+        )
+        proof_script, stats = traversal.traverse()
+        self._last_perf_stats = stats
+
+        if proof_script is not None:
+            if prop_name and design_name:
+                self._store_successful_proof(design_name, prop_name, proof_script)
+            return ProofResult(
+                success=True,
+                proof_script=proof_script,
+                metadata={
+                    "backend": obligation.get("backend", "unknown"),
+                    "search": "mcts",
+                    "mcts_stats": stats.to_dict(),
+                },
+            )
+
+        logger.warning("MCTS did not find a proof for '%s'.", prop_name)
+        return ProofResult(
+            success=False,
+            error_message="MCTS search exhausted without finding a proof",
+            metadata={"backend": obligation.get("backend", "unknown"), "search": "mcts"},
+        )
 
     def _prove_linear(
         self,
@@ -338,6 +433,7 @@ class LLMProofSkill(ProofSkill):
                 theorem_name=theorem_name,
                 tactic_hints=tactic_hints if tactic_hints else None,
                 initial_script=initial_script,
+                shared_lemmas=context.get("shared_lemmas"),
             )
         except Exception as e:
             logger.exception("Koika prover raised an exception")
@@ -516,7 +612,8 @@ class LLMProofSkill(ProofSkill):
         self,
         obligation: Dict[str, Any],
         context: Dict[str, Any],
-        perf_config: PERFConfig
+        perf_config: PERFConfig,
+        traversal_cls=PERFTraversal,
     ) -> ProofResult:
         logger.info(
             "Starting PERF traversal for '%s' (beam=%d, depth=%d, branches=%d)",
@@ -538,6 +635,11 @@ class LLMProofSkill(ProofSkill):
                 temp_prover = KoikaProver(config=self.config)
                 temp_prover._prelude = ""
                 temp_prover._prelude_validated = True
+
+                # Lemma-share: register the shared step-identities before the
+                # fast skeleton so its `eauto` can use them.
+                temp_prover._inject_shared_lemmas(
+                    Path(coq_file), context.get("shared_lemmas") or [])
 
                 if self._analysis:
                     hints_str = self._build_structural_hints_string()
@@ -684,7 +786,7 @@ class LLMProofSkill(ProofSkill):
                 logger.info("MC counterexample trace information added to PERF context.")
 
         try:
-            traversal = PERFTraversal(
+            traversal = traversal_cls(
                 config=perf_config,
                 llm_client=self.llm,
                 context=perf_context

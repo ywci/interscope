@@ -22,7 +22,7 @@
  *   lowering checks.
  *
  * Out of scope for this first cut (documented, not silently assumed):
- *   - mul / div / mod / concat / min / max are not yet evaluated;
+ *   - div / mod / concat / min / max are not yet evaluated;
  *     the evaluator returns None (undefined) for them.
  *   - partial_spec non-determinism is represented by an uninterpreted
  *     function returning None, to be refined in a later pass.
@@ -62,7 +62,7 @@ Definition nat_xor (a b : nat) : nat := N.to_nat (N.lxor (N.of_nat a) (N.of_nat 
 (* ------------------------------------------------------------------ *)
 
 Inductive binop : Type :=
-| BAdd | BSub | BAnd | BOr | BXor
+| BAdd | BSub | BMul | BMulFull | BAnd | BOr | BXor
 | BEq | BNeq | BLt | BLe | BGt | BGe
 | BShl | BShr.
 
@@ -135,6 +135,8 @@ Fixpoint eval (e : expr) (w : nat) (st : state) (inp : inputs) (mem : memories) 
           match op with
           | BAdd => Some (wrap w (x + y))
           | BSub => Some (wrap w (2 ^ w + x - y))  (* two's-complement (matches Kōika Bits.minus + the reference) *)
+          | BMul => Some (wrap w (x * y))          (* fixed-width multiply, matching eval_expr + both backends *)
+          | BMulFull => Some (x * y)               (* widening product: no wrap *)
           | BAnd => Some (nat_and x y)
           | BOr  => Some (nat_or x y)
           | BXor => Some (nat_xor x y)

@@ -311,11 +311,7 @@ module:
     - property: pc_nonneg_after_3
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: pc_nonneg_after_3
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: branch_detected
       status: unproved
       engine: theorem_proving

@@ -117,7 +117,9 @@ Expr ::= <literal>
        | (mem_write <memory_name> <address> <data>)
 ```
 
-**Operators**: `and`, `or`, `not`, `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `add`, `sub`, `mul`, `div`, `mod`, `concat`, `(slice high low)`.
+**Operators**: `and`, `or`, `not`, `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `add`, `sub`, `mul`, `mul_full`, `div`, `mod`, `concat`, `(slice high low)`.
+
+`mul` wraps at the operand width (fixed‑width semantics, matching RTL), while `mul_full` is the **widening product** (no wrapping; the result width is the sum of the operand widths).
 
 > **Note**: Temporal operators (`next`, `prev`, `rose`, `fell`, `stable`) are **only allowed within property expressions** (see Section 3.7) and not inside rule conditions/actions.
 

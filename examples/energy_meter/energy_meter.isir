@@ -1,0 +1,52 @@
+isir_version: "0.1"
+module:
+  name: energy_meter
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: valid
+      direction: input
+      type: "bool"
+    - name: sample
+      direction: input
+      type: "bits<8>"
+  outputs:
+    - name: energy_out
+      direction: output
+      type: "bits<16>"
+  state:
+    - name: energy
+      kind: register
+      type: "bits<16>"
+      initial: 0
+  functions:
+    - name: square
+      params: [{name: x, type: "bits<8>"}]
+      return: "bits<16>"
+      body: (mul x x)
+  rules:
+    - name: measure
+      condition: valid
+      actions:
+        - (write energy (square sample))
+  properties:
+    # Signal-power meter: the squared sample (energy of one 8-bit PCM sample)
+    # must fit in the 16-bit energy register.  0 <= sample <= 255  =>  sample^2 <= 65025.
+    - name: energy_bounded
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (le (square sample) 65025)
+        reference: t
+      assumes: ["(le sample 255)"]
+  proof_obligations:
+    - property: energy_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

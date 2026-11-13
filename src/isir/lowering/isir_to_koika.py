@@ -137,6 +137,35 @@ def _type_of_expr(expr: Any, state_types: Dict[str, str],
             return "nat"
     return "nat"
 
+def _function_mul_bound_lemma(fname: str, body_parsed: Any, local_widths: Dict[str, int],
+                              params: List[Dict[str, str]]) -> Optional[str]:
+    """Emit the NON-LINEAR bound lemma for a widening `mul_full`-bodied function.
+
+    `a ≤ W-1 → b ≤ W-1 → a*b ≤ (W-1)²` is what `lia` cannot derive but the
+    lemma-share arm hands to the `always` induction via `Hint Resolve`.
+    """
+    if not (isinstance(body_parsed, list) and body_parsed and body_parsed[0] == "mul_full"):
+        return None
+    a, b = body_parsed[1], body_parsed[2]
+    width = max(
+        local_widths.get(a, 1) if isinstance(a, str) else 1,
+        local_widths.get(b, 1) if isinstance(b, str) else 1,
+    )
+    bound = (2 ** width) - 1
+    arg_binders = " ".join(f"({p['name']} : {_get_coq_type(p['type'])})" for p in params)
+    # Hypotheses use `< 2^w` (matching the input-width bound the always lowering
+    # surfaces), so `eauto` can apply the lemma without a conversion step.
+    hyps = " -> ".join(f"{p['name']} < {2 ** width}" for p in params)
+    call = f"{fname} " + " ".join(p["name"] for p in params)
+    return (
+        f"Lemma {fname}_bound : forall {arg_binders}, {hyps} -> {call} <= {bound * bound}.\n"
+        f"Proof. intros. unfold {fname}. change {bound * bound} with ({bound} * {bound}). "
+        f"apply Nat.mul_le_mono; lia. Qed.\n"
+        f"Hint Resolve {fname}_bound : core.\n"
+        f"Opaque {fname}."
+    )
+
+
 def _expr_to_coq(expr: Any, state_types: Dict[str, str],
                  input_types: Dict[str, str], memory_names: List[str],
                  as_prop: bool = True, state_var: str = "s",
@@ -201,6 +230,14 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
         return result
 
     # Arithmetic
+    if op == 'mul_full':
+        # Widening product: no operand-width wrapping.
+        if len(args) != 2:
+            raise ExprError("mul_full expects 2 arguments")
+        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        return f"({a} * {b})"
+
     if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd', 'min', 'max'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
@@ -609,8 +646,6 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         ret_type = _get_coq_type(ret)
         body = f.get("body")
         if body is not None:
-            if not f.get("recursive"):
-                unfold_names.append(fname)
             # Defined (combinational) function: lower the body to a Definition.
             try:
                 body_parsed = parse_sexpr(body) if isinstance(body, str) else body
@@ -623,6 +658,15 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             except ExprError as e:
                 logger.warning(f"Could not translate function body '{fname}': {e}")
                 continue
+            # Auto-unfold non-recursive functions, EXCEPT widening-product ones:
+            # they carry a bound lemma (`Hint Resolve <f>_bound`) that must match
+            # the folded call, so unfolding would destroy the match.
+            is_widening = (
+                isinstance(body_parsed, list) and body_parsed
+                and body_parsed[0] == "mul_full"
+            )
+            if not f.get("recursive") and not is_widening:
+                unfold_names.append(fname)
             arg_binders = " ".join(f"({p['name']} : {_get_coq_type(p['type'])})" for p in params)
             if f.get("recursive"):
                 # Lower well-founded recursion to a *structural* fuel-based
@@ -644,6 +688,12 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 )
             else:
                 function_decls.append(f"Definition {fname} {arg_binders} : {ret_type} := {body_coq}.")
+                # Lemma-share: a widening-product function gets the non-linear
+                # bound lemma (`lia` can't derive it) usable by the induction.
+                bound_lemma = _function_mul_bound_lemma(fname, body_parsed, local_widths, params)
+                if bound_lemma:
+                    function_decls.append(bound_lemma)
+
         else:
             param_types = [_get_coq_type(p.get("type", "bits<1>")) for p in params]
             sig = " -> ".join(param_types + [ret_type]) if param_types else ret_type
@@ -949,9 +999,20 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s", function_types=function_types, widths=widths)
             new_state = _mk_state_expr(registers, memories, updates, "s")
             ctor_name = f"step_{rule.rule_name}"
+            # Input-width bounds are premises of the step, so `reachable` (its
+            # closure) carries them into the induction (width-dependent lemmas
+            # like the widening-product bound can then fire).
+            premises = []
+            if cond_str != "True":
+                premises.append(f"({cond_str})")
+            for inp in spec_module.inputs:
+                w = widths.get(inp.name)
+                if w and input_types.get(inp.name) != "bool":
+                    premises.append(f"({inp.name} inputs < 2^{w})")
+            premise_str = " /\\ ".join(premises) if premises else "True"
             step_ctors.append(
                 f"  | {ctor_name} : forall s inputs,\n"
-                f"      {cond_str} ->\n"
+                f"      {premise_str} ->\n"
                 f"      step s inputs ({new_state})"
             )
             rule_ops.append(koika.KoikaRuleOp(rule_name=rule.rule_name, condition=cond_str, actions=rule.actions))
@@ -1239,7 +1300,22 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         else:
             full_operand = coq_operand
 
-        theorem_stmt = f"forall (s : state) (inputs : inputs), reachable s -> {full_operand}"
+        # Drop the redundant `inputs` binder when the operand/assumptions only
+        # reference the state — the induction on `reachable` can then generalize
+        # cleanly (a fixed `inputs` would block it).
+        input_names = {inp.name for inp in spec_module.inputs}
+        def _uses_inputs(e: Any) -> bool:
+            if isinstance(e, str):
+                return e in input_names
+            if isinstance(e, list):
+                return any(_uses_inputs(x) for x in e)
+            return False
+        uses_inputs = _uses_inputs(operand_parsed) or any(
+            _uses_inputs(parse_sexpr(a) if isinstance(a, str) else a)
+            for a in assumptions
+        )
+        binders = "(s : state) (inputs : inputs)" if uses_inputs else "(s : state)"
+        theorem_stmt = f"forall {binders}, reachable s -> {full_operand}"
         theorem_name = f"{prop_name}_proved"
 
         if state_defs and state_defs[-1] != "":

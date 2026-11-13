@@ -333,3 +333,10 @@ class TestTypeCheckExpr:
     def test_temporal_operators(self):
         assert type_check_expr("(next (read x))", self.context) == "int"
         assert type_check_expr("(rose (read a))", self.context) == "bool"
+
+
+def test_mul_full_is_widening_no_wrap():
+    from isir.utils.expr import eval_expr
+    assert eval_expr("(mul_full 255 255)", {}, {}, {}) == 65025
+    # the wrapping mul truncates at the operand width
+    assert eval_expr("(mul 255 255)", {}, {}, {}, width=8, widths={}) == 1

@@ -4,8 +4,6 @@
 # (SymbiYosys / sby) to verify generated SVA assertions.
 # Supports BMC and induction (IC3-like) modes.
 
-import json
-import os
 import shutil
 import subprocess
 import tempfile

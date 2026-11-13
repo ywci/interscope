@@ -134,19 +134,11 @@ module:
     - property: gcd_commutes
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: gcd_commutes
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: gcd_diag
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: gcd_diag
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: gcd_sub_computes
       status: unproved
       engine: theorem_proving

@@ -11,10 +11,7 @@
 # The reference truncates every written value to the register's declared width,
 # matching the fixed-width RTL semantics.
 
-from __future__ import annotations
-
 from typing import Any, Dict, List, Optional, Tuple
-
 from isir.dialects.isir import SpecModule
 from isir.utils.expr import eval_expr, parse_sexpr, unfold_user_functions
 from isir.lowering.isir_to_rtl_direct import _width_of

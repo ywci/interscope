@@ -8,12 +8,9 @@
 # an unintended value) independent of the ACL2/Koika prover, complementing the
 # step-refinement verification (which does not touch property statements).
 
-from __future__ import annotations
-
 import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-
+from typing import Any, Dict, List
 from isir.dialects.isir import SpecModule
 from isir.utils.expr import ExprError, eval_expr, parse_sexpr, unfold_user_functions
 

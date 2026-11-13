@@ -13,8 +13,6 @@
 #     a `bounded_pass` that diverges behaviorally (or a `bounded_fail` that
 #     agrees) is a harness/encoding defect, not a silent discrepancy.
 
-from __future__ import annotations
-
 import hashlib
 import inspect
 import json
@@ -22,7 +20,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 from isir.utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -207,6 +207,9 @@ def _expr_to_acl2(expr: Any,
         if op == 'div':
             op_w = max(_width_of_expr(args[0], widths), _width_of_expr(args[1], widths)) if widths else None
             return f"(mod (truncate {a} {b}) (expt 2 {op_w}))" if op_w else f"(truncate {a} {b})"
+        if op == 'mul_full':
+            # Widening product: no operand-width wrapping.
+            return f"(* {a} {b})"
         acl2_op_map = {'add': '+', 'sub': '-', 'mul': '*', 'mod': 'mod'}
         acl2_op = acl2_op_map[op]
         if widths is not None:
@@ -441,7 +444,7 @@ def _maybe_auto_hint(prop_op: isir.SpecPropertyOp,
     expr_kind = prop_op.expression.get("kind", "always")
     in_args = " ".join(input_names)
 
-    if prop_op.kind in ("safety", "invariant") or expr_kind == "transition":
+    if prop_op.kind in ("safety", "invariant"):
         # Self-identity (eq A A) is a reflexivity: no induction needed.
         operand_raw = prop_op.expression.get("operand")
         if operand_raw:
@@ -456,6 +459,11 @@ def _maybe_auto_hint(prop_op: isir.SpecPropertyOp,
         mem_arg = " mem" if memory_names else ""
         init_name = step_name[:-4] + "init" if step_name.endswith("_step") else "init_state"
         return [f'("Goal" :induct ({step_name}n t {init_name} {in_args}{mem_arg}))']
+    if expr_kind == "transition":
+        # A transition is a ONE-cycle step identity (register update / next-state
+        # relation), not an n-cycle induction.  Disable generalization so ACL2
+        # unfolds the step function and closes it combinatorially.
+        return ['("Goal" :do-not \'(generalize))']
     if expr_kind in ("eventually", "until") and prop_op.expression.get("bound") is not None:
         return ['("Goal" :induct n)']
     if expr_kind == "combinational":

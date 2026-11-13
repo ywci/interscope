@@ -1,0 +1,49 @@
+isir_version: "0.1"
+module:
+  name: rec_comm
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: a
+      direction: input
+      type: "bits<8>"
+    - name: b
+      direction: input
+      type: "bits<8>"
+  state:
+    - name: out
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  functions:
+    # fuel-based recursive subtraction (Euclid-style), no similar property to adapt from
+    - name: rec
+      params: [{name: fuel, type: "bits<8>"}, {name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}]
+      return: "bits<8>"
+      recursive: true
+      measure: (add a b)
+      body: (ite (eq a 0) b (ite (eq b 0) a (ite (gt a b) (rec (sub fuel 1) (sub a b) b) (rec (sub fuel 1) a (sub b a)))))
+  rules:
+    - name: compute
+      condition: "true"
+      actions:
+        - (write out (rec (add a b) a b))
+  properties:
+    # commutativity of the recursive function (needs induction over the fuel)
+    - name: rec_commutes
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (rec (add a b) a b)
+        reference: (rec (add b a) b a)
+  proof_obligations:
+    - property: rec_commutes
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

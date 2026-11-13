@@ -1,0 +1,81 @@
+isir_version: "0.1"
+module:
+  name: media_dsp
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: a
+      direction: input
+      type: "bits<8>"
+    - name: b
+      direction: input
+      type: "bits<8>"
+    - name: x
+      direction: input
+      type: "bits<8>"
+    - name: y
+      direction: input
+      type: "bits<8>"
+  outputs:
+    - name: sum_out
+      direction: output
+      type: "bits<16>"
+    - name: prod_out
+      direction: output
+      type: "bits<16>"
+  state:
+    - name: sum_reg
+      kind: register
+      type: "bits<16>"
+      initial: 0
+    - name: prod_reg
+      kind: register
+      type: "bits<16>"
+      initial: 0
+  functions:
+    - name: sum16
+      params: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}]
+      return: "bits<16>"
+      body: (add a b)
+    - name: prod16
+      params: [{name: x, type: "bits<8>"}, {name: y, type: "bits<8>"}]
+      return: "bits<16>"
+      body: (mul x y)
+  rules:
+    - name: accumulate
+      condition: "true"
+      actions:
+        - (write sum_reg (sum16 a b))
+        - (write prod_reg (prod16 x y))
+  properties:
+    # LINEAR bound: Koika's `lia` closes this in one step.
+    - name: sum_bounded
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (le (sum16 a b) 510)
+        reference: t
+      assumes: ["(le a 255)", "(le b 255)"]
+    # NON-LINEAR product bound: ACL2's arithmetic-5 closes this in one step.
+    - name: product_bounded
+      kind: combinational
+      expression:
+        kind: combinational
+        operand: (le (prod16 x y) 65025)
+        reference: t
+      assumes: ["(le x 255)", "(le y 255)"]
+  proof_obligations:
+    - property: sum_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: product_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

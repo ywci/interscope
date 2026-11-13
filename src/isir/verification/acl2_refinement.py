@@ -6,14 +6,11 @@
 # a lowering bug, not a semantics-encoder bug — the reference is the ground
 # truth.
 
-from __future__ import annotations
-
 import random
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-
 from isir.utils.logger import get_logger
 
 logger = get_logger(__name__)

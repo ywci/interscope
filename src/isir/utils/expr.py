@@ -189,6 +189,15 @@ def _eval_internal(expr: Any,
     args = expr[1:]
 
     # Arithmetic
+    if op == 'mul_full':
+        # Widening product: no operand-width wrapping.  The result width is the
+        # sum of the operand widths (caller truncates to the destination width).
+        if len(args) != 2:
+            raise ExprError(f"mul_full expects 2 arguments, got {len(args)}")
+        a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
+        b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
+        return a * b
+
     if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max', 'shl', 'shr', 'lshift', 'rshift'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments, got {len(args)}")

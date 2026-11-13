@@ -109,7 +109,9 @@ Ltac skel n :=
             | progress (match goal with [ H : _ \/ _ |- _ ] => destruct H end); skel m
             | progress (match goal with [ H : step _ ?ins _ |- _ ] =>
                   try (pose proof (assume_inputs ins) as Hin);
-                  inversion H; subst; clear H; simpl end); skel m
+                  inversion H; subst; clear H; simpl;
+                  repeat (match goal with [ H0 : _ /\ _ |- _ ] => destruct H0 end);
+                  cbn end); skel m
              | progress (match goal with [ H : stepn _ _ _ |- _ ] => inversion H; subst; clear H; simpl end); skel m
             | progress (match goal with [ H : ?P, IH : ?P -> ?Q |- _ ] => specialize (IH H) end); skel m
             | progress (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end); skel m
@@ -476,6 +478,39 @@ class KoikaProver:
                     raise
             raise
 
+    def _inject_shared_lemmas(self, coq_file: Path, shared_lemmas: List[str]) -> None:
+        """Register cross-backend step-identities as `Hint Resolve` so the
+        induction's `eauto` can use them.  Only lemmas declared in the file are
+        hinted, duplicates are skipped, and the hint is inserted after the
+        lemma's proof terminator (so the reference is in scope).
+        """
+        if not shared_lemmas:
+            return
+        try:
+            content = coq_file.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning("Could not read Coq file for shared-lemma injection: %s", e)
+            return
+
+        injected = 0
+        for name in shared_lemmas:
+            if f"Hint Resolve {name}" in content:
+                continue
+            m = re.search(
+                rf'^(?:Theorem|Lemma) {re.escape(name)}\b.*?(?:Qed\.|Admitted\.)',
+                content, re.MULTILINE | re.DOTALL,
+            )
+            if m:
+                content = (
+                    content[:m.end()]
+                    + f"\nHint Resolve {name} : core.\n"
+                    + content[m.end():]
+                )
+                injected += 1
+        if injected:
+            logger.info("Injecting %d shared lemma hint(s) into %s", injected, coq_file.name)
+            coq_file.write_text(content, encoding="utf-8")
+
     def _inject_mc_lemmas(self, coq_file: Path, theorem_name: str) -> None:
         if not self.use_mc_lemmas or self.spec_module is None:
             return
@@ -611,12 +646,17 @@ class KoikaProver:
         tactic_hints: Optional[List[str]] = None,
         structural_hints: Optional[str] = None,
         initial_script: Optional[str] = None,
+        shared_lemmas: Optional[List[str]] = None,
     ) -> ProofResult:
         start_time = time.time()
         logger.info("Attempting proof for '%s' (file: %s)", theorem_name, coq_file)
 
         # Inject standard prelude before anything else (safe).
         self._ensure_prelude(coq_file)
+
+        # Lemma-share: register cross-backend step-identities as auto hints so
+        # this induction can `eauto` with them.
+        self._inject_shared_lemmas(coq_file, shared_lemmas or [])
 
         # Prove user-declared loop invariants first so properties can use them.
         self._prove_invariant_lemmas(coq_file)
@@ -697,6 +737,19 @@ class KoikaProver:
                 duration=duration,
                 backend="koika",
                 metadata={"automation": "coqc_verify"}
+            )
+
+        # 4.5. Deterministic skeleton proof (reachable induction + `eauto` over
+        # the shared `Hint Resolve` bound lemmas), tried BEFORE the LLM invariant.
+        recursive = self._recursive_skeleton_proof(coq_file, theorem_name)
+        if recursive is not None:
+            duration = time.time() - start_time
+            return ProofResult(
+                success=True,
+                proof_script=recursive,
+                duration=duration,
+                backend="koika",
+                metadata={"automation": "recursive_skeleton"}
             )
 
         # 5. LLM full-proof generation (with structural hints, coqc validation)
@@ -1814,6 +1867,7 @@ class KoikaProver:
             candidates.append(
                 "Proof.\n"
                 "  intros.\n"
+                "  match goal with [ Hs : step _ _ _ |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
                 "  simpl in *.\n"
                 "  repeat (match goal with [ H : _ /\\ _ |- _ ] => destruct H end).\n"
                 "  repeat (match goal with [ H : ?x = ?y |- _ ] => rewrite H in *; clear H end).\n"
@@ -1821,6 +1875,7 @@ class KoikaProver:
                 "  simpl in *.\n"
                 "  repeat (match goal with [ |- context[if ?b then _ else _] ] => destruct b eqn:E end).\n"
                 "  simpl in *.\n"
+                "  cbn in *.\n"
                 "  all: try reflexivity.\n"
                 "  all: try (exfalso; match goal with [ H : ?b <> ?b |- _ ] => apply H; reflexivity end).\n"
                 "Qed."
@@ -1832,6 +1887,19 @@ class KoikaProver:
                 "Qed."
             )
         else:
+            # Generic always/safety induction: induction on `reachable`, invert
+            # the step, destruct the conjunction premise, then `eauto` (which
+            # applies `Hint Resolve` lemmas like the widening-product bound).
+            candidates.append(
+                "Proof.\n"
+                "  intros s Hreach.\n"
+                "  induction Hreach.\n"
+                "  - simpl; lia.\n"
+                "  - match goal with [ Hs : step _ _ _ |- _ ] => inversion Hs; subst; clear Hs; simpl end.\n"
+                "    repeat (match goal with [ H : _ /\\ _ |- _ ] => destruct H end).\n"
+                "    eauto.\n"
+                "Qed."
+            )
             if const_lemmas:
                 specs = "; ".join(f"specialize ({name} _ Hr)" for name in const_lemmas)
                 candidates.append(
@@ -1866,32 +1934,36 @@ class KoikaProver:
             )
 
         workspace = self._workspace_for(coq_file)
-        for proof in candidates:
-            new_block = match.group(0).replace("Admitted.", proof)
-            new_content = original.replace(match.group(0), new_block, 1)
-            if "Ltac skel_close" not in new_content:
-                # Inject after `step`/`reachable` (needed by skel) but before the
-                # invariant lemmas and properties that use it.
-                new_content = new_content.replace(
-                    "Hint Constructors reachable step : core.",
-                    "Hint Constructors reachable step : core.\n\n" + RECURSIVE_SKELETON_LTAC,
-                    1,
-                )
-            try:
-                coq_file.write_text(new_content, encoding="utf-8")
-            except Exception as e:
-                logger.warning("Recursive skeleton: could not write %s: %s", coq_file, e)
-                continue
-            if self._compile_with_coqc(coq_file, workspace):
-                updated = coq_file.read_text()
-                if self._theorem_is_closed(updated, theorem_name):
-                    logger.info("Recursive skeleton proof succeeded for '%s'.", theorem_name)
-                    return proof
-
+        succeeded = False
         try:
-            coq_file.write_text(original, encoding="utf-8")
-        except Exception:
-            pass
+            for proof in candidates:
+                new_block = match.group(0).replace("Admitted.", proof)
+                new_content = original.replace(match.group(0), new_block, 1)
+                if "Ltac skel_close" not in new_content:
+                    # Inject after `step`/`reachable` (needed by skel) but before the
+                    # invariant lemmas and properties that use it.
+                    new_content = new_content.replace(
+                        "Hint Constructors reachable step : core.",
+                        "Hint Constructors reachable step : core.\n\n" + RECURSIVE_SKELETON_LTAC,
+                        1,
+                    )
+                try:
+                    coq_file.write_text(new_content, encoding="utf-8")
+                except Exception as e:
+                    logger.warning("Recursive skeleton: could not write %s: %s", coq_file, e)
+                    continue
+                if self._compile_with_coqc(coq_file, workspace):
+                    updated = coq_file.read_text()
+                    if self._theorem_is_closed(updated, theorem_name):
+                        logger.info("Recursive skeleton proof succeeded for '%s'.", theorem_name)
+                        succeeded = True
+                        return proof
+        finally:
+            if not succeeded:
+                try:
+                    coq_file.write_text(original, encoding="utf-8")
+                except Exception:
+                    pass
         logger.info("Recursive skeleton proof did not close '%s'.", theorem_name)
         return None
 

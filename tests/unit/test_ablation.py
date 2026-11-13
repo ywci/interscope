@@ -24,3 +24,19 @@ class TestAblationFlags:
         assert _effective_backend("koika", True) == "koika"
         assert _effective_backend("acl2", True) == "acl2"
         assert _effective_backend("model_checking", True) == "model_checking"
+
+    def test_property_kind_helper(self):
+        from isir.cli.verify import _property_kind
+        from isir.dialects import isir
+        spec = isir.SpecModule(
+            name="t",
+            property_ops=[
+                isir.SpecPropertyOp(prop_name="p_safety", kind="safety",
+                                    expression={"kind": "always", "operand": "x"}),
+                isir.SpecPropertyOp(prop_name="p_comb", kind="combinational",
+                                    expression={"kind": "combinational", "operand": "y"}),
+            ],
+        )
+        assert _property_kind(spec, "p_safety") == "always"   # inductive
+        assert _property_kind(spec, "p_comb") == "combinational"
+        assert _property_kind(spec, "missing") is None

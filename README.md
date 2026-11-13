@@ -161,6 +161,7 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 | `./run.sh --vcd-to-trace <vcd>` | Convert a VCD file to the trace dialect (debug helper). |
 | `./run.sh --extract-mapping <vfile>` | Extract ISIR mapping from Verilog annotations. |
 | `./run.sh --gen-spec <file.isir>\|--all` | Generate a natural‑language Markdown specification (`.md`) in the design's folder; `--verify` checks round‑trip behavioral equivalence, `--llm-roundtrip` regenerates the `.isir` via the configured LLM and differentially checks it (never overwriting the original). |
+| `./run.sh --check-specs [--verify]` | Check every `examples/*/*.isir` has a sibling natural‑language `.md` spec (completeness gate); `--verify` additionally runs the lossless round‑trip check. Exits non‑zero if any example is missing its spec or fails. |
 | `./run.sh --help` | Show the wrapper's help text. |
 
 For compatibility, the old `--command` style is still accepted. The newer unified CLI also accepts commands without leading dashes, e.g.:
@@ -187,6 +188,7 @@ For compatibility, the old `--command` style is still accepted. The newer unifie
 - `--no-reflection` : Disable reflection feedback (ablation).
 - `--mc-lemmas` / `--no-mc-lemmas` (verify) : Enable/disable model-checking lemma injection (MC gating) for Koika — ablation.
 - `--no-cowork` (verify) : Disable the `koika_acl2` co-work dispatch, downgrading it to single-backend Koika — ablation.
+- `--search linear|perf|mcts` (verify) : Choose the proof search strategy (PERF is the default; `linear` is the greedy repair prover, `mcts` the de‑coupled UCB1 search).
 - `--dry-run` : Parse and validate only; do not execute provers.
 - `--no-validate` (check) : Skip schema validation of the abstract trace file.
 

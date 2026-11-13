@@ -11,7 +11,6 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-
 from isir.dialects import isir
 from isir.lowering import koika_to_rtl
 from isir.lowering.split_rules import split_rules

@@ -93,3 +93,17 @@ class TestGenSpec:
         result = gen_spec.llm_roundtrip(spec, md)
         assert Path("examples/alu/alu.isir").read_text() == orig
         assert result in (True, False)  # not None => LLM path ran
+
+    def test_every_example_has_spec_md(self):
+        """Every examples/*/*.isir must have a sibling natural-language .md."""
+        missing = [
+            str(p) for p in sorted(Path("examples").glob("*/*.isir"))
+            if not p.with_suffix(".md").exists()
+        ]
+        assert not missing, f"examples missing a natural-language spec: {missing}"
+
+    def test_new_operator_mul_full_is_naturalized(self):
+        from gen_spec import _nl
+        out = _nl(["mul_full", "a", "b"])
+        assert "non-wrapping" in out
+        assert "(mul_full" not in out
