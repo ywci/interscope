@@ -36,6 +36,9 @@ provers:
       invariant_mining: true
       skeleton_reflection: true
       skeleton_step_tactics: []
+      skeleton_max_depth: 3 # shared by linear path and PERF try_skeleton_first
+      skeleton_enabled: true # false => --no-skeleton: disable the recursive skeleton (raw-LLM baseline)
+      coqc_fallback: true # false => --no-coqc-fallback: disable the deterministic coqc fallback (pure-LLM baseline)
       use_rocq_mcp: false
       structural_validation: true # enable structural pre‑filter
       tactic_modernization: true # automatically modernize deprecated tactics
@@ -65,6 +68,7 @@ verification:
   bmc_max_depth: 100
   ic3_max_steps: 1000
   formal_timeout: 300
+  mc_engine: "induction" # MC-gating engine: bmc (bounded, unsound for invariants) | induction (IC3/k-induction, sound)
   split_monolithic_rules: true # enable rule splitting to break deep ite chains
   rule_split_attribute: "split"
 

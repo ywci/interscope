@@ -366,7 +366,7 @@ def _has_unsupported_ops(expr: Any) -> bool:
     """Return True if the expression contains operators that cannot be lowered."""
     if isinstance(expr, list) and len(expr) > 0:
         op = expr[0]
-        if op in ("mem_read", "mem_write", "slice", "mul", "div", "mod"):
+        if op in ("mem_read", "mem_write", "slice", "mul", "mul_full", "div", "mod"):
             return True
         if op in _MULTIARG_BLACKBOXES:
             return True
@@ -721,7 +721,7 @@ def _coq_bits_expr(expr, reg_widths: dict, current_width: int) -> str:
         arg_coq = " ".join(_coq_bits_expr(a, reg_widths, current_width) for a in args)
         return f"extcall {_capitalize(op)}({arg_coq})"
 
-    elif op in ('slice', 'mul'):
+    elif op in ('slice', 'mul', 'mul_full'):
         raise ExprError(f"Unsupported operator (should have been skipped): {op}")
 
     else:

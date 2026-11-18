@@ -258,10 +258,10 @@ class TestVerifyModelChecking:
 
         rtl_file = tmp_path / "rtl" / "test.v"
         rtl_file.parent.mkdir(parents=True)
-        rtl_file.write_text("// dummy")
+        rtl_file.write_text("module test;\nendmodule\n")
         mock_rtl.return_value = MagicMock()
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
-            "pathlib.Path.read_text", return_value="// dummy"
+            "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
         ), patch("shutil.which", return_value="/usr/bin/sby"):
             mock_mc.return_value = {
                 "success": True,
@@ -335,7 +335,7 @@ class TestVerifyModelChecking:
         }
 
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
-            "pathlib.Path.read_text", return_value="// dummy"
+            "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
         ):
             args = argparse.Namespace(
                 input=str(tmp_path / "test.isir"),
@@ -385,7 +385,7 @@ class TestVerifyModelChecking:
         mock_parse.return_value = MagicMock(module=MagicMock())
 
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
-            "pathlib.Path.read_text", return_value="// dummy"
+            "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
         ):
             args = argparse.Namespace(
                 input=str(tmp_path / "test.isir"),
@@ -460,7 +460,7 @@ class TestVerifyModelChecking:
         }
 
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
-            "pathlib.Path.read_text", return_value="// dummy"
+            "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
         ), patch("shutil.which", return_value="/usr/bin/sby"):
             args = argparse.Namespace(
                 input=str(tmp_path / "test.isir"),

@@ -166,29 +166,36 @@ class ACL2Prover:
             return self._prove_existing_by_name(acl2, theorem_name, start_time)
 
         if not hints:
-            skeleton_hint = ['("Goal" :induct t)']
-            logger.info("Trying skeleton induction hint for '%s'", theorem_name)
-            result = acl2.defthm(theorem_name, statement, skeleton_hint)
-            if result["success"]:
-                proof_script = self._build_defthm_string(
-                    theorem_name, statement, skeleton_hint
-                )
-                duration = time.time() - start_time
-                logger.info("Skeleton proof succeeded for '%s'.", theorem_name)
-                return ProofResult(
-                    success=True,
-                    proof_script=proof_script,
-                    duration=duration,
-                    backend="acl2",
-                    metadata={"automation": "skeleton"},
-                )
-            else:
-                logger.info(
-                    "Skeleton proof failed for '%s': %s",
-                    theorem_name,
-                    result.get("output", "")[:200],
-                )
-                acl2.undo()
+            # Try the single-cycle skeleton first (transition/combinational
+            # step-identities have no `t` time variable, so `:induct t` is a
+            # no-op for them), then the n-cycle `:induct t` skeleton.
+            skeleton_hints = [
+                ['("Goal" :do-not \'(generalize))'],
+                ['("Goal" :induct t)'],
+            ]
+            for skeleton_hint in skeleton_hints:
+                logger.info("Trying skeleton hint %s for '%s'", skeleton_hint, theorem_name)
+                result = acl2.defthm(theorem_name, statement, skeleton_hint)
+                if result["success"]:
+                    proof_script = self._build_defthm_string(
+                        theorem_name, statement, skeleton_hint
+                    )
+                    duration = time.time() - start_time
+                    logger.info("Skeleton proof succeeded for '%s'.", theorem_name)
+                    return ProofResult(
+                        success=True,
+                        proof_script=proof_script,
+                        duration=duration,
+                        backend="acl2",
+                        metadata={"automation": "skeleton"},
+                    )
+                else:
+                    logger.info(
+                        "Skeleton proof failed for '%s' (hint %s): %s",
+                        theorem_name, skeleton_hint,
+                        result.get("output", "")[:200],
+                    )
+                    acl2.undo()
 
         checkpoint_name = f"pre_{theorem_name}"
         acl2.save_checkpoint(checkpoint_name)

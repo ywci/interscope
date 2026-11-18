@@ -42,8 +42,8 @@ module:
       kind: transition
       expression:
         kind: transition
+        rule: measure
         operand: (eq (read energy) (square (prev sample)))
-      rule: measure
     # always invariant: the measured energy fits in 16 bits (sample^2 <= 65025).
     - name: energy_bounded
       kind: safety

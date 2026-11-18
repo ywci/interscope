@@ -9,7 +9,7 @@ The project provides:
 - **Dual proof backends** (Kōika/Coq + ACL2) with LLM‑assisted proof generation and iterative repair, plus a **co‑work backend** (`koika_acl2`) that proves hard sub‑goals concurrently in both assistants.
 - **Model checking** of generated assertions using SymbiYosys (sby).
 - **Trace lifting** from Verilator VCD simulations back to abstract ISIR traces.
-- **Two independent ISIR→RTL lowering paths** — a self-contained *direct* (short) path and the *Kōika* (long) path — plus a **differential harness** that replays both and reports agreement, and a **reference interpreter** that cross-checks the direct path semantically (currently 72/72 example designs agree).
+- **Two independent ISIR→RTL lowering paths** — a self-contained *direct* (short) path and the *Kōika* (long) path — plus a **differential harness** that replays both and reports agreement, and a **reference interpreter** that cross-checks the direct path semantically (currently 76/76 example designs agree).
 - **Evidence registry** for tracking proven theorems, counterexamples, and coverage.
 - A **user‑customisable proof library** (`src/lib/koika/assist.py`) that can be extended with new theorems.
 - **PERF (Proof tree Exploration with Reflective Feedback)** – an advanced test‑time proof search that uses tree exploration, Pareto pruning, and LLM reflection to tackle hard proof obligations, with explicit integration of model‑checking counterexamples. PERF is the utilization of ISIR for proof suspension and advanced proof search.
@@ -461,7 +461,7 @@ The differential classifies each design as:
 - `divergent_long_short` — a genuine semantic divergence.
 - `error` — a path failed to generate or compile.
 
-The direct path is additionally cross-checked against a Python **reference interpreter** (`src/isir/verification/reference_semantics.py` via `src/isir/lowering/verify_direct.py`) that evaluates the ISIR expression semantics directly. As of this checkout, all 72 example designs agree (`verify_direct`) and the Kōika differential reports `37 agreed / 35 unsupported / 0 divergent / 0 error`.
+The direct path is additionally cross-checked against a Python **reference interpreter** (`src/isir/verification/reference_semantics.py` via `src/isir/lowering/verify_direct.py`) that evaluates the ISIR expression semantics directly. As of this checkout, all 76 example designs agree (`verify_direct`) and the Kōika differential reports `41 agreed / 35 unsupported / 0 divergent / 0 error`.
 
 ---
 

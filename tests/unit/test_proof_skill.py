@@ -286,9 +286,16 @@ class TestProofSkillModelCheck(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("Missing 'rtl_file_path'", result.error_message)
 
-    def test_prove_model_check_missing_assertions_path(self):
-        obligation = {"engine": "model_checking"}
+    def test_prove_model_check_inline_assertions(self):
+        obligation = {"engine": "model_checking", "property": "test_prop"}
         context = {"rtl_file_path": "/rtl/test.v"}
-        result = self.skill._prove_model_check(obligation, context)
-        self.assertFalse(result.success)
-        self.assertIn("Missing 'rtl_file_path'", result.error_message)
+        with patch.object(ModelCheckProver, "prove") as mock_mc:
+            mock_mc.return_value = {
+                "success": True,
+                "status": "proved",
+                "error": None,
+            }
+            result = self.skill._prove_model_check(obligation, context)
+            self.assertTrue(result.success)
+            mock_mc.assert_called_once()
+            self.assertIsNone(mock_mc.call_args.kwargs["assertions_path"])

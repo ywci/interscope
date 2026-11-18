@@ -35,11 +35,12 @@ class ModelCheckProver:
     def prove(
         self,
         rtl_path: Path,
-        assertions_path: Path,
+        assertions_path: Optional[Path],
         top_module: str,
         engine: str = "bmc",
         depth: Optional[int] = None,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        harness_path: Optional[Path] = None
     ) -> Dict[str, Any]:
         try:
             result = run_model_check(
@@ -48,7 +49,8 @@ class ModelCheckProver:
                 top_module=top_module,
                 engine=engine,
                 depth=depth,
-                timeout=timeout
+                timeout=timeout,
+                harness_path=harness_path
             )
             return result
         except ModelCheckError as e:
@@ -233,9 +235,9 @@ class LLMProofSkill(ProofSkill):
 
         rtl_path = context.get("rtl_file_path")
         assertions_path = context.get("assertions_file_path")
-        if not rtl_path or not assertions_path:
+        if not rtl_path:
             logger.warning(
-                "Cannot run model checking pre‑pass: missing RTL or assertions path."
+                "Cannot run model checking pre‑pass: missing RTL path."
             )
             return
 
@@ -280,8 +282,10 @@ class LLMProofSkill(ProofSkill):
         if not design_name and context.get("spec_module"):
             design_name = getattr(context["spec_module"], "name", None)
 
-        # Build the initial script from generic reuse (proof library / cache /
-        # adapted similar proof) — not the PERF skeleton.
+        # Build the initial script from the proof library only — no cache /
+        # similar-proof warm-start, keeping MCTS symmetric with the linear path
+        # (which also lacks cache/similar reuse). The library is gated by
+        # use_proof_library (false when PERF is enabled).
         initial_script = None
         use_library_allowed = self.config.get("provers", {}).get("koika", {}).get(
             "use_proof_library", False
@@ -291,14 +295,6 @@ class LLMProofSkill(ProofSkill):
             lib_key = context.get("theorem_name", "")
             if lib_key in PROOF_LIBRARY:
                 initial_script = self._prepare_initial_script(PROOF_LIBRARY[lib_key])
-        if initial_script is None and design_name and prop_name:
-            cached = self._get_cached_proof(design_name, prop_name)
-            if cached:
-                initial_script = self._prepare_initial_script(cached)
-        if initial_script is None and self._successful_proofs:
-            similar = self._find_and_adapt_similar_proof(prop_name, obligation, context)
-            if similar:
-                initial_script = self._prepare_initial_script(similar)
         if initial_script:
             context["initial_script"] = initial_script
 
@@ -435,21 +431,29 @@ class LLMProofSkill(ProofSkill):
             )
         except Exception as e:
             logger.exception("Koika prover raised an exception")
-            return ProofResult(success=False, error_message=f"Koika prover error: {e}")
+            return ProofResult(
+                success=False,
+                error_message=f"Koika prover error: {e}",
+                metadata={"backend": "koika"}
+            )
         finally:
             if has_overrides and prover is not self._koika_prover:
                 prover.close()
 
         if result.success:
+            meta = dict(result.metadata) if isinstance(result.metadata, dict) else {}
+            meta["backend"] = "koika"
             return ProofResult(
                 success=True,
                 proof_script=result.proof_script or "",
-                metadata={"backend": "koika"}
+                metadata=meta
             )
+        meta = dict(result.metadata) if isinstance(result.metadata, dict) else {}
+        meta["backend"] = "koika"
         return ProofResult(
             success=False,
             error_message=result.error_message or "Unknown Koika proof failure",
-            metadata={"backend": "koika"}
+            metadata=meta
         )
 
     def _prove_acl2(
@@ -484,33 +488,44 @@ class LLMProofSkill(ProofSkill):
             )
         except Exception as e:
             logger.exception("ACL2 prover raised an exception")
-            return ProofResult(success=False, error_message=f"ACL2 prover error: {e}")
+            return ProofResult(
+                success=False,
+                error_message=f"ACL2 prover error: {e}",
+                metadata={"backend": "acl2"}
+            )
 
         if result.success:
+            meta = dict(result.metadata) if isinstance(result.metadata, dict) else {}
+            meta["backend"] = "acl2"
             return ProofResult(
                 success=True,
                 proof_script=result.proof_script or "",
-                metadata={"backend": "acl2"}
+                metadata=meta
             )
+        meta = dict(result.metadata) if isinstance(result.metadata, dict) else {}
+        meta["backend"] = "acl2"
         return ProofResult(
             success=False,
             error_message=result.error_message or "Unknown ACL2 proof failure",
-            metadata={"backend": "acl2"}
+            metadata=meta
         )
 
     def _prove_model_check(self, obligation: Dict[str, Any], context: Dict[str, Any]) -> ProofResult:
         rtl_path = context.get("rtl_file_path")
         assertions_path = context.get("assertions_file_path")
-        if not rtl_path or not assertions_path:
+        if not rtl_path:
             return ProofResult(
                 success=False,
-                error_message="Missing 'rtl_file_path' or 'assertions_file_path' in context"
+                error_message="Missing 'rtl_file_path' in context"
             )
         top_module = context.get("top_module") or (
             context.get("spec_module").name if context.get("spec_module") else "top"
         )
         metadata = obligation.get("metadata", {}) if isinstance(obligation, dict) else {}
-        engine = metadata.get("mc_engine", "bmc")
+        engine = (
+            metadata.get("mc_engine")
+            or self.config.get("verification", {}).get("mc_engine", "bmc")
+        )
         depth = metadata.get("depth")
         timeout = metadata.get("timeout")
 
@@ -519,14 +534,19 @@ class LLMProofSkill(ProofSkill):
 
         result = self._mc_prover.prove(
             rtl_path=Path(rtl_path),
-            assertions_path=Path(assertions_path),
+            assertions_path=Path(assertions_path) if assertions_path else None,
             top_module=top_module,
             engine=engine,
             depth=depth,
-            timeout=timeout
+            timeout=timeout,
+            harness_path=Path(context["harness_file_path"]) if context.get("harness_file_path") else None
         )
 
         prop_name = obligation.get("property") if isinstance(obligation, dict) else getattr(obligation, "property", "?")
+        design_name = (
+            context.get("spec_module").name
+            if context.get("spec_module") else None
+        )
         try:
             from isir.evidence.annotator import create_evidence_ref, add_evidence_to_registry
             if result.get("success"):
@@ -538,7 +558,7 @@ class LLMProofSkill(ProofSkill):
                     status="proved",
                     property_name=prop_name,
                 )
-                add_evidence_to_registry(evidence, property_name=prop_name)
+                add_evidence_to_registry(evidence, property_name=prop_name, design_name=design_name)
                 logger.info("Registered model‑checking evidence for '%s'.", prop_name)
             else:
                 cex_trace = result.get("counterexample_trace")
@@ -551,7 +571,7 @@ class LLMProofSkill(ProofSkill):
                     status="counterexample",
                     property_name=prop_name,
                 )
-                add_evidence_to_registry(evidence, property_name=prop_name)
+                add_evidence_to_registry(evidence, property_name=prop_name, design_name=design_name)
                 logger.info("Registered counterexample evidence for '%s'.", prop_name)
         except Exception as e:
             logger.warning("Failed to register model‑checking evidence: %s", e)
@@ -647,7 +667,8 @@ class LLMProofSkill(ProofSkill):
                     temp_prover.spec_module = context["spec_module"]
 
                 skeleton_script = temp_prover._recursive_skeleton_proof(
-                    Path(coq_file), theorem_name, max_depth=3
+                    Path(coq_file), theorem_name,
+                    max_depth=temp_prover.skeleton_max_depth,
                 )
                 prop = obligation.get("property", "")
                 if skeleton_script is None and self._is_bound_property(
@@ -717,7 +738,9 @@ class LLMProofSkill(ProofSkill):
                         temp_prover.set_structural_hints(hints_str)
                 if context.get("spec_module"):
                     temp_prover.spec_module = context["spec_module"]
-                proposed = temp_prover._propose_invariants(Path(coq_file), theorem_name)
+                proposed = None
+                if temp_prover.skeleton_enabled:
+                    proposed = temp_prover._propose_invariants(Path(coq_file), theorem_name)
                 if proposed:
                     r = temp_prover._recursive_skeleton_proof(Path(coq_file), theorem_name)
                     if r is not None:

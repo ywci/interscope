@@ -128,6 +128,17 @@ def _contains_temporal(sexpr: Any) -> bool:
     return False
 
 
+def _strip_prev(sexpr: Any) -> Any:
+    """Drop `prev` from a transition operand: in the single-cycle model the
+    pre-cycle value of an input is simply the current input, so `(prev x)` is
+    just `x` (no trace/delay)."""
+    if isinstance(sexpr, list):
+        if sexpr and sexpr[0] == "prev":
+            return _strip_prev(sexpr[1]) if len(sexpr) > 1 else sexpr
+        return [_strip_prev(x) for x in sexpr]
+    return sexpr
+
+
 def _state_access(idx: int, state_var: str, trace_stepn: Optional[str],
                   trace_ct: Optional[str], inputs_str: str,
                   mem_var: Optional[str] = None) -> str:
@@ -183,7 +194,7 @@ def _expr_to_acl2(expr: Any,
     args = expr[1:]
 
     # Arithmetic operators
-    if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'lshift', 'rshift', 'gcd', 'min', 'max'):
+    if op in ('add', 'sub', 'mul', 'mul_full', 'div', 'mod', 'shl', 'shr', 'lshift', 'rshift', 'gcd', 'min', 'max'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
         a = _expr_to_acl2(args[0], state_indices, memory_names, inputs, widths, state_types, input_types, state_var, function_info, local_names, trace_stepn, trace_ct, mem_var)
@@ -759,15 +770,14 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
                         assumes_acl2.append(f"(< {inp.name} (expt 2 {w}))")
                 prop_acl2 = f"(equal {impl} {ref_acl2})"
             elif expr_kind == "transition":
-                # operand holds when the scoped rule fires; add the rule's
-                # condition to the hypotheses.  `prev` refers to the pre-cycle
-                # state, so a temporal operand uses the trace model.
-                t_parsed = parse_sexpr(_unfold(operand))
-                if _contains_temporal(t_parsed):
-                    prop_acl2 = _expr_to_acl2(t_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names, trace_stepn=f"{spec_module.name}_stepn", trace_ct="t")
-                    assumes_acl2.insert(0, "(natp t)")
-                else:
-                    prop_acl2 = _expr_to_acl2(t_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, function_info=recursive_names)
+                # A transition is a ONE-cycle step identity (register update /
+                # next-state relation), not an n-cycle trace property.  `prev x`
+                # is the pre-cycle value of x — for a single step that is simply
+                # the current input — and `read` refers to the post-state (the
+                # step function's result).
+                t_parsed = _strip_prev(parse_sexpr(_unfold(operand)))
+                post_state = f"({spec_module.name}_step st {' '.join(input_names)}{' mem' if memory_names else ''})"
+                prop_acl2 = _expr_to_acl2(t_parsed, state_indices, memory_names, input_names, widths, state_types, input_types, state_var=post_state, function_info=recursive_names)
                 rule_name = prop_op.expression.get("rule")
                 rule = next((r for r in spec_module.rule_ops if r.rule_name == rule_name), None)
                 if rule is not None and rule.condition:

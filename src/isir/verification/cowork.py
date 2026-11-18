@@ -136,8 +136,9 @@ def run_cowork(koika_fn: Callable[[], ProofResult],
     The original implementation blocked on *both* futures, so a slow (or
     hanging) loser stalled the whole obligation even after the winner had
     already proved it.  This version returns as soon as one side succeeds and
-    does not await the loser (its thread runs to completion in the background
-    but is never blocked on).
+    does await the loser's in-flight run to completion (wait=True) before
+    returning, so its writes to the shared Coq/ACL2 files finish before the
+    next obligation reads them (prevents a torn read-modify-write race).
     """
     pool = ThreadPoolExecutor(max_workers=2)
     fut_koika = pool.submit(koika_fn)
@@ -156,7 +157,7 @@ def run_cowork(koika_fn: Callable[[], ProofResult],
     except TimeoutError:
         pass  # neither finished in time; treat as both-failed below
     finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+        pool.shutdown(wait=True, cancel_futures=True)
 
     for fut, name in futures.items():
         if name not in results:

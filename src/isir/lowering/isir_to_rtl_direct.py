@@ -33,7 +33,7 @@ INT_WIDTH = 32
 
 _BIN_BITWISE = {"and": "&", "or": "|", "xor": "^"}
 _BIN_ARITH = {
-    "add": "+", "sub": "-", "mul": "*", "div": "/", "mod": "%",
+    "add": "+", "sub": "-", "mul": "*", "mul_full": "*", "div": "/", "mod": "%",
     "shl": "<<", "shr": ">>", "lshift": "<<", "rshift": ">>",
 }
 _BIN_CMP = {"eq": "==", "neq": "!=", "gt": ">", "lt": "<",
@@ -245,6 +245,9 @@ class RtlDirectEmitter:
             a = self._lower(args[0], width)
             b = self._lower(args[1], width)
             result = f"({a} {_BIN_ARITH[op]} {b})"
+            # mul_full is the widening (non-wrapping) product.
+            if op == "mul_full":
+                return result
             # Truncate to the operand width so the arithmetic matches the ISIR
             # bits<N> wrapping semantics (Verilog mul/add widen before assignment).
             op_w = self._operand_width(expr)

@@ -46,6 +46,7 @@ def create_evidence_ref(evidence_type: str,
 
 def add_evidence_to_registry(evidence: Evidence,
                              property_name: Optional[str] = None,
+                             design_name: Optional[str] = None,
                              db_path: Optional[Path] = None) -> int:
     """
     Add an Evidence object to the evidence registry (SQLite database).
@@ -53,6 +54,7 @@ def add_evidence_to_registry(evidence: Evidence,
     Args:
         evidence: Evidence dataclass instance.
         property_name: Optional property name for the evidence.
+        design_name: Optional design name for batch tracking.
         db_path: Optional path to the evidence database (default from config).
 
     Returns:
@@ -65,7 +67,8 @@ def add_evidence_to_registry(evidence: Evidence,
         ref_value=evidence.ref.value,
         engine=evidence.engine,
         status=evidence.status,
-        property_name=property_name
+        property_name=property_name,
+        design_name=design_name
     )
 
 

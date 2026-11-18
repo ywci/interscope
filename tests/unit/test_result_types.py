@@ -28,6 +28,7 @@ class TestStatus:
             Status.FAIL,
             Status.TIMEOUT,
             Status.ERROR,
+            Status.SKIPPED,
         ]
 
     def test_lookup_by_value(self):

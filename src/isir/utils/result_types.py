@@ -14,6 +14,7 @@ class Status(Enum):
     FAIL = "FAIL"
     TIMEOUT = "TIMEOUT"
     ERROR = "ERROR"
+    SKIPPED = "SKIPPED"
 
 @dataclass
 class BackendResult:

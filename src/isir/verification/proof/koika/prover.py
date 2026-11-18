@@ -33,8 +33,27 @@ from isir.verification.proof.tactic_modernizer import modernize_tactics
 from isir.verification.proof.structural_validator import validate_structure
 from isir.verification.proof.koika.auto_patcher import auto_patch
 from isir.verification.proof.domain_tactics import apply_domain_tactics
+import threading
 
 logger = get_logger(__name__)
+
+
+# Global lock + atomic write for the shared Coq file.  The co-work backend runs
+# Koika and ACL2 concurrently and `run_cowork` returns on first-wins with
+# `shutdown(wait=False)`, so the *losing* Koika prover may keep rewriting the
+# .v file in the background while the next obligation starts reading/writing it.
+# Serializing writes (and making them atomic via temp + rename) prevents a torn
+# write from surfacing as `coqc: Syntax error: illegal begin of vernac`.
+_COQ_WRITE_LOCK = threading.Lock()
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Write `content` to `path` atomically (temp + os.replace) under a global
+    lock, so a concurrent reader/writer never observes a partial file."""
+    with _COQ_WRITE_LOCK:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, path)
 
 # Recursive, subgoal-aware proof skeleton.
 #
@@ -172,6 +191,9 @@ class KoikaProver:
         self.pre_simplify = prove_cfg.get("pre_simplify", True)
         self.invariant_mining = prove_cfg.get("invariant_mining", True)
         self.skeleton_reflection = prove_cfg.get("skeleton_reflection", True)
+        self.skeleton_max_depth: int = prove_cfg.get("skeleton_max_depth", 3)
+        self.skeleton_enabled: bool = prove_cfg.get("skeleton_enabled", True)
+        self.coqc_fallback: bool = prove_cfg.get("coqc_fallback", True)
 
         self.use_rocq_mcp = prove_cfg.get("use_rocq_mcp", True)
 
@@ -343,7 +365,7 @@ class KoikaProver:
 
             logger.info("Injecting standard prelude into %s", coq_file.name)
             new_content = self._prelude + "\n" + content
-            coq_file.write_text(new_content, encoding="utf-8")
+            _atomic_write(coq_file, new_content)
 
     def _modernise_script(self, proof_script: str) -> str:
         """Apply tactic modernisation to a proof script."""
@@ -509,7 +531,7 @@ class KoikaProver:
                 injected += 1
         if injected:
             logger.info("Injecting %d shared lemma hint(s) into %s", injected, coq_file.name)
-            coq_file.write_text(content, encoding="utf-8")
+            _atomic_write(coq_file, content)
 
     def _inject_mc_lemmas(self, coq_file: Path, theorem_name: str) -> None:
         if not self.use_mc_lemmas or self.spec_module is None:
@@ -531,6 +553,7 @@ class KoikaProver:
             evidence_type="inductive_invariant",
             status="proved",
             design_name=design_name,
+            engine="IC3",
             limit=1000,
         )
         if not mc_entries:
@@ -592,6 +615,10 @@ class KoikaProver:
                 continue
 
             lemma_name = f"{prop_name}_mc"
+            if f"Lemma {lemma_name}" in content:
+                # Already injected by an earlier obligation (the same MC lemma is
+                # shared across every Koika-side theorem of the design).
+                continue
             lemma_text = (
                 f"Lemma {lemma_name} : forall (s : state) (inputs : inputs), "
                 f"reachable s -> ({coq_stmt}).\n"
@@ -603,7 +630,7 @@ class KoikaProver:
             lemmas_added += 1
 
         if lemmas_added > 0:
-            coq_file.write_text(content)
+            _atomic_write(coq_file, content)
             logger.info(
                 "Injected %d MC-proved lemma(s) into Coq file for '%s' (filtered from %d available).",
                 lemmas_added,
@@ -612,6 +639,10 @@ class KoikaProver:
             )
         else:
             logger.info("No MC-proved lemmas could be injected for '%s'.", theorem_name)
+
+    def inject_mc_lemmas(self, coq_file: Path, theorem_name: str) -> None:
+        """Public alias for MC lemma injection (used by the PERF traversal)."""
+        self._inject_mc_lemmas(coq_file, theorem_name)
 
     def _get_theorem_state_variables(self, coq_file: Path, theorem_name: str) -> Set[str]:
         try:
@@ -727,9 +758,12 @@ class KoikaProver:
         else:
             logger.info("rocq-mcp disabled or broken; skipping interactive proof.")
 
-        # 4. coqc-based fallback verification
-        result = self._fallback_verify(coq_file, theorem_name)
-        if result.get("success"):
+        # 4. coqc-based fallback verification (skipped under --no-coqc-fallback,
+        # so the raw-LLM baselines start from the same blank slate as MCTS)
+        result = None
+        if self.coqc_fallback:
+            result = self._fallback_verify(coq_file, theorem_name)
+        if result and result.get("success"):
             duration = time.time() - start_time
             return ProofResult(
                 success=True,
@@ -741,7 +775,13 @@ class KoikaProver:
 
         # 4.5. Deterministic skeleton proof (reachable induction + `eauto` over
         # the shared `Hint Resolve` bound lemmas), tried BEFORE the LLM invariant.
-        recursive = self._recursive_skeleton_proof(coq_file, theorem_name)
+        # Depth comes from config so the "no-perf" (linear) arm and PERF's
+        # try_skeleton_first always share the same skeleton.  Skipped under
+        # --no-skeleton (raw-LLM baseline).
+        recursive = None
+        if self.skeleton_enabled:
+            recursive = self._recursive_skeleton_proof(
+                coq_file, theorem_name, max_depth=self.skeleton_max_depth)
         if recursive is not None:
             duration = time.time() - start_time
             return ProofResult(
@@ -754,7 +794,9 @@ class KoikaProver:
 
         # 5. LLM full-proof generation (with structural hints, coqc validation)
         #    First, try LLM-proposed loop invariants to unblock the skeleton.
-        proposed = self._propose_invariants(coq_file, theorem_name)
+        #    Skipped under --no-skeleton: the raw-LLM baseline must generate the
+        #    full proof directly, not the invariants + skeleton shortcut.
+        proposed = self._propose_invariants(coq_file, theorem_name) if self.skeleton_enabled else None
         if proposed:
             recursive = self._recursive_skeleton_proof(coq_file, theorem_name)
             if recursive is not None:
@@ -767,17 +809,22 @@ class KoikaProver:
                     metadata={"automation": "llm_invariant"}
                 )
 
-        proof_script = self._attempt_llm_proof_generation(
+        llm_result = self._attempt_llm_proof_generation(
             coq_file, theorem_name, structural_hints=hints, initial_script=initial_script
         )
-        if proof_script is not None:
+        if llm_result is not None:
+            proof_script, attempts_used = llm_result
             duration = time.time() - start_time
             return ProofResult(
                 success=True,
                 proof_script=proof_script,
                 duration=duration,
                 backend="koika",
-                metadata={"automation": "llm_full"}
+                metadata={
+                    "automation": "llm_full",
+                    "llm_attempts": attempts_used,
+                    "max_attempts": self.max_repair,
+                }
             )
 
         duration = time.time() - start_time
@@ -787,7 +834,11 @@ class KoikaProver:
             error_message="All proof attempts exhausted",
             duration=duration,
             backend="koika",
-            metadata={"automation": "none"}
+            metadata={
+                "automation": "none",
+                "llm_attempts": self.max_repair,
+                "max_attempts": self.max_repair,
+            }
         )
 
     def _try_initial_script(
@@ -814,11 +865,11 @@ class KoikaProver:
 
         workspace = self._workspace_for(coq_file)
         self._ensure_project_file(workspace)
-        coq_file.write_text(new_content)
+        _atomic_write(coq_file, new_content)
         if self._compile_with_coqc(coq_file, workspace):
             if self._theorem_is_closed(coq_file.read_text(), theorem_name):
                 return {"success": True, "proof_script": initial_script}
-        coq_file.write_text(original_content)
+        _atomic_write(coq_file, original_content)
         return {"success": False, "error": "Initial script did not prove the theorem"}
 
     def _try_interactive_proof(
@@ -1281,7 +1332,7 @@ class KoikaProver:
 
         new_block = theorem_block.replace("Admitted.", proof_script)
         new_content = original_content.replace(theorem_block, new_block, 1)
-        coq_file.write_text(new_content)
+        _atomic_write(coq_file, new_content)
 
         workspace = self._workspace_for(coq_file)
         if self._compile_with_coqc(coq_file, workspace):
@@ -1294,7 +1345,7 @@ class KoikaProver:
         else:
             logger.warning("Skeleton reflection proof failed to compile.")
 
-        coq_file.write_text(original_content)
+        _atomic_write(coq_file, original_content)
         return None
 
     def _find_invariant_lemmas(self, coq_file: Path) -> List[str]:
@@ -1318,7 +1369,7 @@ class KoikaProver:
         last_errors: Optional[List[str]] = None,
         structural_hints: Optional[str] = None,
         initial_script: Optional[str] = None,
-    ) -> Optional[str]:
+    ) -> Optional[Tuple[str, int]]:
         logger.info("LLM full-proof generation activated for '%s'.", theorem_name)
         try:
             original_content = coq_file.read_text()
@@ -1388,13 +1439,13 @@ class KoikaProver:
 
             new_block = full_block.replace("Admitted.", current_proof)
             new_content = original_content.replace(full_block, new_block, 1)
-            coq_file.write_text(new_content)
+            _atomic_write(coq_file, new_content)
 
             if self._compile_with_coqc(coq_file, workspace):
                 updated_content = coq_file.read_text()
                 if self._theorem_is_closed(updated_content, theorem_name):
                     logger.info("LLM-generated proof accepted for '%s'.", theorem_name)
-                    return current_proof
+                    return current_proof, attempt + 1
                 else:
                     error_feedback = "Theorem not fully closed (missing Qed. or still Admitted)."
             else:
@@ -1407,7 +1458,7 @@ class KoikaProver:
                 else:
                     error_feedback = self._capture_coqc_error(coq_file, workspace)
 
-            coq_file.write_text(original_content)
+            _atomic_write(coq_file, original_content)
             logger.error("LLM proof generation attempt %d for '%s' failed: %s",
                          attempt + 1, theorem_name, error_feedback[:200])
 
@@ -1732,14 +1783,14 @@ class KoikaProver:
         library_proof = self._prepare_proof_script(library_proof, theorem_name)
         new_block = full_block.replace("Admitted.", library_proof)
         new_content = original_content.replace(full_block, new_block, 1)
-        coq_file.write_text(new_content)
+        _atomic_write(coq_file, new_content)
         workspace = self._workspace_for(coq_file)
         if self._compile_with_coqc(coq_file, workspace):
             updated_content = coq_file.read_text()
             if self._theorem_is_closed(updated_content, theorem_name):
                 logger.info("Library proof accepted for '%s'", theorem_name)
                 return library_proof
-        coq_file.write_text(original_content)
+        _atomic_write(coq_file, original_content)
         logger.info("Library proof for '%s': failed", theorem_name)
         return None
 
@@ -1948,7 +1999,7 @@ class KoikaProver:
                         1,
                     )
                 try:
-                    coq_file.write_text(new_content, encoding="utf-8")
+                    _atomic_write(coq_file, new_content)
                 except Exception as e:
                     logger.warning("Recursive skeleton: could not write %s: %s", coq_file, e)
                     continue
@@ -1961,7 +2012,7 @@ class KoikaProver:
         finally:
             if not succeeded:
                 try:
-                    coq_file.write_text(original, encoding="utf-8")
+                    _atomic_write(coq_file, original)
                 except Exception:
                     pass
         logger.info("Recursive skeleton proof did not close '%s'.", theorem_name)
@@ -2223,7 +2274,7 @@ class KoikaProver:
             f"Admitted.\n"
         )
         try:
-            coq_file.write_text(content + "\n" + block, encoding="utf-8")
+            _atomic_write(coq_file, content + "\n" + block)
         except Exception:
             return True
         ok = self._recursive_skeleton_proof(coq_file, check_name, max_depth=60) is not None
@@ -2277,7 +2328,7 @@ class KoikaProver:
                 if not re.match(r"Axiom\s+(\w+)\s+:", line) or re.match(r"Axiom\s+(\w+)\s+:", line).group(1) not in dropped
             )
             try:
-                coq_file.write_text(content)
+                _atomic_write(coq_file, content)
             except Exception:
                 pass
 
@@ -2291,7 +2342,7 @@ class KoikaProver:
             f"Admitted.\n"
         )
         try:
-            coq_file.write_text(content + "\n" + block, encoding="utf-8")
+            _atomic_write(coq_file, content + "\n" + block)
         except Exception:
             pass
 
@@ -2307,7 +2358,7 @@ class KoikaProver:
             flags=re.DOTALL,
         )
         try:
-            coq_file.write_text(content, encoding="utf-8")
+            _atomic_write(coq_file, content)
         except Exception:
             pass
 
@@ -2327,7 +2378,7 @@ class KoikaProver:
         else:
             content = block + "\n" + content
         try:
-            coq_file.write_text(content, encoding="utf-8")
+            _atomic_write(coq_file, content)
         except Exception:
             pass
 
@@ -2343,7 +2394,7 @@ class KoikaProver:
             flags=re.DOTALL,
         )
         try:
-            coq_file.write_text(content, encoding="utf-8")
+            _atomic_write(coq_file, content)
         except Exception:
             pass
 

@@ -343,6 +343,9 @@ def load_config(
             prove_cfg.setdefault("invariant_mining", True)
             prove_cfg.setdefault("skeleton_reflection", True)
             prove_cfg.setdefault("skeleton_step_tactics", [])
+            prove_cfg.setdefault("skeleton_max_depth", 3)
+            prove_cfg.setdefault("skeleton_enabled", True)
+            prove_cfg.setdefault("coqc_fallback", True)
             prove_cfg.setdefault("use_rocq_mcp", True)
 
         elif prover == "acl2":

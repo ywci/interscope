@@ -111,6 +111,7 @@ class TestACL2Prover(unittest.TestCase):
         mock_client.defthm.side_effect = [
             {"success": False, "output": "Proof failed"},
             {"success": False, "output": "Proof failed: ..."},
+            {"success": False, "output": "Proof failed: ..."},
             {"success": True, "output": "Q.E.D."}
         ]
         mock_client.save_checkpoint.return_value = {"success": True}
@@ -129,7 +130,7 @@ class TestACL2Prover(unittest.TestCase):
 
         mock_client.save_checkpoint.assert_called_once_with("pre_test-thm")
         mock_client.restore_checkpoint.assert_called_once_with("pre_test-thm")
-        self.assertEqual(mock_client.defthm.call_count, 3)
+        self.assertEqual(mock_client.defthm.call_count, 4)
         mock_llm.generate.assert_called_once()
 
     def test_prove_theorem_all_repair_attempts_fail(self):
@@ -159,6 +160,7 @@ class TestACL2Prover(unittest.TestCase):
 
         mock_client.defthm.side_effect = [
             {"success": False, "output": "Proof failed"},
+            {"success": False, "output": "Proof failed"},
             {"success": False, "output": "Proof failed"}
         ]
         mock_client.save_checkpoint.return_value = {"success": True}
@@ -173,7 +175,7 @@ class TestACL2Prover(unittest.TestCase):
         )
 
         self.assertFalse(result.success)
-        self.assertEqual(mock_client.defthm.call_count, 2)
+        self.assertEqual(mock_client.defthm.call_count, 3)
 
     def test_prove_theorem_with_statement_none(self):
         """Test that proving without statement goes to _prove_existing_by_name."""
@@ -222,6 +224,7 @@ class TestACL2Prover(unittest.TestCase):
         """Test that a checkpoint is saved once before the main proof loop."""
         mock_client = self.prover._ensure_acl2_client()
         mock_client.defthm.side_effect = [
+            {"success": False, "output": "failed"},
             {"success": False, "output": "failed"},
             {"success": True, "output": "success"}
         ]

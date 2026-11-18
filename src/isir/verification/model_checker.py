@@ -23,12 +23,13 @@ class ModelCheckError(Exception):
 
 def run_model_check(
     rtl_path: Path,
-    assertions_path: Path,
+    assertions_path: Optional[Path],
     top_module: str,
     engine: str = "bmc",
     depth: Optional[int] = None,
     timeout: Optional[int] = None,
-    extra_args: Optional[List[str]] = None
+    extra_args: Optional[List[str]] = None,
+    harness_path: Optional[Path] = None
 ) -> Dict[str, Any]:
     """
     Run a model checker on the given RTL and assertion files.
@@ -88,11 +89,12 @@ def run_model_check(
         _write_sby_file(
             sby_file,
             rtl_path=rtl_path.resolve(),
-            assertions_path=assertions_path.resolve(),
+            assertions_path=assertions_path.resolve() if assertions_path else None,
             top_module=top_module,
             engine=engine,
             depth=depth,
-            timeout=timeout
+            timeout=timeout,
+            harness_path=harness_path.resolve() if harness_path else None
         )
 
         cmd = [tool, "-f", str(sby_file)]
@@ -165,14 +167,15 @@ def run_model_check(
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
-def _prevalidate_files(rtl_path: Path, assertions_path: Path, top_module: str) -> bool:
+def _prevalidate_files(rtl_path: Path, assertions_path: Optional[Path], top_module: str) -> bool:
     """
     Run Yosys in a read‑only mode to check that the RTL and assertion
     files can be parsed without syntax errors.
 
     Args:
         rtl_path:        Path to the RTL Verilog file.
-        assertions_path: Path to the assertions file.
+        assertions_path: Path to the assertions file (or None when assertions
+                         are inline in the RTL).
         top_module:      Name of the top‑level module.
 
     Returns:
@@ -185,8 +188,11 @@ def _prevalidate_files(rtl_path: Path, assertions_path: Path, top_module: str) -
 
     # Create a temporary script for Yosys.
     with tempfile.NamedTemporaryFile(mode='w', suffix='.ys', delete=False) as f:
-        f.write(f"read_verilog -sv {rtl_path}\n")
-        f.write(f"read_verilog -sv -formal {assertions_path}\n")
+        if assertions_path is None:
+            f.write(f"read_verilog -sv -formal {rtl_path}\n")
+        else:
+            f.write(f"read_verilog -sv {rtl_path}\n")
+            f.write(f"read_verilog -sv -formal {assertions_path}\n")
         f.write(f"hierarchy -top {top_module}\n")
         f.write("proc\n")   # Light processing to catch obvious issues.
         script_path = Path(f.name)
@@ -214,11 +220,12 @@ def _prevalidate_files(rtl_path: Path, assertions_path: Path, top_module: str) -
 def _write_sby_file(
     sby_path: Path,
     rtl_path: Path,
-    assertions_path: Path,
+    assertions_path: Optional[Path],
     top_module: str,
     engine: str,
     depth: int,
-    timeout: int
+    timeout: int,
+    harness_path: Optional[Path] = None
 ) -> None:
     """
     Write a SymbiYosys .sby script for the given design.
@@ -230,11 +237,36 @@ def _write_sby_file(
                                        : Read the SVA assertions in formal mode.
     - ``prep -top <top_module>``       : Prepare the design for verification.
 
-    This ordering and the ``-formal`` flag are important for correct
-    handling of SystemVerilog Assertions by Yosys/SymbiYosys.
+    When ``assertions_path`` is None, the assertions are inline in the RTL, so
+    the RTL is read with ``-formal`` directly.  This ordering and the
+    ``-formal`` flag are important for correct handling of SystemVerilog
+    Assertions by Yosys/SymbiYosys.
     """
     mode = "bmc" if engine == "bmc" else "prove"
     options = f"mode {mode}\ndepth {depth}\ntimeout {timeout}"
+
+    if harness_path is not None:
+        harness_top = f"{top_module}_harness"
+        script = (
+            f"read_verilog -sv {rtl_path}\n"
+            f"read_verilog -sv {harness_path}\n"
+            f"read_verilog -sv -formal {assertions_path}\n"
+            f"prep -top {harness_top}"
+        )
+        files = f"{assertions_path}\n{rtl_path}\n{harness_path}"
+    elif assertions_path is None:
+        script = (
+            f"read_verilog -sv -formal {rtl_path}\n"
+            f"prep -top {top_module}"
+        )
+        files = f"{rtl_path}"
+    else:
+        script = (
+            f"read_verilog -sv {rtl_path}\n"
+            f"read_verilog -sv -formal {assertions_path}\n"
+            f"prep -top {top_module}"
+        )
+        files = f"{assertions_path}\n{rtl_path}"
 
     content = f"""[options]
 {options}
@@ -243,13 +275,10 @@ def _write_sby_file(
 smtbmc z3
 
 [script]
-read_verilog -sv {rtl_path}
-read_verilog -sv -formal {assertions_path}
-prep -top {top_module}
+{script}
 
 [files]
-{assertions_path}
-{rtl_path}
+{files}
 """
     sby_path.write_text(content, encoding="utf-8")
     logger.debug("Wrote SymbiYosys script to %s", sby_path)

@@ -8,8 +8,10 @@
 # before verification (see `split_monolithic_rules` in config.yaml).
 
 import argparse
+import copy
 import sys
 import json
+import re
 import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -21,6 +23,7 @@ from isir.lowering.isir_to_koika import convert as isir_to_koika_convert
 from isir.lowering.isir_to_acl2 import convert as isir_to_acl2_convert
 from isir.lowering.isir_to_assert import convert as isir_to_assert_convert
 from isir.lowering.assert_to_sva import convert as assert_to_sva_convert
+from isir.lowering.assert_to_sva import convert_inline as assert_to_sva_convert_inline
 from isir.lowering.koika_to_rtl import convert as koika_to_rtl_convert
 from isir.verification.model_checker import run_model_check, ModelCheckError
 from isir.utils.logger import setup_logging, get_logger
@@ -56,10 +59,12 @@ def _canonical_backend(backend: Optional[str]) -> Optional[str]:
     return None
 
 
-def _effective_backend(canonical: Optional[str], no_cowork: bool) -> Optional[str]:
-    """Apply the --no-cowork ablation: downgrade koika_acl2 to single-backend Koika."""
+def _effective_backend(canonical: Optional[str], no_cowork: bool, acl2_only: bool = False) -> Optional[str]:
+    """Apply the single-backend ablation: downgrade koika_acl2 to Koika or ACL2."""
     if no_cowork and canonical == "koika_acl2":
         return "koika"
+    if acl2_only and canonical == "koika_acl2":
+        return "acl2"
     return canonical
 
 
@@ -112,12 +117,20 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Disable trace alignment dimension (for ablation)")
     parser.add_argument("--no-reflection", action="store_true",
                         help="Disable reflection feedback (for ablation)")
+    parser.add_argument("--no-skeleton", action="store_true",
+                        help="Disable the recursive proof skeleton (for raw-LLM baselines)")
+    parser.add_argument("--no-coqc-fallback", action="store_true",
+                        help="Disable the deterministic coqc fallback (for pure-LLM baselines symmetric with MCTS)")
     parser.add_argument("--mc-lemmas", action="store_true",
                         help="Enable MC lemma injection (model-checking gating) for Koika (ablation)")
     parser.add_argument("--no-mc-lemmas", action="store_true",
                         help="Disable MC lemma injection (ablation)")
+    parser.add_argument("--mc-engine", choices=["bmc", "induction"], default=None,
+                        help="Model-checking engine for MC-gating: bmc (bounded, unsound for invariants) or induction (IC3/k-induction, sound)")
     parser.add_argument("--no-cowork", action="store_true",
                         help="Disable the koika_acl2 co-work dispatch: downgrade to single-backend Koika (ablation)")
+    parser.add_argument("--acl2-only", action="store_true",
+                        help="Downgrade koika_acl2 to single-backend ACL2 (ablation); inductive (always) obligations are skipped")
     parser.add_argument("--dry-run", action="store_true",
                         help="Parse and validate only (no execution)")
 
@@ -139,6 +152,100 @@ def _extract_width(data_type: str) -> Optional[int]:
     return None
 
 
+def _rtl_signal_map(spec_module) -> tuple:
+    """Derive the ISIR → RTL signal-name mapping used by the SVA ``bind``.
+
+    The Kōika/cuttlec backend renames signals from the ISIR names: registers get
+    the first letter capitalized (`fib_curr` → `Fib_curr`), inputs are
+    internalized as `Inp_<name>`, and the reset becomes `rst_n` (active‑low).
+    Returns ``(signal_map, reset_inverted)``.
+    """
+    signal_map: Dict[str, str] = {}
+    reset_inverted = False
+    for s in getattr(spec_module, "state_ops", []):
+        if getattr(s, "kind", "") == "register" and getattr(s, "state_name", ""):
+            nm = s.state_name
+            signal_map[nm] = nm[0].upper() + nm[1:]
+    for inp in getattr(spec_module, "inputs", []):
+        if getattr(inp, "name", ""):
+            signal_map[inp.name] = f"Inp_{inp.name}"
+    for rst in getattr(spec_module, "resets", []):
+        if isinstance(rst, dict) and rst.get("name"):
+            rst_name = rst["name"]
+            signal_map[rst_name] = f"{rst_name}_n"
+            if rst.get("polarity") == "active_high":
+                reset_inverted = True
+    return signal_map, reset_inverted
+
+
+def _drive_inputs(assert_mod, spec_module) -> None:
+    """Add SVA ``assume`` constraints forcing each free input high, so the
+    model checker explores the state transitions instead of leaving an
+    input-gated rule dormant (which would make every invariant vacuously true).
+    """
+    from isir.dialects.asserts import AssertAssumeOp
+    for inp in getattr(spec_module, "inputs", []):
+        if getattr(inp, "name", ""):
+            assert_mod.assumptions.append(
+                AssertAssumeOp(condition=inp.name, label=f"drive_{inp.name}")
+            )
+
+
+def _force_inputs_rtl_str(content: str, spec_module) -> str:
+    """Return RTL with the free inputs forced high (string version)."""
+    drivers = []
+    for inp in getattr(spec_module, "inputs", []):
+        name = getattr(inp, "name", "")
+        if not name:
+            continue
+        w = _extract_width(inp.data_type) or 1
+        rtl_name = f"Inp_{name}"
+        content = re.sub(rf"input\s*(?:\[[^\]]*\]\s*)?{rtl_name}\s*,", "", content)
+        drivers.append(f"  wire [{w-1}:0] {rtl_name} = {w}'b{'1' * w};")
+    if drivers:
+        m = re.search(r"\)\s*;", content)
+        if m:
+            content = content[:m.end()] + "\n" + "\n".join(drivers) + content[m.end():]
+    return content
+
+
+def _inject_inline_assertions_str(content: str, assert_mod, signal_widths,
+                                  signal_map, reset_inverted: bool) -> str:
+    """Return RTL with the inline SVA assertions appended (string version)."""
+    inline_code = assert_to_sva_convert_inline(
+        assert_mod,
+        signal_widths=signal_widths,
+        signal_map=signal_map,
+        reset_inverted=reset_inverted
+    )
+    idx = content.rfind("endmodule")
+    if idx == -1:
+        raise ValueError("No 'endmodule' found in RTL")
+    return content[:idx] + inline_code + "\n" + content[idx:]
+
+
+def _force_inputs_in_rtl(rtl_file: Path, spec_module) -> None:
+    """Force the free inputs high in the generated RTL so the model checker
+    explores the state transitions (an input-gated rule that never fires makes
+    every invariant vacuously true).  The input ports are turned into driven
+    constant wires inside the module, keeping the DUT as the top so the SVA
+    ``bind`` still applies."""
+    rtl_file.write_text(_force_inputs_rtl_str(rtl_file.read_text(), spec_module), encoding="utf-8")
+
+
+def _inject_inline_assertions(rtl_file: Path, assert_mod, signal_widths,
+                              signal_map, reset_inverted: bool) -> None:
+    """Append inline SVA assertions inside the RTL module (before ``endmodule``).
+
+    Yosys/SymbiYosys does not apply SystemVerilog ``bind``, so the assertions
+    must live inside the design module itself, referencing the real RTL signal
+    names."""
+    content = _inject_inline_assertions_str(
+        rtl_file.read_text(), assert_mod, signal_widths, signal_map, reset_inverted
+    )
+    rtl_file.write_text(content, encoding="utf-8")
+
+
 def _print_perf_stats(stats: PERFStats) -> None:
     """Pretty‑print PERF traversal statistics using the diagnostics module."""
     if stats is None:
@@ -152,12 +259,16 @@ def _print_perf_stats(stats: PERFStats) -> None:
 def _print_summary(report: VerificationReport, show_proof: bool = False) -> None:
     """Print a human‑readable verification summary, optionally including proof scripts."""
     passed = sum(1 for o in report.obligations if o.status == Status.PASS)
-    failed = len(report.obligations) - passed
-    print(f"\n===== Verification Summary: {passed} passed, {failed} failed =====\n")
+    skipped = sum(1 for o in report.obligations if o.status == Status.SKIPPED)
+    failed = len(report.obligations) - passed - skipped
+    parts = [f"{passed} passed", f"{failed} failed"]
+    if skipped:
+        parts.append(f"{skipped} skipped")
+    print(f"\n===== Verification Summary: {', '.join(parts)} =====\n")
     for obl in report.obligations:
-        status_label = "PASS" if obl.status == Status.PASS else "FAIL"
+        status_label = {Status.PASS: "PASS", Status.SKIPPED: "SKIPPED"}.get(obl.status, "FAIL")
         print(f"{status_label}: {obl.property} ({obl.backend})")
-        if obl.status != Status.PASS and obl.error_message:
+        if obl.status not in (Status.PASS, Status.SKIPPED) and obl.error_message:
             print(f"   Error: {obl.error_message[:200]}")
         if show_proof and obl.status == Status.PASS and obl.proof_script:
             print(f"   Proof:\n{obl.proof_script}")
@@ -172,6 +283,10 @@ def verify_spec(args: argparse.Namespace) -> int:
     config = load_config()
     project_root = get_project_root()
 
+    if getattr(args, "no_cowork", False) and getattr(args, "acl2_only", False):
+        logger.error("--no-cowork and --acl2-only are mutually exclusive")
+        return 2
+
     if args.perf:
         config['proof']['perf']['enabled'] = True
         config['provers']['koika']['use_proof_library'] = False
@@ -182,6 +297,10 @@ def verify_spec(args: argparse.Namespace) -> int:
 
     if getattr(args, "search", None):
         config.setdefault("proof", {})["search_strategy"] = args.search
+        if args.search == "mcts":
+            # Keep MCTS symmetric with the linear path: no proof-library head-start.
+            config['provers']['koika']['use_proof_library'] = False
+            logger.info("MCTS search: proof library disabled for symmetric baseline")
         logger.info("Search strategy set to '%s' via --search flag", args.search)
 
     perf_cfg = config.setdefault("proof", {}).setdefault("perf", {})
@@ -198,12 +317,25 @@ def verify_spec(args: argparse.Namespace) -> int:
         perf_cfg["use_reflection"] = False
         logger.info("Ablation: reflection feedback disabled")
 
+    if getattr(args, "no_skeleton", False):
+        config.setdefault("provers", {}).setdefault("koika", {}).setdefault("prove", {})["skeleton_enabled"] = False
+        config.setdefault("proof", {}).setdefault("perf", {})["try_skeleton_first"] = False
+        logger.info("Recursive proof skeleton disabled via --no-skeleton flag (linear + PERF skeleton-first)")
+
+    if getattr(args, "no_coqc_fallback", False):
+        config.setdefault("provers", {}).setdefault("koika", {}).setdefault("prove", {})["coqc_fallback"] = False
+        logger.info("Deterministic coqc fallback disabled via --no-coqc-fallback flag (pure-LLM baseline)")
+
     if getattr(args, 'mc_lemmas', False):
         config.setdefault("provers", {}).setdefault("koika", {})["use_mc_lemmas"] = True
         logger.info("Ablation: MC lemma injection enabled")
     elif getattr(args, 'no_mc_lemmas', False):
         config.setdefault("provers", {}).setdefault("koika", {})["use_mc_lemmas"] = False
         logger.info("Ablation: MC lemma injection disabled")
+
+    if getattr(args, 'mc_engine', None):
+        config.setdefault("verification", {})["mc_engine"] = args.mc_engine
+        logger.info("MC-gating engine set to '%s' via --mc-engine", args.mc_engine)
 
     try:
         _validate_config(config)
@@ -348,10 +480,12 @@ def verify_spec(args: argparse.Namespace) -> int:
 
     use_mc_lemmas = config.get("provers", {}).get("koika", {}).get("use_mc_lemmas", False)
     if use_mc_lemmas:
-        # Check if any theorem obligation uses Koika backend
+        # Check if any theorem obligation uses the Koika backend (including the
+        # co-work koika_acl2, whose `always` obligations are proved on the Koika
+        # side and so can consume the MC-proved invariant lemmas).
         for po in theorem_obligations:
             backend = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "")
-            if _canonical_backend(backend) == "koika":
+            if _canonical_backend(backend) in ("koika", "koika_acl2"):
                 koika_needs_mc_prep = True
                 break
 
@@ -386,6 +520,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             try:
                 # Generate SVA assertions
                 assert_mod = isir_to_assert_convert(spec_module)
+                _drive_inputs(assert_mod, spec_module)
                 signal_widths: Dict[str, int] = {}
                 for state_op in spec_module.state_ops:
                     w = _extract_width(state_op.data_type)
@@ -399,11 +534,12 @@ def verify_spec(args: argparse.Namespace) -> int:
                     w = _extract_width(outp.data_type)
                     if w is not None:
                         signal_widths[outp.name] = w
-                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths, bind_to=design_name)
-                assertions_file = assertions_dir / f"{design_name}_assertions.sv"
-                assertions_file.write_text(sva_code, encoding="utf-8")
+                signal_map, reset_inverted = _rtl_signal_map(spec_module)
+                _inject_inline_assertions(rtl_file, assert_mod, signal_widths, signal_map, reset_inverted)
+                _force_inputs_in_rtl(rtl_file, spec_module)
+                assertions_file = None  # assertions are inline in the RTL
             except Exception as e:
-                logger.error("Assertion generation for MC prep failed: %s", e)
+                logger.error("Inline assertion injection for MC prep failed: %s", e)
                 koika_needs_mc_prep = False
                 assertions_file = None
 
@@ -412,10 +548,9 @@ def verify_spec(args: argparse.Namespace) -> int:
         "spec_module": spec_module,
         "config": config,
     }
-    if koika_needs_mc_prep and rtl_file and assertions_file:
+    if koika_needs_mc_prep and rtl_file:
         context["rtl_file_path"] = str(rtl_file)
-        context["assertions_file_path"] = str(assertions_file)
-        logger.info("Provided RTL and assertions paths for automatic MC lemma injection.")
+        logger.info("Provided inline-asserted RTL path for automatic MC lemma injection.")
 
     results: List[ProofObligationResult] = []
 
@@ -426,7 +561,7 @@ def verify_spec(args: argparse.Namespace) -> int:
         for po in theorem_obligations:
             backend = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend)
-            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False))
+            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False), getattr(args, 'acl2_only', False))
             if canonical == "koika":
                 backends_needed.add("koika")
             elif canonical == "acl2":
@@ -464,9 +599,12 @@ def verify_spec(args: argparse.Namespace) -> int:
                 return 1
 
         try:
-            proof_skill = LLMProofSkill(config=config)
             if args.max_attempts is not None:
-                proof_skill.max_repair_attempts = args.max_attempts
+                # Propagate to the provers' LLM repair loops (Koika and ACL2),
+                # which read config["proof"]["max_repair_attempts"] — the skill
+                # attribute `max_repair_attempts` is never read.
+                config.setdefault("proof", {})["max_repair_attempts"] = args.max_attempts
+            proof_skill = LLMProofSkill(config=config)
             if args.no_llm:
                 logger.warning("--no-llm flag is experimental; LLM may still be used for repair.")
         except Exception as e:
@@ -482,7 +620,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             prop_name = po.get("property") if isinstance(po, dict) else getattr(po, "property", "unknown")
             backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend_raw) or "koika"
-            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False))
+            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False), getattr(args, 'acl2_only', False))
             logger.info(f"Proving '{prop_name}' with backend {canonical}")
 
             start_time = time.time()
@@ -516,6 +654,21 @@ def verify_spec(args: argparse.Namespace) -> int:
                 po_context["theorem_name"] = f"{prop_name}_correct"
                 statement = _extract_acl2_statement(acl2_mod, prop_name)
                 po_context["theorem_statement"] = statement
+                # Inductive (always) obligations need induction; ACL2 can only
+                # skip-proof them, so under single-backend ACL2 they are skipped
+                # (mirrors the co-work "ACL2 cannot prove induction" gating).
+                if _property_kind(spec_module, prop_name) == "always":
+                    logger.info(
+                        "Skipping inductive obligation '%s' (kind=always): "
+                        "ACL2 cannot prove induction", prop_name,
+                    )
+                    results.append(ProofObligationResult(
+                        property=prop_name,
+                        status=Status.SKIPPED,
+                        backend=canonical,
+                        error_message="ACL2 cannot prove induction (skipped under single-backend ACL2)",
+                    ))
+                    continue
             else:  # koika_acl2 co-work
                 if "koika" not in backend_files or "acl2" not in backend_files:
                     logger.error("Coq/ACL2 files not generated; cannot co-work.")
@@ -611,7 +764,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                 result = cowork_result
             else:
                 try:
-                    result: ProofResult = proof_skill.prove(po, po_context)
+                    result: ProofResult = proof_skill.prove({**po, "backend": canonical}, po_context)
                 except Exception as e:
                     logger.error(f"Proof attempt for '{prop_name}' failed with exception: {e}")
                     results.append(ProofObligationResult(
@@ -693,73 +846,61 @@ def verify_spec(args: argparse.Namespace) -> int:
                 ))
             return _finish_summary(results, args)
 
-        if not assertions_file:
-            assertions_dir = mc_dir / "assertions"
-            assertions_dir.mkdir(exist_ok=True)
-            try:
-                assert_mod = isir_to_assert_convert(spec_module)
-                mc_prop_names = {
-                    po.get("property") if isinstance(po, dict) else getattr(po, "property", None)
-                    for po in mc_obligations
-                }
-                assert_mod.always_checks = [
-                    c for c in assert_mod.always_checks
-                    if getattr(c, 'label', None) in mc_prop_names
-                ]
-                assert_mod.properties = [
-                    p for p in assert_mod.properties
-                    if getattr(p, 'label', None) in mc_prop_names
-                ]
-                signal_widths: Dict[str, int] = {}
-                for state_op in spec_module.state_ops:
-                    w = _extract_width(state_op.data_type)
-                    if w is not None:
-                        signal_widths[state_op.state_name] = w
-                for inp in spec_module.inputs:
-                    w = _extract_width(inp.data_type)
-                    if w is not None:
-                        signal_widths[inp.name] = w
-                for outp in spec_module.outputs:
-                    w = _extract_width(outp.data_type)
-                    if w is not None:
-                        signal_widths[outp.name] = w
-                sva_code = assert_to_sva_convert(assert_mod, signal_widths=signal_widths, bind_to=design_name)
-                assertions_file = assertions_dir / f"{design_name}_assertions.sv"
-                assertions_file.write_text(sva_code, encoding="utf-8")
-            except Exception as e:
-                logger.error(f"Assertion generation failed: {e}")
-                for po in mc_obligations:
-                    prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
-                    results.append(ProofObligationResult(
-                        property=prop,
-                        status=Status.ERROR,
-                        backend="model_checking",
-                        error_message=str(e)
-                    ))
-                return _finish_summary(results, args)
+        # Build the base assertion module + signal info once, then run the
+        # model checker once per obligation so each property gets its own
+        # PASS/FAIL verdict.
+        assert_mod_full = isir_to_assert_convert(spec_module)
+        _drive_inputs(assert_mod_full, spec_module)
+        signal_widths: Dict[str, int] = {}
+        for state_op in spec_module.state_ops:
+            w = _extract_width(state_op.data_type)
+            if w is not None:
+                signal_widths[state_op.state_name] = w
+        for inp in spec_module.inputs:
+            w = _extract_width(inp.data_type)
+            if w is not None:
+                signal_widths[inp.name] = w
+        for outp in spec_module.outputs:
+            w = _extract_width(outp.data_type)
+            if w is not None:
+                signal_widths[outp.name] = w
+        signal_map, reset_inverted = _rtl_signal_map(spec_module)
+        base_rtl_content = rtl_file.read_text()
 
-        try:
-            mc_result = run_model_check(
-                rtl_path=rtl_file,
-                assertions_path=assertions_file,
-                top_module=design_name
-            )
-        except ModelCheckError as e:
-            logger.error(f"Model checking error: {e}")
-            for po in mc_obligations:
-                prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
+        for po in mc_obligations:
+            prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
+            assert_mod = copy.copy(assert_mod_full)
+            assert_mod.always_checks = [
+                c for c in assert_mod_full.always_checks
+                if getattr(c, 'label', None) == prop
+            ]
+            assert_mod.properties = [
+                p for p in assert_mod_full.properties
+                if getattr(p, 'label', None) == prop
+            ]
+            try:
+                rtl_str = _inject_inline_assertions_str(
+                    base_rtl_content, assert_mod, signal_widths, signal_map, reset_inverted
+                )
+                rtl_str = _force_inputs_rtl_str(rtl_str, spec_module)
+                prop_rtl = mc_dir / "rtl" / f"{design_name}_{prop}.v"
+                prop_rtl.write_text(rtl_str, encoding="utf-8")
+                mc_result = run_model_check(
+                    rtl_path=prop_rtl,
+                    assertions_path=None,
+                    top_module=design_name
+                )
+            except Exception as e:
+                logger.error(f"Model checking failed for {prop}: {e}")
                 results.append(ProofObligationResult(
                     property=prop,
                     status=Status.ERROR,
                     backend="model_checking",
                     error_message=str(e)
                 ))
-            return _finish_summary(results, args)
+                continue
 
-        mc_status = Status.PASS if mc_result.get("success") else Status.FAIL
-        for po in mc_obligations:
-            prop = po.get("property") if isinstance(po, dict) else getattr(po, "property", "?")
-            if mc_status == Status.PASS:
+            if mc_result.get("success"):
                 logger.info(f"  PASS: {prop} (model checking)")
                 _safe_register_mc_evidence(spec_module, prop, mc_result)
                 results.append(ProofObligationResult(
@@ -808,7 +949,7 @@ def _finish_summary(results: List[ProofObligationResult], args: argparse.Namespa
             json.dump(report.to_dict(), f, indent=2)
         logger.info(f"Report saved to {args.report}")
 
-    all_passed = all(o.status == Status.PASS for o in results)
+    all_passed = all(o.status in (Status.PASS, Status.SKIPPED) for o in results)
     return 0 if all_passed else 1
 
 

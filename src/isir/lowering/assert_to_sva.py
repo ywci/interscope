@@ -26,6 +26,10 @@ logger = get_logger(__name__)
 # ``convert_inline`` to emit assertions that are appended inside the design RTL.
 _DIRECT_MODE = False
 
+# ISIR → RTL signal-name mapping applied in direct mode (e.g. ``fib_curr`` →
+# ``Fib_curr``), so inline assertions reference the design's real signals.
+_SIGNAL_MAP: Dict[str, str] = {}
+
 
 def _sanitize_signal_name(name: str) -> str:
     """Replace any character that is not a valid Verilog identifier with `_`."""
@@ -94,6 +98,7 @@ def _signal_to_verilog(signal_name: str,
     sane = _sanitize_signal_name(signal_name)
 
     if _DIRECT_MODE:
+        sane = _sanitize_signal_name(_SIGNAL_MAP.get(signal_name, signal_name))
         if width == 1:
             return sane
         if high is None:
@@ -211,7 +216,19 @@ def _sva_expr(expr: Union[str, List, int, bool],
             if name in signal_widths:
                 width = signal_widths[name]
                 return _signal_to_verilog(name, width)
+            if _DIRECT_MODE:
+                return _sanitize_signal_name(_SIGNAL_MAP.get(name, name))
             return _sanitize_signal_name(name)
+
+    if isinstance(expr, str):
+        # parse_sexpr returned a bare atom (a signal name or a literal).
+        name = expr.strip()
+        if name in signal_widths:
+            width = signal_widths[name]
+            return _signal_to_verilog(name, width)
+        if _DIRECT_MODE:
+            return _sanitize_signal_name(_SIGNAL_MAP.get(name, name))
+        return _sanitize_signal_name(name)
 
     if isinstance(expr, bool):
         return "1'b1" if expr else "1'b0"
@@ -323,7 +340,9 @@ def _sva_expr(expr: Union[str, List, int, bool],
 
 def convert(assert_module: asserts.AssertModule,
             signal_widths: Optional[Dict[str, int]] = None,
-            bind_to: Optional[str] = None) -> str:
+            bind_to: Optional[str] = None,
+            signal_map: Optional[Dict[str, str]] = None,
+            reset_inverted: bool = False) -> str:
     """
     Convert an AssertModule to Yosys‑compatible SystemVerilog code.
 
@@ -344,6 +363,9 @@ def convert(assert_module: asserts.AssertModule,
                        scalar ports and expanded accordingly.  If omitted, all
                        signals are treated as single‑bit.
         bind_to: Optional name of the design module to bind the monitor into.
+        signal_map: Optional ISIR → RTL signal-name mapping used by the ``bind``
+                    (e.g. ``{"fib_curr": "Fib_curr", "rst": "rst_n"}``).  When
+                    omitted the ISIR name is used verbatim.
     """
     mod_clock = assert_module.clock
     mod_reset = assert_module.reset
@@ -417,19 +439,17 @@ def convert(assert_module: asserts.AssertModule,
     assertions = []
     temp = TempWireCollector()
 
-    def _try_append_assertion(comment: str, cond_expr: str, note: str = "") -> None:
+    def _try_append_assertion(comment: str, cond_expr: str, note: str = "",
+                              kind: str = "assert") -> None:
         try:
             cond = _sva_expr(cond_expr, widths, temp)
         except ValueError as e:
             logger.warning("Skipping assertion: %s", e)
             return
-        line = f"{comment}assert ({cond});"
-        if note:
-            line += f"  // {note}"
-        assertions.append(line)
+        assertions.append((kind, comment, cond, note))
 
     for a in assert_module.assumptions:
-        _try_append_assertion(_label_comment(a), a.condition, "assume")
+        _try_append_assertion(_label_comment(a), a.condition, "assume", kind="assume")
 
     for c in assert_module.always_checks:
         _try_append_assertion(_label_comment(c), c.condition)
@@ -445,7 +465,7 @@ def convert(assert_module: asserts.AssertModule,
             )
 
     for cv in assert_module.covers:
-        _try_append_assertion(_label_comment(cv), cv.condition, "cover")
+        _try_append_assertion(_label_comment(cv), cv.condition, "cover", kind="cover")
 
     if temp.wires:
         lines.append("  // Internal wires for non‑signal slice expressions")
@@ -460,22 +480,38 @@ def convert(assert_module: asserts.AssertModule,
         clock_name = _sanitize_signal_name(mod_clock.clock_name) if mod_clock else "clk"
         edge = mod_clock.edge if mod_clock else "posedge"
 
-        lines.append(f"  always @({edge} {clock_name}) begin")
-        if mod_reset:
-            try:
-                rst_expr = _sva_expr(mod_reset.reset_condition, widths, temp)
-            except Exception:
-                rst_expr = _sanitize_signal_name(mod_reset.reset_condition)
-            lines.append(f"    if ({rst_expr}) begin")
-            lines.append(f"      // reset active – no assertion check")
-            lines.append(f"    end else begin")
-            for a in assertions:
-                lines.append(f"      {a}")
-            lines.append(f"    end")
-        else:
-            for a in assertions:
-                lines.append(f"    {a}")
-        lines.append(f"  end")
+        # Assumptions (environment constraints) are emitted at the module level
+        # as immediate `assume` ($assume cells), so the model checker actually
+        # constrains the free inputs.  Assertions/covers stay inside the clocked
+        # `always` block (Yosys rejects a clocking `@` in `assert property`).
+        assumes = [(c, cond, n) for k, c, cond, n in assertions if k == "assume"]
+        checks = [(k, c, cond, n) for k, c, cond, n in assertions if k != "assume"]
+
+        for comment, cond, note in assumes:
+            note_suffix = f"  // {note}" if note else ""
+            lines.append(f"{comment}assume property ({cond});{note_suffix}")
+
+        if checks:
+            lines.append(f"  always @({edge} {clock_name}) begin")
+            if mod_reset:
+                try:
+                    rst_expr = _sva_expr(mod_reset.reset_condition, widths, temp)
+                except Exception:
+                    rst_expr = _sanitize_signal_name(mod_reset.reset_condition)
+                if reset_inverted:
+                    rst_expr = f"!{rst_expr}"
+                lines.append(f"    if ({rst_expr}) begin")
+                lines.append(f"      // reset active – no assertion check")
+                lines.append(f"    end else begin")
+                for kind, comment, cond, note in checks:
+                    note_suffix = f"  // {note}" if note else ""
+                    lines.append(f"      {comment}{kind} ({cond});{note_suffix}")
+                lines.append(f"    end")
+            else:
+                for kind, comment, cond, note in checks:
+                    note_suffix = f"  // {note}" if note else ""
+                    lines.append(f"    {comment}{kind} ({cond});{note_suffix}")
+            lines.append(f"  end")
 
     lines.append("")
     lines.append("endmodule")
@@ -485,11 +521,19 @@ def convert(assert_module: asserts.AssertModule,
         lines.append(f"// Bind assertion monitor to design '{bind_to}'")
         lines.append(f"bind {bind_to} {module_name} u_assertions (")
         bind_ports = []
+
+        def _rtl(sig: str) -> str:
+            if signal_map and sig in signal_map:
+                return signal_map[sig]
+            return sig
+
         if mod_clock:
             clk = _sanitize_signal_name(mod_clock.clock_name)
-            bind_ports.append(f"    .{clk}({clk})")
+            clk_rtl = _sanitize_signal_name(_rtl(mod_clock.clock_name))
+            bind_ports.append(f"    .{clk}({clk_rtl})")
         if rst_sig:
-            bind_ports.append(f"    .{rst_sig}({rst_sig})")
+            rst_rtl = _sanitize_signal_name(_rtl(rst_sig))
+            bind_ports.append(f"    .{rst_sig}({rst_rtl})")
         for sig in sorted(signals):
             if mod_clock and sig == mod_clock.clock_name:
                 continue
@@ -497,12 +541,13 @@ def convert(assert_module: asserts.AssertModule,
                 continue
             w = widths[sig]
             sig_sane = _sanitize_signal_name(sig)
+            sig_rtl = _sanitize_signal_name(_rtl(sig))
             if w == 1:
-                bind_ports.append(f"    .{sig_sane}({sig_sane})")
+                bind_ports.append(f"    .{sig_sane}({sig_rtl})")
             else:
                 for i in range(w):
                     port = _sanitize_signal_name(_bit_name(sig_sane, i))
-                    bind_ports.append(f"    .{port}({sig_sane}[{i}])")
+                    bind_ports.append(f"    .{port}({sig_rtl}[{i}])")
         for idx, bp in enumerate(bind_ports):
             comma = "," if idx < len(bind_ports) - 1 else ""
             lines.append(bp + comma)
@@ -521,7 +566,9 @@ def convert(assert_module: asserts.AssertModule,
 
 
 def convert_inline(assert_module: asserts.AssertModule,
-                   signal_widths: Optional[Dict[str, int]] = None) -> str:
+                   signal_widths: Optional[Dict[str, int]] = None,
+                   signal_map: Optional[Dict[str, str]] = None,
+                   reset_inverted: bool = False) -> str:
     """
     Generate an inline assertion block referencing design signals directly.
 
@@ -531,8 +578,12 @@ def convert_inline(assert_module: asserts.AssertModule,
     The returned fragment is intended to be appended inside the design RTL
     before ``endmodule``, which works with Yosys/SymbiYosys (which do not
     support SystemVerilog ``bind``).
+
+    ``signal_map`` maps ISIR signal names to the RTL names used by the design
+    (e.g. ``{"fib_curr": "Fib_curr", "rst": "rst_n"}``); ``reset_inverted``
+    negates the reset condition when the RTL reset is active-low.
     """
-    global _DIRECT_MODE
+    global _DIRECT_MODE, _SIGNAL_MAP
 
     mod_clock = assert_module.clock
     mod_reset = assert_module.reset
@@ -544,21 +595,24 @@ def convert_inline(assert_module: asserts.AssertModule,
     temp = TempWireCollector()
     assertions = []
 
-    def _try_append(comment: str, cond_expr: str, note: str = "") -> None:
+    def _try_append(comment: str, cond_expr: str, note: str = "",
+                    kind: str = "assert") -> None:
         try:
             cond = _sva_expr(cond_expr, widths, temp)
         except ValueError as e:
             logger.warning("Skipping assertion: %s", e)
             return
-        line = f"{comment}assert ({cond});"
+        line = f"{comment}{kind} ({cond});"
         if note:
             line += f"  // {note}"
         assertions.append(line)
 
+    prev_map = _SIGNAL_MAP
+    _SIGNAL_MAP = dict(signal_map or {})
     _DIRECT_MODE = True
     try:
         for a in assert_module.assumptions:
-            _try_append(_label_comment(a), a.condition, "assume")
+            _try_append(_label_comment(a), a.condition, "assume", kind="assume")
         for c in assert_module.always_checks:
             _try_append(_label_comment(c), c.condition)
         for p in assert_module.properties:
@@ -571,51 +625,56 @@ def convert_inline(assert_module: asserts.AssertModule,
                     p.kind,
                 )
         for cv in assert_module.covers:
-            _try_append(_label_comment(cv), cv.condition, "cover")
-    finally:
-        _DIRECT_MODE = False
+            _try_append(_label_comment(cv), cv.condition, "cover", kind="cover")
 
-    lines = []
-    if temp.wires:
-        lines.append("  // Internal wires for non-signal slice expressions")
-        for name, width in temp.wires.items():
-            lines.append(f"  wire [{width - 1}:0] {name};")
-        lines.append("")
-        for assign in temp.assignments:
-            lines.append(assign)
-        lines.append("")
+        lines = []
+        if temp.wires:
+            lines.append("  // Internal wires for non-signal slice expressions")
+            for name, width in temp.wires.items():
+                lines.append(f"  wire [{width - 1}:0] {name};")
+            lines.append("")
+            for assign in temp.assignments:
+                lines.append(assign)
+            lines.append("")
 
-    if assertions:
-        clock_name = _sanitize_signal_name(mod_clock.clock_name) if mod_clock else "clk"
-        edge = mod_clock.edge if mod_clock else "posedge"
-        lines.append(f"  always @({edge} {clock_name}) begin")
+        if assertions:
+            clock_name = _sanitize_signal_name(mod_clock.clock_name) if mod_clock else "clk"
+            edge = mod_clock.edge if mod_clock else "posedge"
+            lines.append(f"  always @({edge} {clock_name}) begin")
+            if mod_reset:
+                try:
+                    rst_expr = _sva_expr(mod_reset.reset_condition, widths, temp)
+                except Exception:
+                    rst_expr = _sanitize_signal_name(mod_reset.reset_condition)
+                if reset_inverted:
+                    rst_expr = f"!{rst_expr}"
+                lines.append(f"    if ({rst_expr}) begin")
+                lines.append("      // reset active – no assertion check")
+                lines.append("    end else begin")
+                for a in assertions:
+                    lines.append(f"      {a}")
+                lines.append("    end")
+            else:
+                for a in assertions:
+                    lines.append(f"    {a}")
+            lines.append("  end")
+
+        # Constrain the formal model's initial state to the reset state. Without
+        # this, SymbiYosys starts from arbitrary register values (anyinit), which
+        # makes state-consistency properties (e.g. overflow vs operands) fail even
+        # on a correct design.
         if mod_reset:
             try:
-                rst_expr = _sva_expr(mod_reset.reset_condition, widths, temp)
+                reset_cond = _sva_expr(mod_reset.reset_condition, widths, temp)
             except Exception:
-                rst_expr = _sanitize_signal_name(mod_reset.reset_condition)
-            lines.append(f"    if ({rst_expr}) begin")
-            lines.append("      // reset active – no assertion check")
-            lines.append("    end else begin")
-            for a in assertions:
-                lines.append(f"      {a}")
-            lines.append("    end")
-        else:
-            for a in assertions:
-                lines.append(f"    {a}")
-        lines.append("  end")
+                reset_cond = _sanitize_signal_name(mod_reset.reset_condition)
+            if reset_inverted:
+                reset_cond = f"!{reset_cond}"
+            lines.append("")
+            lines.append("  // Constrain the initial state to reset")
+            lines.append(f"  initial assume({reset_cond});")
 
-    # Constrain the formal model's initial state to the reset state. Without
-    # this, SymbiYosys starts from arbitrary register values (anyinit), which
-    # makes state-consistency properties (e.g. overflow vs operands) fail even
-    # on a correct design.
-    if mod_reset:
-        try:
-            reset_cond = _sva_expr(mod_reset.reset_condition, widths, temp)
-        except Exception:
-            reset_cond = _sanitize_signal_name(mod_reset.reset_condition)
-        lines.append("")
-        lines.append("  // Constrain the initial state to reset")
-        lines.append(f"  initial assume({reset_cond});")
-
-    return "\n".join(lines)
+        return "\n".join(lines)
+    finally:
+        _DIRECT_MODE = False
+        _SIGNAL_MAP = prev_map
