@@ -15,6 +15,7 @@ class Status(Enum):
     TIMEOUT = "TIMEOUT"
     ERROR = "ERROR"
     SKIPPED = "SKIPPED"
+    SAT_GATED = "SAT_GATED"  # short-circuited by the SAT gate (T3-certified induction)
 
 @dataclass
 class BackendResult:

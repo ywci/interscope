@@ -123,6 +123,7 @@ run_clean() {
     find . -type f -name 'test.mli' -delete || true
 
     rm -rf build/ || true
+    rm -rf .uv-cache/ || true
 
     log_success "Cleaned generated files."
 }
@@ -374,7 +375,7 @@ ${BOLD}Commands:${RESET}
   --gen-spec <file|--all> ...... Generate a natural-language Markdown spec (.md); --verify / --llm-roundtrip
   --check-specs [--verify] ...... Check every example has a natural-language spec (.md); --verify also round-trip checks
   --search linear|perf|mcts ... Search strategy for --verify (PERF is the default)
-  --clean                       Remove generated files (build artifacts only)
+  --clean                       Remove generated files (build artifacts + project uv cache)
   --clean-all [--yes] [--no-tools]
                                 Also remove .venv, .uv-cache, and tools/* clones.
                                   --yes       Skip the confirmation prompt.

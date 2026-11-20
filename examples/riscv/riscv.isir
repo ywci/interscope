@@ -76,7 +76,7 @@ module:
     - name: hazard
       params: [{name: nxt, type: "bits<32>"}, {name: cur, type: "bits<32>"}]
       return: "bool"
-      body: (eq (slice nxt 25 20) (slice cur 11 7))
+      body: (eq (slice nxt 24 20) (slice cur 11 7))
     # Branch prediction unit: detect branches, compute the target, and predict
     # taken via a 2-bit saturating counter.
     - name: is_branch

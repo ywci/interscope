@@ -53,12 +53,12 @@ module:
     - name: push
       condition: (and push (lt (read sp) 8))
       action:
-        - (mem_write mem (read sp) data_in)
+        - (mem_write mem (slice (read sp) 2 0) data_in)
         - (write sp (add (read sp) 1))
     - name: pop
       condition: (and pop (gt (read sp) 0))
       action:
-        - (write data_out (mem_read mem (sub (read sp) 1)))
+        - (write data_out (mem_read mem (slice (sub (read sp) 1) 2 0)))
         - (write sp (sub (read sp) 1))
     - name: update_flags
       condition: "true"

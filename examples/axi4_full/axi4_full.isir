@@ -83,7 +83,7 @@ module:
     - name: w
       condition: (and (and wvalid wready) (lt (read wcount) (read awlen)))
       action:
-        - (mem_write mem (read waddr) wdata)
+        - (mem_write mem (slice (read waddr) 5 2) wdata)
         - (write waddr (add (read waddr) 4))
         - (write wcount (add (read wcount) 1))
     # B response: after the burst completes, set the response.

@@ -4,7 +4,7 @@ module:
   parameters:
     - name: width
       type: int
-      default: 4
+      default: 5
     - name: modulus
       type: int
       default: 16

@@ -186,6 +186,8 @@ install_python_deps() {
         # (app.list_tools). Pin the 3.x line, which is mcp-1.x compatible, so
         # rocq-mcp and acl2-mcp both start cleanly.
         "fastmcp>=3.1,<4"
+        # sat-gating: CaDiCaL + DRAT proof emission for T3 certification.
+        "python-sat>=0.1.8"
     )
 
     local optional=(

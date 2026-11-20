@@ -129,6 +129,8 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
                         help="Model-checking engine for MC-gating: bmc (bounded, unsound for invariants) or induction (IC3/k-induction, sound)")
     parser.add_argument("--no-cowork", action="store_true",
                         help="Disable the koika_acl2 co-work dispatch: downgrade to single-backend Koika (ablation)")
+    parser.add_argument("--sat-gate", action="store_true",
+                        help="Short-circuit inductive (always) obligations via the SAT gate before the ITP")
     parser.add_argument("--acl2-only", action="store_true",
                         help="Downgrade koika_acl2 to single-backend ACL2 (ablation); inductive (always) obligations are skipped")
     parser.add_argument("--dry-run", action="store_true",
@@ -260,15 +262,19 @@ def _print_summary(report: VerificationReport, show_proof: bool = False) -> None
     """Print a human‑readable verification summary, optionally including proof scripts."""
     passed = sum(1 for o in report.obligations if o.status == Status.PASS)
     skipped = sum(1 for o in report.obligations if o.status == Status.SKIPPED)
-    failed = len(report.obligations) - passed - skipped
+    gated = sum(1 for o in report.obligations if o.status == Status.SAT_GATED)
+    failed = len(report.obligations) - passed - skipped - gated
     parts = [f"{passed} passed", f"{failed} failed"]
+    if gated:
+        parts.append(f"{gated} sat-gated")
     if skipped:
         parts.append(f"{skipped} skipped")
     print(f"\n===== Verification Summary: {', '.join(parts)} =====\n")
     for obl in report.obligations:
-        status_label = {Status.PASS: "PASS", Status.SKIPPED: "SKIPPED"}.get(obl.status, "FAIL")
+        status_label = {Status.PASS: "PASS", Status.SKIPPED: "SKIPPED",
+                        Status.SAT_GATED: "SAT-GATED"}.get(obl.status, "FAIL")
         print(f"{status_label}: {obl.property} ({obl.backend})")
-        if obl.status not in (Status.PASS, Status.SKIPPED) and obl.error_message:
+        if obl.status not in (Status.PASS, Status.SKIPPED, Status.SAT_GATED) and obl.error_message:
             print(f"   Error: {obl.error_message[:200]}")
         if show_proof and obl.status == Status.PASS and obl.proof_script:
             print(f"   Proof:\n{obl.proof_script}")
@@ -611,6 +617,28 @@ def verify_spec(args: argparse.Namespace) -> int:
             logger.error(f"Failed to initialize proof skill: {e}")
             return 1
 
+        # SAT gate pre-filter: short-circuit inductive (always) obligations whose
+        # BASE_ENTAIL + IND_STEP pair is UNSAT (T3-certified induction).  The
+        # gate is a pre-filter only; anything it does not resolve falls through
+        # to the ITP below.
+        sat_gate_results: Dict[str, Any] = {}
+        if getattr(args, "sat_gate", False):
+            from isir.verification.sat_gate.gate_runner import run_gate
+            from isir.verification.sat_gate.policy import EvidenceAction
+            try:
+                _gate_rows, _gate_metrics = run_gate(spec_module)
+                for _gr in _gate_rows:
+                    sat_gate_results[_gr.property] = _gr
+                gated = sum(1 for _gr in _gate_rows
+                            if _gr.evidence_action is EvidenceAction.PROVE_STEP)
+                logger.info(
+                    "SAT gate: %d always obligation(s), %d gated (inductive pair), "
+                    "coverage %.2f",
+                    _gate_metrics.eligible_pre, gated, _gate_metrics.coverage(),
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("SAT gate pre-filter failed; falling through to the ITP: %s", e)
+
         # Lemma-share arm: transition step-identities proved by ACL2 are collected
         # here (as their Coq theorem names) and shared into later `always`
         # inductions, which may consume them via `Hint Resolve`.
@@ -621,6 +649,19 @@ def verify_spec(args: argparse.Namespace) -> int:
             backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend_raw) or "koika"
             canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False), getattr(args, 'acl2_only', False))
+            if getattr(args, "sat_gate", False) and prop_name in sat_gate_results:
+                _gr = sat_gate_results[prop_name]
+                if _gr.evidence_action is not None and _gr.evidence_action.value == "prove_step":
+                    logger.info(
+                        "SAT-gated '%s' (inductive pair UNSAT, T3): skipping ITP", prop_name,
+                    )
+                    results.append(ProofObligationResult(
+                        property=prop_name,
+                        status=Status.SAT_GATED,
+                        backend="sat_gate",
+                        error_message=None,
+                    ))
+                    continue
             logger.info(f"Proving '{prop_name}' with backend {canonical}")
 
             start_time = time.time()
@@ -949,7 +990,8 @@ def _finish_summary(results: List[ProofObligationResult], args: argparse.Namespa
             json.dump(report.to_dict(), f, indent=2)
         logger.info(f"Report saved to {args.report}")
 
-    all_passed = all(o.status in (Status.PASS, Status.SKIPPED) for o in results)
+    all_passed = all(o.status in (Status.PASS, Status.SKIPPED, Status.SAT_GATED)
+                     for o in results)
     return 0 if all_passed else 1
 
 

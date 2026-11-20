@@ -17,6 +17,9 @@ venv/
 env/
 .env
 
+# uv package-manager cache (project-local fallback; index files are *.rkyv)
+.uv-cache/
+
 # IDE and editor files
 .vscode/
 .idea/
