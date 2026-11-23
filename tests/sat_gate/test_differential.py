@@ -1,5 +1,4 @@
 # tests/sat_gate/test_differential.py
-"""Dual-encoder agreement: the bit-blast path and the SMT path agree (§20.3)."""
 
 from isir.parser.parser import parse_isir
 from isir.lowering.ast_to_isir import convert_ast_to_isir_module
@@ -17,7 +16,7 @@ from isir.verification.sat_gate.smt_encode import (
 def _load(name):
     return convert_ast_to_isir_module(
         parse_isir(f"examples/{name}/{name}.isir").module
-    )
+)
 
 
 def test_dual_encoder_agreement_saturating():

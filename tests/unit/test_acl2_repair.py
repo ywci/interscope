@@ -51,7 +51,7 @@ def test_repair_hints_succeeds_on_first_attempt():
     result = repair_acl2_hints(
         "my-thm", "(implies (full st) (not (enqueue st)))", "boom",
         llm, acl2,
-    )
+)
 
     assert isinstance(result, ProofResult)
     assert result.success is True
@@ -62,7 +62,7 @@ def test_repair_hints_succeeds_on_first_attempt():
 
     acl2.defthm.assert_called_once_with(
         "my-thm", "(implies (full st) (not (enqueue st)))", ['(("Goal" :induct t))']
-    )
+)
     acl2.save_checkpoint.assert_called_once()
     assert acl2.save_checkpoint.call_args[0][0].startswith("repair_my-thm_")
     acl2.restore_checkpoint.assert_not_called()
@@ -78,7 +78,7 @@ def test_repair_hints_succeeds_after_failure():
 
     result = repair_acl2_hints(
         "my-thm", "stmt", "boom", llm, acl2, max_attempts=3,
-    )
+)
 
     assert result.success is True
     assert result.iterations == 2
@@ -128,7 +128,7 @@ def test_repair_hints_without_checkpoints():
 
     result = repair_acl2_hints(
         "my-thm", "stmt", "boom", llm, acl2, use_checkpoints=False,
-    )
+)
 
     assert result.success is True
     acl2.save_checkpoint.assert_not_called()
@@ -166,7 +166,7 @@ def test_repair_defun_with_guard():
 
     result = repair_acl2_defun(
         "foo", ["x"], "(+ x 0)", "err", llm, acl2, guard="(natp x)"
-    )
+)
 
     assert result.success is True
     assert "xargs :guard (natp x)" in result.proof_script
@@ -247,17 +247,17 @@ def test_extract_defun_body_empty_returns_none():
 def test_build_defthm_string_with_and_without_hints():
     assert _build_defthm_string("t", "stmt", ['("Goal" :induct t)']) == (
         '(defthm t\n  stmt\n  :hints (("Goal" :induct t)))'
-    )
+)
     assert _build_defthm_string("t", "stmt", []) == "(defthm t\n  stmt)"
 
 
 def test_build_defun_string_with_and_without_guard():
     assert _build_defun_string("foo", ["x"], "(+ x 1)") == (
         "(defun foo (x)\n  (+ x 1))"
-    )
+)
     assert _build_defun_string("foo", ["x"], "(+ x 1)", "(natp x)") == (
         "(defun foo (x)\n  (declare (xargs :guard (natp x)))\n  (+ x 1))"
-    )
+)
 
 
 def test_format_hints():

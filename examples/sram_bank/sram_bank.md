@@ -23,4 +23,4 @@
 
 ## Properties
 
-- **data_out_nonneg** (safety): always, `data_out` ≥ 0.
+- **data_out_equals_mem_read** (safety): always, `data_out` equals mem_read(mem, addr).

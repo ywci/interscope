@@ -168,7 +168,7 @@ class LLMClient:
         max_tokens: int = 2048,
         timeout: int = 120,
         retries: int = 3
-    ):
+):
         self.provider = provider.lower()
         self.model = model
         self.temperature = temperature
@@ -197,14 +197,14 @@ class LLMClient:
             if not HAS_OPENAI:
                 raise ImportError(
                     "OpenAI client library required. Install with: pip install openai"
-                )
+)
             # Use a httpx.Timeout object with distinct connect/read/write/pool timeouts
             client_timeout = httpx.Timeout(
                 connect=10.0,
                 read=self.timeout,
                 write=10.0,
                 pool=10.0
-            )
+)
             client_kwargs: Dict[str, Any] = {
                 "api_key": self.api_key or "not-needed",
                 "timeout": client_timeout,
@@ -217,12 +217,12 @@ class LLMClient:
             if not HAS_ANTHROPIC:
                 raise ImportError(
                     "Anthropic client library required. Install with: pip install anthropic"
-                )
+)
             if not self.api_key:
                 raise ValueError(
                     "Anthropic API key is required. "
                     "Set ANTHROPIC_API_KEY environment variable."
-                )
+)
             anthropic_kwargs: Dict[str, Any] = {
                 "api_key": self.api_key,
                 "timeout": self.timeout,
@@ -269,7 +269,7 @@ class LLMClient:
         messages: Optional[List[Dict[str, str]]] = None,
         system: Optional[str] = None,
         max_tokens: Optional[int] = None,
-    ) -> str:
+) -> str:
         """
         Generate a completion.
 
@@ -320,7 +320,7 @@ class LLMClient:
                 # Wrap the actual API call in a thread to enforce a hard deadline
                 return self._call_with_timeout(
                     self._openai_request, effective_timeout, messages, max_tokens
-                )
+)
             except LLMClientError as e:
                 # Explicit timeout – no retry, re‑raise
                 raise
@@ -335,7 +335,7 @@ class LLMClient:
             messages=messages,
             temperature=self.temperature,
             max_tokens=max_tokens or self.max_tokens,
-        )
+)
         if hasattr(response, "usage") and response.usage:
             self._total_prompt_tokens += response.usage.prompt_tokens
             self._total_completion_tokens += response.usage.completion_tokens
@@ -357,7 +357,7 @@ class LLMClient:
                 return self._call_with_timeout(
                     self._anthropic_request, effective_timeout,
                     system_content, user_messages, max_tokens
-                )
+)
             except LLMClientError:
                 raise
             except Exception as e:
@@ -374,7 +374,7 @@ class LLMClient:
             temperature=self.temperature,
             system=system_content,
             messages=user_messages,
-        )
+)
         if hasattr(response, "usage"):
             self._total_prompt_tokens += response.usage.input_tokens
             self._total_completion_tokens += response.usage.output_tokens
@@ -387,7 +387,7 @@ class LLMClient:
             logger.warning(
                 "%s attempt %d/%d failed: %s. Retrying in %ds...",
                 provider_name, attempt + 1, self.retries, error, delay,
-            )
+)
             time.sleep(delay)
             return True
         return False
@@ -398,7 +398,7 @@ class LLMClient:
         system: Optional[str] = None,
         max_workers: int = 4,
         max_tokens: Optional[int] = None,
-    ) -> List[str]:
+) -> List[str]:
         """
         Generate completions for multiple prompts in parallel.
 
@@ -445,7 +445,7 @@ class LLMClient:
         response_format: Dict[str, Any],
         system: Optional[str] = None,
         max_tokens: Optional[int] = None,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         """
         Generate a structured (JSON) response for reflection scoring.
 
@@ -474,7 +474,7 @@ class LLMClient:
                     temperature=self.temperature,
                     max_tokens=max_tokens or self.max_tokens,
                     response_format=response_format,
-                )
+)
                 content = response.choices[0].message.content
                 try:
                     return json.loads(content)
@@ -522,7 +522,7 @@ class LLMClient:
         except json.JSONDecodeError as e:
             raise LLMClientError(
                 f"Failed to parse structured response: {e}\nContent: {content[:500]}"
-            )
+)
 
     @property
     def total_tokens_used(self) -> Dict[str, int]:
@@ -545,4 +545,4 @@ def get_llm_client_from_config(config: Dict[str, Any]) -> LLMClient:
         max_tokens=llm_cfg.get("max_tokens", 2048),
         timeout=llm_cfg.get("timeout", 120),
         retries=llm_cfg.get("retries", 3)
-    )
+)

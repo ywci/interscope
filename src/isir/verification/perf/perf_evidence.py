@@ -46,7 +46,7 @@ class PERFEvidence:
         backend: str,
         stats: Optional[PERFStats] = None,
         metadata: Optional[Dict[str, Any]] = None
-    ) -> int:
+) -> int:
         """
         Register a proof successfully found by PERF.
 
@@ -82,18 +82,18 @@ class PERFEvidence:
             engine=engine,
             status="proved",
             property_name=property_name
-        )
+)
 
         evidence_id = add_evidence_to_registry(
             evidence=evidence,
             property_name=property_name,
             db_path=None
-        )
+)
 
         logger.info(
             "Registered PERF proof for '%s' (backend=%s, id=%d)",
             property_name, backend, evidence_id
-        )
+)
 
         if stats:
             self.register_stats(stats, property_name=property_name)
@@ -106,7 +106,7 @@ class PERFEvidence:
         trace_path: Optional[Path] = None,
         engine: str = "BMC",
         status: str = "counterexample"
-    ) -> int:
+) -> int:
         """
         Register a counterexample trace found during PERF.
 
@@ -128,11 +128,11 @@ class PERFEvidence:
             engine=engine,
             trace_path=trace_path,
             status=status
-        )
+)
         logger.info(
             "Registered PERF counterexample for '%s' (engine=%s, id=%d)",
             property_name, engine, evidence_id
-        )
+)
         return evidence_id
 
     def register_stats(
@@ -140,7 +140,7 @@ class PERFEvidence:
         stats: PERFStats,
         property_name: Optional[str] = None,
         tag: str = "perf_traversal",
-    ) -> int:
+) -> int:
         """
         Register PERF statistics as a simulation_trace evidence entry.
 
@@ -166,7 +166,7 @@ class PERFEvidence:
             f"verifier_calls={stats.total_verifier_calls}, "
             f"beam={stats.beam_size}, "
             f"pruned={stats.pruned_by_pareto}"
-        )
+)
         ref_value = f"{ref_value}:{summary_str}"
 
         evidence = create_evidence_ref(
@@ -176,25 +176,25 @@ class PERFEvidence:
             engine="perf_stats",
             status="completed",
             property_name=property_name
-        )
+)
 
         evidence_id = add_evidence_to_registry(
             evidence=evidence,
             property_name=property_name,
             db_path=None
-        )
+)
 
         logger.info(
             "Registered PERF statistics (id=%d): %s",
             evidence_id, summary_str
-        )
+)
         return evidence_id
 
     def get_perf_proofs(
         self,
         property_name: Optional[str] = None,
         backend: Optional[str] = None
-    ) -> list:
+) -> list:
         """
         Retrieve PERF-generated proofs from the evidence registry.
 
@@ -217,8 +217,8 @@ class PERFEvidence:
                         evidence_type="coq_theorem" if eng == "perf_koika" else "acl2_theorem",
                         property_name=property_name,
                         engine=eng
-                    )
-                )
+)
+)
             return results
         else:
             evidence_type = "coq_theorem" if engine_filter == "perf_koika" else "acl2_theorem"
@@ -226,12 +226,12 @@ class PERFEvidence:
                 evidence_type=evidence_type,
                 property_name=property_name,
                 engine=engine_filter
-            )
+)
 
     def get_perf_counterexamples(
         self,
         property_name: Optional[str] = None,
-    ) -> list:
+) -> list:
         """
         Retrieve PERF-generated counterexample traces.
 
@@ -245,7 +245,7 @@ class PERFEvidence:
             evidence_type="counterexample_trace",
             property_name=property_name,
             engine="BMC"
-        )
+)
 
     def get_latest_proof(self, property_name: str, backend: str) -> Optional[Dict[str, Any]]:
         """
@@ -263,7 +263,7 @@ class PERFEvidence:
             property_name=property_name,
             engine=engine,
             limit=1
-        )
+)
         return entries[0] if entries else None
 
     def get_stats_for_run(self, run_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -284,5 +284,5 @@ class PERFEvidence:
                 evidence_type="simulation_trace",
                 engine="perf_stats",
                 limit=1
-            )
+)
             return entries[0] if entries else None

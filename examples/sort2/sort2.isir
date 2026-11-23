@@ -35,17 +35,23 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-
   functions:
     - name: min2
-      params: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}]
+      params:
+        - name: a
+          type: "bits<8>"
+        - name: b
+          type: "bits<8>"
       return: "bits<8>"
       body: (ite (le a b) a b)
     - name: max2
-      params: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}]
+      params:
+        - name: a
+          type: "bits<8>"
+        - name: b
+          type: "bits<8>"
       return: "bits<8>"
       body: (ite (le a b) b a)
-
   rules:
     - name: sort
       condition: load
@@ -57,22 +63,21 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (le (read lo) (read hi))
+        operand: (le lo hi)
     - name: lo_hi_correct
       kind: transition
       expression:
         kind: transition
         rule: sort
-        operand: (and (eq (read lo) (min2 a_in b_in))
-                      (eq (read hi) (max2 a_in b_in)))
+        operand: (and (eq lo (min2 a_in b_in)) (eq hi (max2 a_in b_in)))
   proof_obligations:
-    - property: sorted
-      status: unproved
-      engine: theorem_proving
-      backend: koika
     - property: lo_hi_correct
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
+    - property: sorted
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: sorted
       engine: model_checking

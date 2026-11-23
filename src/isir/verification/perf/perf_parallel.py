@@ -58,7 +58,7 @@ class PERFParallelEvaluator:
         max_workers: int = 4,
         timeout_per_node: int = 300,
         config: Optional[Dict[str, Any]] = None
-    ):
+):
         """
         Initialize the parallel evaluator.
 
@@ -77,7 +77,7 @@ class PERFParallelEvaluator:
         nodes: List[PERFNode],
         evaluator_fn: Callable[[PERFNode], Dict[str, Any]],
         timeout: Optional[float] = None
-    ) -> List[PERFNode]:
+) -> List[PERFNode]:
         """
         Evaluate multiple nodes in parallel.
 
@@ -97,7 +97,7 @@ class PERFParallelEvaluator:
         if len(nodes) == 1:
             nodes[0].verification_result = self._evaluate_single(
                 nodes[0], evaluator_fn, timeout
-            )
+)
             return nodes
 
         effective_timeout = timeout or self.timeout_per_node
@@ -105,14 +105,14 @@ class PERFParallelEvaluator:
 
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=min(self.max_workers, len(nodes))
-        ) as executor:
+) as executor:
             future_to_index = {
                 executor.submit(
                     self._evaluate_with_timeout,
                     node,
                     evaluator_fn,
                     effective_timeout
-                ): idx
+): idx
                 for idx, node in enumerate(nodes)
             }
 
@@ -125,7 +125,7 @@ class PERFParallelEvaluator:
                     logger.warning(
                         "Node %d evaluation timed out after %ds",
                         idx, effective_timeout
-                    )
+)
                     nodes[idx].verification_result = {
                         "success": False,
                         "error": f"Verification timed out after {effective_timeout}s"
@@ -144,7 +144,7 @@ class PERFParallelEvaluator:
         node: PERFNode,
         evaluator_fn: Callable[[PERFNode], Dict[str, Any]],
         timeout: Optional[float] = None
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         """Evaluate a single node (no parallel overhead)."""
         try:
             return evaluator_fn(node)
@@ -157,7 +157,7 @@ class PERFParallelEvaluator:
         node: PERFNode,
         evaluator_fn: Callable[[PERFNode], Dict[str, Any]],
         timeout: float
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         """Wrapper to enforce a timeout on node evaluation."""
         result_container = {}
         exception_container = []
@@ -188,7 +188,7 @@ class PERFParallelEvaluator:
         workspace: Path,
         rocq_path: str = "rocq-mcp",
         timeout: int = 300
-    ) -> Any:
+) -> Any:
         """
         Create a RocqClient instance for use in a thread.
         Each thread should create its own client to avoid session conflicts.
@@ -199,14 +199,14 @@ class PERFParallelEvaluator:
             timeout=timeout,
             cwd=workspace,
             server_args=["--workspace", str(workspace)],
-        )
+)
 
     @staticmethod
     def create_acl2_client(
         mcp_path: str = "acl2-mcp",
         timeout: int = 300,
         init_commands: Optional[List[str]] = None
-    ) -> Any:
+) -> Any:
         """
         Create an ACL2Client instance for use in a thread.
         """
@@ -215,4 +215,4 @@ class PERFParallelEvaluator:
             mcp_path=mcp_path,
             timeout=timeout,
             init_commands=init_commands or []
-        )
+)

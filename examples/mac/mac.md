@@ -20,6 +20,6 @@
 
 ## Properties
 
-- **acc_nonneg** (safety): always, `acc` ≥ 0.
+- **acc_out_equals_acc** (safety): always, acc_out equals `acc`.
 - **accumulate_mac** (transition): after each step, `acc` equals prev(acc) + a × b.
 - **acc_monotonic** (transition): after each step, `acc` ≥ prev(acc).

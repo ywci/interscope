@@ -22,7 +22,7 @@
 
 - **bufA_passes_d0** (transition): after each step, `wire0` equals d0.
 - **bufB_passes_wire0** (transition): after each step, `out1` equals prev(wire0).
-- **bufA_q_nonneg** (safety): always, `wire0` ≥ 0.
+- **bufA_q_equals_d** (safety): always, `wire0` equals d0.
 - **bufA_q_passes_d** (transition): after each step, `wire0` equals d0.
-- **bufB_q_nonneg** (safety): always, `out1` ≥ 0.
+- **bufB_q_equals_d** (safety): always, `out1` equals wire0.
 - **bufB_q_passes_d** (transition): after each step, `out1` equals wire0.

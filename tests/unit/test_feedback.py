@@ -1,6 +1,6 @@
 # tests/unit/test_feedback.py
 #
-# LLM consumption interface (assemble_prompt) + Phase 2 feedback tracker.
+# LLM consumption interface (assemble_prompt) + feedback tracker.
 
 from isir.dialects.evolving_spec import (
     EvolvingItem, EvolvingSpec, Finding, ErrorClass, IssueAttribution,

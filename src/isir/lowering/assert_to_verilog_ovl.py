@@ -149,7 +149,7 @@ def _resolve_reset(op_reset: Optional[str],
         "Reset condition '%s' is not a simple signal name; "
         "using it as‑is – verify active‑low polarity.",
         cond
-    )
+)
     return cond_stripped
 
 
@@ -220,7 +220,7 @@ def convert(assert_module: asserts.AssertModule) -> str:
         raise NotImplementedError(
             f"OVL backend does not support these temporal properties: {prop_names}. "
             "Use the SVA or VHDL PSL backend instead."
-        )
+)
 
     if assert_module.sequences:
         seq_names = [
@@ -230,7 +230,7 @@ def convert(assert_module: asserts.AssertModule) -> str:
         raise NotImplementedError(
             f"OVL backend does not support sequences: {seq_names}. "
             "Use the SVA or VHDL PSL backend instead."
-        )
+)
 
     module_clock = assert_module.clock
     module_reset = assert_module.reset

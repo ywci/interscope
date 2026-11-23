@@ -43,25 +43,25 @@ class TestModernizeTactics:
         assert (
             modernize_tactics("rewrite Nat.mod_add.", replace_nat_mod_add=True)
             == "rewrite Div0.mod_add."
-        )
+)
 
     def test_nat_add_mod_replaced_when_enabled(self):
         assert (
             modernize_tactics("rewrite Nat.add_mod.", replace_nat_mod_add=True)
             == "rewrite Div0.add_mod."
-        )
+)
 
     def test_nat_div_replaced_when_enabled(self):
         assert (
             modernize_tactics("apply Nat.div_same.", replace_nat_mod_add=True)
             == "apply Div0.div_same."
-        )
+)
 
     def test_nat_mod_word_boundary_when_enabled(self):
         assert (
             modernize_tactics("apply Nat.mod_add_extra.", replace_nat_mod_add=True)
             == "apply Nat.mod_add_extra."
-        )
+)
 
     def test_boolean_discriminate_modernized(self):
         script = "Hop : (op_reg s =? 0) = true.\ndiscriminate Hop."

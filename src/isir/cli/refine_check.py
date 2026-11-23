@@ -59,7 +59,7 @@ def main() -> int:
         cache_dir=Path(args.cache_dir) if args.cache_dir else None,
         registry=registry,
         run_differential=args.differential,
-    )
+)
 
     for it in report.items:
         mark = {"bounded_pass": "OK", "bounded_fail": "DIV", "proof_pass": "PROOF",

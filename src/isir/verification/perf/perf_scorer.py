@@ -74,7 +74,7 @@ class PERFScorer:
         llm_client: LLMClient,
         max_workers: int = 1,
         cache_file: Optional[str] = None,
-    ):
+):
         self.config = config
         self.llm = llm_client
         self.max_workers = max_workers
@@ -101,9 +101,18 @@ class PERFScorer:
         # Scripts that have already been expanded (for novelty scoring).
         self._expanded_scripts: List[str] = []
 
+        # SAT-gate evidence for the current obligation (optional).  When set,
+        # the keyword trace_alignment score is replaced by the SAT-derived
+        # gate-evidence score.
+        self._gate_evidence = None
+
         # Error history reference (optional).  If set, apply_error_history_penalty
         # can be used.
         self._error_history: Any = None
+
+    def set_gate_evidence(self, features) -> None:
+        """Set the SAT-gate evidence for the current obligation."""
+        self._gate_evidence = features
 
     def _load_persistent_cache(self) -> None:
         """Load comparison cache from disk if it exists."""
@@ -123,7 +132,7 @@ class PERFScorer:
             logger.info(
                 "Loaded %d comparison entries from persistent cache %s",
                 len(self._comparison_cache), self._cache_file,
-            )
+)
         except Exception as e:
             logger.warning("Failed to load persistent comparison cache: %s", e)
 
@@ -174,7 +183,7 @@ class PERFScorer:
         self,
         nodes: List[PERFNode],
         penalty_factor: float = 0.25,
-    ) -> None:
+) -> None:
         """
         Reduce scores of nodes whose script+error signature matches a known
         failure in the attached ErrorHistory.  The penalty is applied to all
@@ -203,7 +212,7 @@ class PERFScorer:
         nodes: List[PERFNode],
         obligation: Dict[str, Any],
         context: Dict[str, Any],
-    ) -> List[PERFNode]:
+) -> List[PERFNode]:
         if not nodes:
             return nodes
 
@@ -239,7 +248,7 @@ class PERFScorer:
         logger.debug(
             "Running %d pairwise comparisons for %d nodes (tournament size=%d)",
             len(comparison_pairs), len(nodes), self.tournament_size
-        )
+)
 
         if self.max_workers > 1 and len(comparison_pairs) > 1:
             results = self._parallel_compare(nodes, comparison_pairs, obligation, context)
@@ -291,9 +300,13 @@ class PERFScorer:
             else:
                 subgoal_score = self._subgoal_score_from_error(error_msg)
 
-            # trace_alignment: only non‑zero if explicit trace handling detected
+            # trace_alignment: the keyword heuristic is replaced by the
+            # SAT-derived gate-evidence score when the gate evidence is set.
             trace_score = 0.0
-            if res.get("handled_trace", False) or self._script_handles_trace(node.script):
+            if self._gate_evidence is not None:
+                from isir.verification.sat_gate.sat_features import gate_evidence_score
+                trace_score = gate_evidence_score(self._gate_evidence)
+            elif res.get("handled_trace", False) or self._script_handles_trace(node.script):
                 trace_score = 1.0
 
             # syntactic_purity: shorter scripts preferred
@@ -360,7 +373,7 @@ class PERFScorer:
         return bool(
             re.search(r"\binduction\b.*\breachable\b", script) and
             re.search(r"\binversion\b.*\bstep\b", script)
-        )
+)
 
     def _script_handles_trace(self, script: str) -> bool:
         keywords = ["trace", "counterexample", "MC", "model_check", "vcd", "simulation"]
@@ -402,7 +415,7 @@ class PERFScorer:
         pairs: List[Tuple[int, int]],
         obligation: Dict[str, Any],
         context: Dict[str, Any],
-    ) -> List[Tuple[Tuple[int, int], Dict[str, int]]]:
+) -> List[Tuple[Tuple[int, int], Dict[str, int]]]:
         results = []
         for (i, j) in pairs:
             pref = self._compare_nodes(nodes[i], nodes[j], obligation, context)
@@ -415,13 +428,13 @@ class PERFScorer:
         pairs: List[Tuple[int, int]],
         obligation: Dict[str, Any],
         context: Dict[str, Any],
-    ) -> List[Tuple[Tuple[int, int], Dict[str, int]]]:
+) -> List[Tuple[Tuple[int, int], Dict[str, int]]]:
         import concurrent.futures
 
         def _compare_wrapper(idx1, idx2):
             return (id(nodes[idx1]), id(nodes[idx2])), self._compare_nodes(
                 nodes[idx1], nodes[idx2], obligation, context
-            )
+)
 
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -445,7 +458,7 @@ class PERFScorer:
         node_b: PERFNode,
         obligation: Dict[str, Any],
         context: Dict[str, Any],
-    ) -> Dict[str, int]:
+) -> Dict[str, int]:
         # Use stable cache key based on script content.
         key = self._make_cache_key(node_a.script, node_b.script)
         if key in self._comparison_cache:
@@ -471,7 +484,7 @@ class PERFScorer:
         node_b: PERFNode,
         obligation: Dict[str, Any],
         context: Dict[str, Any],
-    ) -> str:
+) -> str:
         theorem_name = obligation.get("property", "unknown")
         theorem_stmt = context.get("theorem_statement", "unknown")
 
@@ -491,14 +504,14 @@ class PERFScorer:
                 "A model checking counterexample trace is available. "
                 "Evaluate which proof better addresses the failing trace.\n"
                 f"Trace snippet: {context['mc_trace'][:500]}"
-            )
+)
 
         coq_env = context.get("coq_environment", "")
         if coq_env:
             env_section = (
                 "\n**Coq/ACL2 definitions and lemmas available (use exact names):**\n"
                 f"```\n{coq_env[:3000]}\n```\n"
-            )
+)
         else:
             env_section = ""
 
@@ -605,7 +618,7 @@ Return ONLY the JSON object, without any extra text.
         nodes: List[PERFNode],
         previous_beam_scripts: List[str],
         diversity_dimensions: Optional[List[str]] = None,
-    ) -> None:
+) -> None:
         """
         Compute novelty and structural_difference scores for the given nodes
         relative to the previously selected beam scripts, and attach them to
@@ -640,7 +653,7 @@ Return ONLY the JSON object, without any extra text.
             if "structural_difference" in diversity_dimensions:
                 node.score["structural_difference"] = self._structural_difference_score(
                     node.script, previous_beam_scripts
-                )
+)
 
     @staticmethod
     def _tokenize(script: str) -> Set[str]:
@@ -662,7 +675,7 @@ Return ONLY the JSON object, without any extra text.
         self,
         script: str,
         previous_beam_scripts: List[str],
-    ) -> float:
+) -> float:
         indicators = [
             r'\binduction\b',
             r'\bintros\b',
@@ -702,7 +715,7 @@ Return ONLY the JSON object, without any extra text.
         failure_signatures: List[str],
         penalty_dimensions: Optional[List[str]] = None,
         penalty_factor: float = 0.2,
-    ) -> None:
+) -> None:
         if not failure_signatures or not nodes:
             return
 
@@ -747,7 +760,7 @@ Return ONLY the JSON object, without any extra text.
         subgoal_reduction: float = 0.0,
         diversity_score: float = 0.0,
         weights: Optional[Dict[str, float]] = None,
-    ) -> float:
+) -> float:
         """
         Compute a more informative reflection quality score.
 
@@ -768,7 +781,7 @@ Return ONLY the JSON object, without any extra text.
             primary_delta = min(
                 1.0,
                 (post_best_primary - pre_best_primary) / max(0.01, pre_best_primary)
-            )
+)
         else:
             primary_delta = 0.0
 
@@ -784,7 +797,7 @@ Return ONLY the JSON object, without any extra text.
             weights.get("error_shift", 0.2) * error_shift +
             weights.get("subgoal_reduction", 0.25) * subgoal_reduction +
             weights.get("diversity", 0.15) * diversity_score
-        )
+)
         total_weight = sum(weights.values())
         if total_weight <= 0:
             return 0.0
@@ -879,5 +892,5 @@ def select_beam(
         pareto_front,
         key=lambda n: n.score.get(primary_dim, 0.0) if n.score else 0.0,
         reverse=True
-    )
+)
     return sorted_front[:beam_size]

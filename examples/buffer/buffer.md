@@ -18,5 +18,5 @@
 
 ## Properties
 
-- **q_nonneg** (safety): always, `q` ≥ 0.
+- **q_equals_d** (safety): always, `q` equals d.
 - **q_passes_d** (transition): after each step, `q` equals d.

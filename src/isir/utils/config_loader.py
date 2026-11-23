@@ -61,7 +61,7 @@ def _validate_config(config: Dict[str, Any]) -> None:
     perf_enabled = config.get("proof", {}).get("perf", {}).get("enabled", False)
     use_library = config.get("provers", {}).get("koika", {}).get(
         "use_proof_library", True
-    )
+)
 
     if perf_enabled and use_library:
         raise ValueError(
@@ -70,7 +70,7 @@ def _validate_config(config: Dict[str, Any]) -> None:
             "To fix:\n"
             "  - Set 'proof.perf.enabled: false' to disable PERF, OR\n"
             "  - Set 'provers.koika.use_proof_library: false' to enable PERF."
-        )
+)
 
 
 def _apply_perf_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -312,6 +312,8 @@ def load_config(
         raw_config = yaml.safe_load(f)
 
     config = _substitute_env_vars(raw_config)
+
+    config.setdefault("sat_gating_enabled", False)
 
     config.setdefault("llm", {})
     config["llm"].setdefault("temperature", 0.2)

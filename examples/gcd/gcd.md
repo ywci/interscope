@@ -26,9 +26,9 @@
 
 ## Properties
 
-- **operands_nonneg** (safety): always, `a` ≥ 0 and `b` ≥ 0.
-- **done_implies_equal** (safety): always, if `done`, then `a` equals `b`.
-- **done_implies_result_eq_a** (safety): always, if `done`, then `result` equals `a`.
+- **done_implies_result_equals_a** (safety): always, if done, then result equals `a`.
+- **done_implies_equal** (safety): always, if done, then `a` equals `b`.
+- **done_implies_result_eq_a** (safety): always, if done, then result equals `a`.
 - **gcd_commutes** (combinational): for all inputs, gcd_sub(x, y) equals gcd_sub(y, x).
 - **gcd_diag** (combinational): for all inputs, gcd_sub(x, x) equals x.
 - **gcd_sub_computes** (combinational): for all inputs, gcd_sub(10, 6) equals 2.

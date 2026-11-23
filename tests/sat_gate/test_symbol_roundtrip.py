@@ -1,5 +1,4 @@
 # tests/sat_gate/test_symbol_roundtrip.py
-"""Symbol round-trip tests (§20.3)."""
 
 from isir.verification.sat_gate.symbols import SymbolTable
 
@@ -23,7 +22,7 @@ def test_names_do_not_collide():
     # distinct ranges
     assert set(st.var("a", i) for i in range(3)).isdisjoint(
         set(st.var("b", i) for i in range(5))
-    )
+)
 
 
 def test_intern_is_idempotent():

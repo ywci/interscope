@@ -88,6 +88,27 @@ interscope/
 │       │       ├── perf_traversal.py  # Core beam‑search engine with Pareto pruning and reflective feedback
 │       │       ├── error_history.py   # Dedicated PERF error‑history tracker for failure deduplication
 │       │       └── perf_diagnostics.py # Human‑readable PERF failure diagnostics generation
+│       │   ├── sat_gate/              # SAT‑gating: ITP‑driven bounded‑SAT pre‑filter (see §SAT‑gating)
+│       │   │   ├── policy.py          # objective‑free evidence_action + disposition matrix
+│       │   │   ├── certificate.py     # T3 + REPLAY certification (DRAT, composed replay C11)
+│       │   │   ├── replay.py          # reference‑semantics replay + composed replay
+│       │   │   ├── bitblast.py        # shared bit‑blaster + symbol table
+│       │   │   ├── compile_dyn.py     # dynamic obligation compiler (predicates → CNF)
+│       │   │   ├── smt_encode.py      # QF_ABV SMT encoder (z3 binary)
+│       │   │   ├── rtlil.py           # Yosys RTLIL static elaboration + dual‑encoder
+│       │   │   ├── solver_cadical.py  # incremental solver (assumptions + failed core)
+│       │   │   ├── solver_oneshot.py  # one‑shot CaDiCaL + DRAT proof tracing
+│       │   │   ├── pool.py            # sharded solver pool + contention
+│       │   │   ├── mus.py             # deletion‑based group‑MUS
+│       │   │   ├── drat.py            # RUP/DRAT certificate checker
+│       │   │   ├── cache.py           # certification reuse + SAT/subsumption/hint caches
+│       │   │   ├── lemma_hint.py      # CTI‑generalized lemma hints (§6.8)
+│       │   │   ├── boosters.py        # hint‑generation boosters (probe‑core, s′, …)
+│       │   │   ├── ranker.py          # shadow‑first learned ranker
+│       │   │   ├── array_instantiate.py # bounded array Ackermannization
+│       │   │   ├── live_gate.py       # live PERF hook + routing + whitelist
+│       │   │   ├── hint_routing.py    # hint harvest → offer → accept/admit lifecycle
+│       │   │   └── gate_runner.py     # offline corpus gate runner
 │       ├── backends/                  # Low‑level wrappers for external tools
 │       │   ├── koika_compiler.py      # Kōika compiler wrapper (cuttlec) for existing .ml files
 │       │   ├── acl2_client.py         # ACL2 MCP client (background event loop, synchronous API); provides load_file()
@@ -110,3 +131,39 @@ interscope/
     ├── integration/                   # End‑to‑end tests (require installed backends)
     └── unit/                          # Unit tests (fast, isolated)
 ```
+
+
+
+---
+
+## SAT‑gating
+
+`src/isir/verification/sat_gate/` is an ITP‑driven bounded‑SAT pre‑filter for the
+PERF proof search.  It short‑circuits inductive `always` obligations before the
+expensive LLM/prover call and harvests lemma hints for the rest.
+
+- **Query kinds**: `VACUITY`, `FALSIFY_INIT`, `IND_STEP`, `BASE_ENTAIL`.
+- **Encoders**: direct bit‑blast (`bitblast.py`/`compile_dyn.py`), SMT `QF_ABV`
+  (`smt_encode.py`), static Yosys RTLIL (`rtlil.py`), SMT arrays
+  (`smt_array_backend.py`).
+- **Certification tiers** (the gate certifies its own hard verdicts):
+
+  | Tier | Meaning | Assigned to |
+  | --- | --- | --- |
+  | T0 | no certification (reversible) | `PARK`, `FORWARD`, lemma hints |
+  | T1 | completeness‑critical | `DISABLE_CLASS` (periodic re‑probe) |
+  | T2 | standalone DRAT (reserved) | — not yet assigned |
+  | T3 | soundness‑critical UNSAT (DRAT + dual‑encoder) | `CLOSE_VACUOUS`, `PROVE_BASE`, `PROVE_STEP` |
+  | REPLAY | SAT‑driven hard action | `REPORT_CEX`, `REJECT_CANDIDATE` (composed replay) |
+
+- **Value drivers**: caching, CTI‑generalized lemma hints + boosters, a
+  shadow‑first ranker, and bounded array instantiation.
+- **Live hook**: `proof_skill._try_sat_gate` (config `sat_gating_enabled`) plus
+  `record_downstream_failure` whitelist and the `HintRouter` hint lifecycle.
+
+**Measured** over the 76‑example corpus: the gate short‑circuits **95** inductive
+obligations, cuts wall time **−50.4%** (6669.7 s → 3307.0 s), and recovers **9**
+examples that the ungated pipeline timed out on.  The D5‑strong axiom‑closure
+status is 87% (55/63 closed proofs depend on an unproved `Axiom`/`Admitted`
+leaf beyond the declared `assume_inputs`), and the break‑even is comfortably
+feasible (required `p·q` ≤ 0.024).

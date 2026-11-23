@@ -73,29 +73,50 @@ module:
         - (write shift2 (read shift1))
         - (write shift1 (read shift0))
         - (write shift0 data_in)
-        - (write acc (add (mul (read shift0) (read coeff0))
-                         (add (mul (read shift1) (read coeff1))
-                         (add (mul (read shift2) (read coeff2))
-                              (mul (read shift3) (read coeff3))))))
+        - (write acc (add (mul (read shift0) (read coeff0)) (add (mul (read shift1)
+          (read coeff1)) (add (mul (read shift2) (read coeff2)) (mul (read shift3)
+          (read coeff3))))))
         - (write valid_pipe true)
     - name: bypass
       condition: (not valid_in)
       action:
         - (write valid_pipe false)
   properties:
-    - name: acc_bounded
+    - name: acc_equals_weighted_sum
       kind: safety
       expression:
         kind: always
-        operand: (and (ge (read acc) 0) (le (read acc) 65535))
+        operand: (eq (read acc) (add (mul (read shift0) (read coeff0)) (add (mul (read
+          shift1) (read coeff1)) (add (mul (read shift2) (read coeff2)) (mul (read
+          shift3) (read coeff3))))))
+    - name: fir_shifts_and_accumulates
+      kind: transition
+      expression:
+        kind: transition
+        rule: shift_and_mac
+        operand: (and (eq (read shift3) (prev shift2)) (and (eq (read shift2) (prev
+          shift1)) (and (eq (read shift1) (prev shift0)) (and (eq (read shift0) data_in)
+          (and (eq (read acc) (add (mul (prev shift0) (prev coeff0)) (add (mul (prev
+          shift1) (prev coeff1)) (add (mul (prev shift2) (prev coeff2)) (mul (prev
+          shift3) (prev coeff3)))))) (eq (read valid_pipe) True))))))
+    - name: pipe_bypasses_when_idle
+      kind: transition
+      expression:
+        kind: transition
+        rule: bypass
+        operand: (eq (read valid_pipe) False)
   proof_obligations:
-    - property: acc_bounded
+    - property: fir_shifts_and_accumulates
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: acc_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: acc_bounded
+      backend: koika_acl2
+    - property: acc_equals_weighted_sum
       engine: model_checking
+    - property: pipe_bypasses_when_idle
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: acc_equals_weighted_sum
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

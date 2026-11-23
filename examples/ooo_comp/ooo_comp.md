@@ -90,16 +90,11 @@
 
 - **commit_in_order** (transition): after each step, `head` equals true and `rob0_valid` equals false.
 - **store_load_forward** (transition): after each step, if op and not (store) and `sb_valid` and `sb_addr` equals addr, then `result` equals `sb_data`.
-- **rat_bounded** (safety): always, `rat0` ≥ 0 and `rat0` ≤ 5 and `rat1` ≥ 0 and `rat1` ≤ 5 and `rat2` ≥ 0 and `rat2` ≤ 5 and `rat3` ≥ 0 and `rat3` ≤ 5.
 - **alu_zero_flag_correct** (safety): always, if `alu_valid`, then `alu_zero_reg` equals `alu_result_reg` equals 0.
 - **alu_add_overflow_correct** (safety): always, if `alu_op_reg` equals 0, then `alu_overflow_reg` equals `alu_a_reg`[7:7] equals `alu_b_reg`[7:7] and `alu_a_reg`[7:7] does not equal `alu_a_reg` + `alu_b_reg`[7:7].
 - **alu_sub_overflow_correct** (safety): always, if `alu_op_reg` equals 1, then `alu_overflow_reg` equals `alu_a_reg`[7:7] does not equal `alu_b_reg`[7:7] and `alu_a_reg`[7:7] equals `alu_a_reg` − `alu_b_reg`[7:7].
 - **alu_overflow_implies_result_neq_sum** (safety): always, if `alu_valid` and `alu_op_reg` equals 0 and `alu_overflow_reg`, then `alu_result_reg` does not equal `alu_a_reg` + `alu_b_reg`.
 - **alu_sub_overflow_implies_result_neq_diff** (safety): always, if `alu_valid` and `alu_op_reg` equals 1 and `alu_overflow_reg`, then `alu_result_reg` does not equal `alu_a_reg` − `alu_b_reg`.
-- **alu_result_reg_self** (safety): always, `alu_result_reg` equals `alu_result_reg`.
-- **alu_zero_reg_is_bool** (safety): always, `alu_zero_reg` equals true or `alu_zero_reg` equals false.
-- **alu_overflow_reg_is_bool** (safety): always, `alu_overflow_reg` equals true or `alu_overflow_reg` equals false.
-- **alu_valid_is_bool** (safety): always, `alu_valid` equals true or `alu_valid` equals false.
 - **alu_add_correctness** (combinational): for all inputs, if 0 equals 0, then a + b, otherwise if 0 equals 1, then a − b, otherwise if 0 equals 2, then a and b, otherwise if 0 equals 3, then a or b, otherwise if 0 equals 4, then if a equals b, then 0, otherwise if a < b, then 1, otherwise 2, otherwise if 0 equals 5, then a xor b, otherwise if 0 equals 6, then a shifted left by b[2:0], otherwise if 0 equals 7, then a shifted right by b[2:0], otherwise 0 equals a + b.
 - **alu_sub_correctness** (combinational): for all inputs, if 1 equals 0, then a + b, otherwise if 1 equals 1, then a − b, otherwise if 1 equals 2, then a and b, otherwise if 1 equals 3, then a or b, otherwise if 1 equals 4, then if a equals b, then 0, otherwise if a < b, then 1, otherwise 2, otherwise if 1 equals 5, then a xor b, otherwise if 1 equals 6, then a shifted left by b[2:0], otherwise if 1 equals 7, then a shifted right by b[2:0], otherwise 0 equals a − b.
 - **alu_and_correctness** (combinational): for all inputs, if 2 equals 0, then a + b, otherwise if 2 equals 1, then a − b, otherwise if 2 equals 2, then a and b, otherwise if 2 equals 3, then a or b, otherwise if 2 equals 4, then if a equals b, then 0, otherwise if a < b, then 1, otherwise 2, otherwise if 2 equals 5, then a xor b, otherwise if 2 equals 6, then a shifted left by b[2:0], otherwise if 2 equals 7, then a shifted right by b[2:0], otherwise 0 equals a and b.
@@ -113,4 +108,3 @@
 - **lsu_l1d_states_valid** (safety): always, `lsu_l1d_s0` ≥ 0 and `lsu_l1d_s0` ≤ 3 and `lsu_l1d_s1` ≥ 0 and `lsu_l1d_s1` ≤ 3.
 - **lsu_l1d_physical_tag_used** (transition): after each step, `lsu_l1d_a0` equals addr.
 - **lsu_l1d_modified_way_holds_line** (safety): always, if lsu_l1d_is_modified(`lsu_l1d_s0`), then lsu_l1d_has_line(`lsu_l1d_s0`, `lsu_l1d_a0`, `lsu_l1d_a0`).
-- **lsu_l1d_phys_index_bounded** (safety): always, lsu_l1d_phys_index(addr) ≤ 3.

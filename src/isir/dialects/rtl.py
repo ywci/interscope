@@ -171,7 +171,7 @@ class MappingEntry:
             source_rule=data.get("source_rule"),
             expression=data.get("expression"),
             relevant_properties=data.get("relevant_properties", [])
-        )
+)
 
 
 @dataclass
@@ -193,7 +193,7 @@ class RTLMapping:
         return cls(
             design_name=data["design"],
             entries=[MappingEntry.from_json(e) for e in data.get("mapping", [])]
-        )
+)
 
     def filter_for_obligation(self, obligation: Union[Dict[str, Any], str]) -> List[MappingEntry]:
         """

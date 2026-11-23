@@ -230,7 +230,7 @@ def build_coq_proof_prompt(
         "The script must include the `Proof.` and `Qed.` lines. "
         "If you cannot complete the proof, end with `Admitted.` instead of `Qed.`. "
         "Return only the Coq code without any extra commentary."
-    )
+)
 
     # Static forbidden patterns
     avoid_list = [
@@ -255,18 +255,18 @@ def build_coq_proof_prompt(
         avoid_list.append(
             "The step constructor contains a deeply nested if‑then‑else chain. "
             "After inversion, destruct each condition before applying the induction hypothesis."
-        )
+)
 
     if failure_prompt_snippet:
         avoid_list.append(
             "**Recent repeated failures (do NOT repeat these mistakes):**\n" +
             failure_prompt_snippet
-        )
+)
 
     parts.append(
         "\n**CRITICAL RULES (do NOT break these):**\n" +
         "\n".join(f"- {item}" for item in avoid_list) + "\n"
-    )
+)
 
     # Positive examples
     examples = [_default_destruct_example()]
@@ -291,18 +291,18 @@ def build_coq_proof_prompt(
             parts.append(
                 f"\n**Example {i} of a successful proof for a similar property:**\n"
                 f"```coq\n{example}\n```\n"
-            )
+)
         parts.append(
             "Use the structure shown above as a template. Replace condition and "
             "operation names as needed for the current theorem."
-        )
+)
 
     if mc_trace_info:
         parts.append(
             "\n**Model‑checking counterexample trace information:**\n" +
             mc_trace_info +
             "\nUse this information to guide arithmetic reasoning."
-        )
+)
 
     if previous_attempts:
         recent = previous_attempts[-3:]
@@ -350,7 +350,7 @@ def generate_coq_proof(
         analysis=analysis,
         failure_prompt_snippet=failure_prompt_snippet,
         mc_trace_info=mc_trace_info,
-    )
+)
     logger.debug("One‑shot proof prompt (%d chars):\n%s", len(prompt), prompt)
 
     original_max = llm_client.max_tokens
@@ -405,14 +405,14 @@ def build_interactive_step_prompt(
         "3.  If the goal now contains `if op_reg s =? …`, destruct each comparison.\n"
         "4.  In each sub‑goal, `simpl` and apply the induction hypothesis `IH`.\n"
         "5.  Finish with `auto; try lia; try nia`."
-    ),
+),
     available_lemmas: Optional[List[str]] = None,
     structural_hints: Optional[str] = None,
 ) -> str:
     goals_str = "\n".join(goals) if goals else "No goals"
     hints_str = ", ".join(tactic_hints) if tactic_hints else (
         "induction, simpl, auto, eauto, rewrite, inversion, subst, destruct, split, lia, nia"
-    )
+)
     recent_history = applied_tactics[-8:] if applied_tactics else []
     history_str = "\n".join(f"  {t}" for t in recent_history) if recent_history else "(none)"
 
@@ -423,7 +423,7 @@ def build_interactive_step_prompt(
             f"\n**CRITICAL: The LAST tactic you suggested FAILED with this error:**\n"
             f"  {last_error}\n\n"
             f"**DO NOT repeat the same tactic. You MUST change your approach.**\n"
-        )
+)
         if len(recent_errors) > 1:
             error_str += "\nEarlier errors:\n"
             for e in recent_errors[-4:-1]:
@@ -441,7 +441,7 @@ def build_interactive_step_prompt(
         lemmas_str = (
             f"\n**Available lemmas** (you can rewrite with them): "
             f"{', '.join(available_lemmas)}\n"
-        )
+)
 
     structural_str = ""
     if structural_hints:
@@ -469,7 +469,7 @@ def build_interactive_step_prompt(
         "- If the goal contains `if ... then ... else`, use `destruct` on the condition.\n"
         "- Return ONLY one complete tactic ending with a dot.\n"
         "- If your previous tactic failed, you MUST try something different."
-    )
+)
 
 
 def extract_tactics_from_response(response: str) -> List[str]:
@@ -532,7 +532,7 @@ def build_skeleton_script(
 
     has_valid_implication = bool(
         re.search(r"\(?valid\s+\w+\s*\)?\s*=\s*true\s*->", goal_str)
-    )
+)
 
     if has_valid_implication:
         base_tactic = "simpl; intros Hvalid; discriminate Hvalid."
@@ -542,12 +542,12 @@ def build_skeleton_script(
                 "inversion Hstep; subst; simpl in *.\n"
                 f"  {destruct_tactic}\n"
                 "  all: try (simpl; reflexivity); try (apply IH; auto)."
-            )
+)
         else:
             step_tactic = (
                 "inversion Hstep; subst; simpl in *; "
                 "auto; try lia; try nia."
-            )
+)
         # Use braces for the two induction subgoals.
         script = (
             "Proof.\n"
@@ -556,7 +556,7 @@ def build_skeleton_script(
             f"  {{ {base_tactic} }}\n"
             f"  {{ {step_tactic} }}\n"
             "Qed."
-        )
+)
         return script
 
     return None
@@ -589,7 +589,7 @@ def build_slice_alignment_prompt(
         "```\n\n"
         f"Environment (the Coq definitions and lemmas above the theorem):\n```coq\n{context}\n```\n\n"
         "Return ONLY the Coq code from \"Proof.\" to \"Qed.\" (inclusive). Do NOT use Admitted."
-    )
+)
 
 
 def build_skeleton_reflection_prompt(
@@ -621,7 +621,7 @@ def build_skeleton_reflection_prompt(
         "Please provide a complete Coq proof script starting with `Proof.` and ending "
         "with `Qed.`.  Use explicit braces `{ ... }` for subgoals, not bullets.\n"
         "Return **only** the Coq proof script, without any extra commentary."
-    )
+)
 
 
 def generate_coq_proof_variants(
@@ -656,7 +656,7 @@ def generate_coq_proof_variants(
             previous_attempts, structural_hints, diversity_tags,
             available_lemmas, mandatory_avoid, positive_example,
             positive_examples, analysis, failure_prompt_snippet, mc_trace_info,
-        )
+)
 
     variants = []
     original_temp = llm_client.temperature
@@ -677,7 +677,7 @@ def generate_coq_proof_variants(
         analysis=analysis,
         failure_prompt_snippet=failure_prompt_snippet,
         mc_trace_info=mc_trace_info,
-    )
+)
 
     for i in range(num_variants):
         prompt = base_prompt
@@ -688,7 +688,7 @@ def generate_coq_proof_variants(
                 f"\n\nTry a fundamentally different proof approach than previous attempts. "
                 f"Use different tactics or a different induction scheme. "
                 f"This is variant {i+1} of {num_variants}."
-            )
+)
         llm_client.temperature = max(0.1, gen_temp + (i - num_variants/2) * 0.05) if i > 0 else gen_temp
 
         try:
@@ -710,7 +710,7 @@ def generate_coq_proof_variants(
                     analysis=analysis,
                     failure_prompt_snippet=failure_prompt_snippet,
                     mc_trace_info=mc_trace_info,
-                )
+)
                 if diversity_tags and i < len(diversity_tags):
                     fallback += f"\n\n**Strategy hint:** {diversity_tags[i]}"
                 response2 = llm_client.generate(fallback, max_tokens=max_tokens)
@@ -765,7 +765,7 @@ def _generate_with_repair(
         analysis=analysis,
         failure_prompt_snippet=failure_prompt_snippet,
         mc_trace_info=mc_trace_info,
-    )
+)
 
     n_extra = max(1, num_variants - 1)
     prompt += (
@@ -783,7 +783,7 @@ def _generate_with_repair(
         "Qed.\n\n"
         f"... up to VARIANT {n_extra}\n\n"
         "Return ONLY the sections described above, without any extra commentary."
-    )
+)
 
     if diversity_tags and n_extra > 0:
         tags = []

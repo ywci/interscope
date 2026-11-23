@@ -20,4 +20,4 @@
 ## Properties
 
 - **y_bounded** (safety): always, `y` < 256.
-- **activate_passes_sigmoid** (transition): after each step, `y` equals sigmoid(x).
+- **activate_passes_sigmoid** (transition): after each step, y equals sigmoid(x).

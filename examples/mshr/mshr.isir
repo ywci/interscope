@@ -15,13 +15,13 @@ module:
       type: "bool"
     - name: id
       direction: input
-      type: "bits<2>"   # miss id (e.g. ROB slot)
+      type: "bits<2>"
     - name: addr
       direction: input
-      type: "bits<4>"   # missed address
+      type: "bits<4>"
     - name: data
       direction: input
-      type: "bits<8>"   # store data (for a store miss)
+      type: "bits<8>"
     - name: release
       direction: input
       type: "bool"
@@ -60,9 +60,9 @@ module:
       expression:
         kind: transition
         rule: alloc
-        operand: (and (eq (read valid) true) (eq (read mid) id))
+        operand: (and (eq (read valid) True) (eq (read mid) id))
   proof_obligations:
     - property: alloc_sets_entry
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

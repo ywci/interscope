@@ -27,5 +27,7 @@
 
 ## Properties
 
-- **result_nonneg** (safety): always, `tmp` ≥ 0.
-- **acc_nonneg** (safety): always, `acc` ≥ 0.
+- **tmp_equals_acc** (safety): always, `tmp` equals `acc`.
+- **capture_input_or_forward** (transition): after each step, `stage1_valid` equals true and `stage1_val` equals if prev(fwd_valid), then prev(fwd_val), otherwise prev(data_in).
+- **accumulate_partial_sum** (transition): after each step, `stage2_valid` equals true and `stage2_val` equals prev(acc) + prev(stage1_val) and `fwd_val` equals prev(acc) + prev(stage1_val).
+- **writeback_result** (transition): after each step, `acc` equals prev(stage2_val) and `tmp` equals prev(stage2_val).

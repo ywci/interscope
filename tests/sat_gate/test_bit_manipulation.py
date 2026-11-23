@@ -1,5 +1,4 @@
 # tests/sat_gate/test_bit_manipulation.py
-"""Bit-manipulation ops: slice, concat (var re-wiring) + SMT emission."""
 
 from isir.verification.sat_gate.bitblast import BitBlaster
 from isir.verification.sat_gate.compile_dyn import lower_term

@@ -10,9 +10,7 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
-    # Vec opcode: 0 = VEC_ADD (a+b), 1 = VEC_MUL (accumulated product).
     - name: op
       direction: input
       type: "bits<2>"
@@ -25,22 +23,21 @@ module:
     - name: valid
       direction: input
       type: "bool"
-
   components:
-    # The INT8 multiply-accumulate unit (bits<8> x bits<8> -> bits<32>): reused
-    # as the VEC_MUL path (its accumulator holds the full-precision product).
     - name: mac_unit
       module: "examples/mac/mac.isir"
       lift_properties: false
-      port_map: {a: a, b: b, enable: valid, acc: mac_acc, acc_out: mac_acc_out}
-
+      port_map:
+        a: a
+        b: b
+        enable: valid
+        acc: mac_acc
+        acc_out: mac_acc_out
   state:
-    # Clamped output (saturating, always in [0, 255]).
     - name: out
       kind: register
       type: "bits<32>"
       initial: 0
-    # The MAC unit's INT32 accumulator (exposed via the component port map).
     - name: mac_acc
       kind: register
       type: "bits<32>"
@@ -49,39 +46,36 @@ module:
       kind: register
       type: "bits<32>"
       initial: 0
-
   functions:
     - name: clamp8
-      params: [{name: x, type: "bits<32>"}]
+      params:
+        - name: x
+          type: "bits<32>"
       return: "bits<32>"
       body: (min x 255)
-
   rules:
-    # VEC_ADD: saturating add (a+b clamped to INT8).  VEC_MUL: the accumulated
-    # product, clamped to INT8.  Both paths keep the output in [0, 255].
     - name: compute
       condition: valid
       action:
         - (write out (clamp8 (ite (eq op 0) (add a b) (read mac_acc_out))))
-
   properties:
-    - name: out_bounded
+    - name: out_equals_clamped_op
       kind: safety
       expression:
         kind: always
-        operand: (le (read out) 255)
-    - name: out_nonneg
-      kind: safety
+        operand: (eq (read out) (clamp8 (ite (eq op 0) (add a b) (read mac_acc_out))))
+    - name: lane_op_computed
+      kind: transition
       expression:
-        kind: always
-        operand: (ge (read out) 0)
-
+        kind: transition
+        rule: compute
+        operand: (eq (read out) (clamp8 (ite (eq op 0) (add a b) (prev mac_acc_out))))
   proof_obligations:
-    - property: out_bounded
+    - property: lane_op_computed
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: out_nonneg
+      backend: koika_acl2
+    - property: out_equals_clamped_op
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

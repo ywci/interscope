@@ -24,7 +24,7 @@ def _rec(ref, primary, mode=VerificationMode.SELF_CONSISTENCY,
         evidence_source=EvidenceSource.SIMULATION, proof_status=status,
         error_class=ec, related_spec_item_ids=list(related),
         counterexample=cex, failing_subgoal=subgoal, evidence_hash=f"h:{ref}",
-    )
+)
 
 
 class TestRoundResetRule:
@@ -66,7 +66,7 @@ class TestRtlConformance:
             property_ops=[SpecPropertyOp(prop_name="not_full", kind="safety",
                                          expression={"kind": "always", "operand": "(not (read full))"})],
             inputs=[], outputs=[], proof_obligations=[],
-        )
+)
 
     def test_failing_property_yields_conformance_record(self):
         spec = self._spec()
@@ -154,7 +154,7 @@ class TestCOIScopeAndDedup:
             property_ops=[SpecPropertyOp(prop_name="x_ok", kind="safety",
                                          expression={"kind": "always", "operand": "(lt (read x) 16)"})],
             inputs=[], outputs=[], proof_obligations=[],
-        )
+)
 
     def test_read_write_sets_and_cone(self):
         from isir.lowering.filters import one_hop_cone, read_set, write_set

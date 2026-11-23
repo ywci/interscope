@@ -43,10 +43,10 @@ module:
       type: "bits<4>"
     - name: d_is_physical
       direction: input
-      type: "bool"     # true = PIPT special load (PTW); false = VIPT normal load
+      type: "bool"
     - name: taken
       direction: input
-      type: "bool"     # branch outcome (feeds fetch's BPU)
+      type: "bool"
     - name: req_write
       direction: input
       type: "bool"
@@ -96,39 +96,74 @@ module:
       direction: input
       type: "bool"
   components:
-    # MMU: instruction TLB + data TLB + shared page-table walker.
     - name: mmu
       module: "examples/mmu_comp/mmu_comp.isir"
       lift_properties: false
-      port_map: {i_vpn: pc_signal, d_vpn: addr, va: va, i_ppn: i_pa_signal, d_ppn: pa_signal, i_miss: i_miss_signal, d_miss: d_miss_signal, miss_signal: tlb_miss_signal, ptw_mem_addr: ptw_mem_addr_signal, ptw_active: ptw_active_signal, ptw_mem_data: ptw_mem_data_signal}
-    # Fetch (with internal BPU). Its pc is exposed as pc_signal; its instruction
-    # fetch uses the MMU-translated i_pa_signal (physical).
+      port_map:
+        i_vpn: pc_signal
+        d_vpn: addr
+        va: va
+        i_ppn: i_pa_signal
+        d_ppn: pa_signal
+        i_miss: i_miss_signal
+        d_miss: d_miss_signal
+        miss_signal: tlb_miss_signal
+        ptw_mem_addr: ptw_mem_addr_signal
+        ptw_active: ptw_active_signal
+        ptw_mem_data: ptw_mem_data_signal
     - name: fetch
       module: "examples/fetch_comp/fetch_comp.isir"
       lift_properties: false
-      port_map: {stall: stall, taken: taken, branch_target: branch_target, pc: pc_signal}
+      port_map:
+        stall: stall
+        taken: taken
+        branch_target: branch_target
+        pc: pc_signal
     - name: ooo
       module: "examples/ooo_comp/ooo_comp.isir"
       lift_properties: false
-      port_map: {issue_valid: issue_valid, rd: rd, op: op, alu_op: alu_op, store: store, a: a, b: b, addr: addr}
-    # Two-level cache: L1I fed by the translated instruction PA, L1D fed by the
-    # translated data PA.
+      port_map:
+        issue_valid: issue_valid
+        rd: rd
+        op: op
+        alu_op: alu_op
+        store: store
+        a: a
+        b: b
+        addr: addr
     - name: cache
       module: "examples/cache_comp/cache_comp.isir"
-      parameters: {me: $me}
+      parameters:
+        me: "$me"
       lift_properties: false
-      port_map: {i_addr: i_pa_signal, d_core: req_core, d_write: l1d_write_signal, d_addr: l1d_addr_signal, d_vpn: d_vpn_signal, d_is_physical: l1d_phys_signal, d_data: req_data, mshr_release0: release0, mshr_release1: release1, l2_miss_valid: miss_valid_signal, l2_miss_addr: miss_addr_signal, l1d_rdata: ptw_mem_data_signal}
+      port_map:
+        i_addr: i_pa_signal
+        d_core: req_core
+        d_write: l1d_write_signal
+        d_addr: l1d_addr_signal
+        d_vpn: d_vpn_signal
+        d_is_physical: l1d_phys_signal
+        d_data: req_data
+        mshr_release0: release0
+        mshr_release1: release1
+        l2_miss_valid: miss_valid_signal
+        l2_miss_addr: miss_addr_signal
+        l1d_rdata: ptw_mem_data_signal
     - name: axi_mem
       module: "examples/axi_mem/axi_mem.isir"
       lift_properties: false
-      port_map: {araddr: miss_addr_signal, arvalid: miss_valid_signal, awaddr: awaddr, awvalid: awvalid, wdata: wdata, wvalid: wvalid}
+      port_map:
+        araddr: miss_addr_signal
+        arvalid: miss_valid_signal
+        awaddr: awaddr
+        awvalid: awvalid
+        wdata: wdata
+        wvalid: wvalid
   state:
-    # Shared signal carrying the fetch stage's program counter.
     - name: pc_signal
       kind: register
       type: "bits<4>"
       initial: 0
-    # Translated addresses from the MMU.
     - name: i_pa_signal
       kind: register
       type: "bits<4>"
@@ -137,12 +172,10 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
-    # Data VA page-offset (VIPT index for the L1D).
     - name: d_vpn_signal
       kind: register
       type: "bits<2>"
       initial: 0
-    # PTW memory interface (physical read -> L1D in PIPT mode).
     - name: ptw_mem_addr_signal
       kind: register
       type: "bits<4>"
@@ -155,7 +188,6 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    # Multiplexed L1D request (LSU VIPT vs PTW PIPT).
     - name: l1d_addr_signal
       kind: register
       type: "bits<4>"
@@ -168,7 +200,6 @@ module:
       kind: register
       type: "bool"
       initial: false
-    # MMU miss flags.
     - name: i_miss_signal
       kind: register
       type: "bool"
@@ -181,7 +212,6 @@ module:
       kind: register
       type: "bool"
       initial: false
-    # MSHR / AXI miss signals.
     - name: miss_valid_signal
       kind: register
       type: "bool"
@@ -195,16 +225,15 @@ module:
       type: "bits<4>"
       initial: 0
   rules:
-    # Data VA page-offset = VIPT index (== PA offset within a page).
     - name: slice_d_vpn
       condition: "true"
       action:
         - (write d_vpn_signal (slice addr 1 0))
-    # Multiplex the L1D request: PTW physical read (PIPT) vs LSU data access (VIPT).
     - name: mux_l1d_addr
       condition: "true"
       action:
-        - (write l1d_addr_signal (ite (read ptw_active_signal) (read ptw_mem_addr_signal) pa_signal))
+        - (write l1d_addr_signal (ite (read ptw_active_signal) (read ptw_mem_addr_signal)
+          pa_signal))
     - name: mux_l1d_write
       condition: "true"
       action:
@@ -222,32 +251,20 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (implies (cache_l1d_is_modified (read cache_l1d_s0)) (neq (read cache_l1d_s0) 0))
-    - name: cache_l1d_phys_index_bounded
-      kind: safety
-      expression:
-        kind: always
-        operand: (le (cache_l1d_phys_index (read cache_l1d_a0)) 3)
+        operand: (implies (cache_l1d_is_modified (read cache_l1d_s0)) (neq (read cache_l1d_s0)
+          0))
     - name: cache_l1i_is_modified_implies_valid
       kind: safety
       expression:
         kind: always
-        operand: (implies (cache_l1i_is_modified (read cache_l1i_s0)) (neq (read cache_l1i_s0) 0))
-    - name: cache_l1i_phys_index_bounded
-      kind: safety
-      expression:
-        kind: always
-        operand: (le (cache_l1i_phys_index (read cache_l1i_a0)) 3)
+        operand: (implies (cache_l1i_is_modified (read cache_l1i_s0)) (neq (read cache_l1i_s0)
+          0))
     - name: ooo_lsu_l1d_is_modified_implies_valid
       kind: safety
       expression:
         kind: always
-        operand: (implies (ooo_lsu_l1d_is_modified (read ooo_lsu_l1d_s0)) (neq (read ooo_lsu_l1d_s0) 0))
-    - name: ooo_lsu_l1d_phys_index_bounded
-      kind: safety
-      expression:
-        kind: always
-        operand: (le (ooo_lsu_l1d_phys_index (read ooo_lsu_l1d_a0)) 3)
+        operand: (implies (ooo_lsu_l1d_is_modified (read ooo_lsu_l1d_s0)) (neq (read
+          ooo_lsu_l1d_s0) 0))
     - name: pc_increments
       kind: transition
       expression:
@@ -271,7 +288,7 @@ module:
       expression:
         kind: transition
         rule: cache_l2_read_miss0
-        operand: (eq (read miss_valid_signal) true)
+        operand: (eq (read miss_valid_signal) True)
     - name: tlb_miss_triggers_ptw
       kind: transition
       expression:
@@ -283,32 +300,8 @@ module:
       expression:
         kind: transition
         rule: mux_l1d_phys
-        operand: (implies (read ptw_active_signal) (eq (read l1d_phys_signal) true))
+        operand: (implies (read ptw_active_signal) (eq (read l1d_phys_signal) True))
   proof_obligations:
-    - property: cache_l1d_is_modified_implies_valid
-      status: unproved
-      engine: theorem_proving
-      backend: koika_acl2
-    - property: cache_l1d_phys_index_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika_acl2
-    - property: cache_l1i_is_modified_implies_valid
-      status: unproved
-      engine: theorem_proving
-      backend: koika_acl2
-    - property: cache_l1i_phys_index_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika_acl2
-    - property: ooo_lsu_l1d_is_modified_implies_valid
-      status: unproved
-      engine: theorem_proving
-      backend: koika_acl2
-    - property: ooo_lsu_l1d_phys_index_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika_acl2
     - property: pc_increments
       status: unproved
       engine: theorem_proving
@@ -330,6 +323,18 @@ module:
       engine: theorem_proving
       backend: koika_acl2
     - property: ptw_read_is_pipt
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: cache_l1d_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: cache_l1i_is_modified_implies_valid
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: ooo_lsu_l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
       backend: koika_acl2

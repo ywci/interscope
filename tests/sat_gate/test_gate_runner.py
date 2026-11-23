@@ -1,9 +1,7 @@
 # tests/sat_gate/test_gate_runner.py
-"""End-to-end gate runner on the slice."""
 
 from isir.parser.parser import parse_isir
 from isir.lowering.ast_to_isir import convert_ast_to_isir_module
-
 from isir.verification.sat_gate.gate_runner import run_gate
 from isir.verification.sat_gate.policy import EvidenceAction
 
@@ -11,7 +9,7 @@ from isir.verification.sat_gate.policy import EvidenceAction
 def _load(name):
     return convert_ast_to_isir_module(
         parse_isir(f"examples/{name}/{name}.isir").module
-    )
+)
 
 
 def test_saturating_counter_inductive_pair():

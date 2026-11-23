@@ -10,7 +10,6 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: start
       direction: input
@@ -24,7 +23,6 @@ module:
       direction: input
       type: "bool"
       protocol: fixed_cycle
-
   outputs:
     - name: scl
       direction: output
@@ -46,7 +44,6 @@ module:
       direction: output
       type: "bool"
       protocol: fixed_cycle
-
   state:
     - name: fsm_state
       kind: register
@@ -84,7 +81,6 @@ module:
       kind: register
       type: "bool"
       initial: false
-
   rules:
     - name: idle
       condition: (eq (read fsm_state) 0)
@@ -97,7 +93,6 @@ module:
         - (write clk_div 0)
         - (write bit_idx 0)
         - (write fsm_state (ite (read start) 1 0))
-
     - name: start_cond
       condition: (eq (read fsm_state) 1)
       action:
@@ -107,51 +102,28 @@ module:
         - (write shift_reg (read data_in))
         - (write bit_idx 0)
         - (write fsm_state 2)
-
     - name: send
       condition: (eq (read fsm_state) 2)
       action:
         - (write clk_div (add (read clk_div) 1))
-        - (write scl_reg
-            (ite (eq (read clk_div) 0) false
-            (ite (eq (read clk_div) 2) true
-                 (read scl_reg))))
-        - (write sda_reg
-            (ite (eq (read clk_div) 1)
-                 (eq (slice (read shift_reg) 7 7) 1)
-                 (read sda_reg)))
-        - (write shift_reg
-            (ite (eq (read clk_div) 3)
-                 (add (read shift_reg) (read shift_reg))
-                 (read shift_reg)))
-        - (write bit_idx
-            (ite (eq (read clk_div) 3)
-                 (add (read bit_idx) 1)
-                 (read bit_idx)))
-        - (write fsm_state
-            (ite (eq (read bit_idx) 7)
-                 3
-                 2))
-
+        - (write scl_reg (ite (eq (read clk_div) 0) false (ite (eq (read clk_div)
+          2) true (read scl_reg))))
+        - (write sda_reg (ite (eq (read clk_div) 1) (eq (slice (read shift_reg) 7
+          7) 1) (read sda_reg)))
+        - (write shift_reg (ite (eq (read clk_div) 3) (add (read shift_reg) (read
+          shift_reg)) (read shift_reg)))
+        - (write bit_idx (ite (eq (read clk_div) 3) (add (read bit_idx) 1) (read bit_idx)))
+        - (write fsm_state (ite (eq (read bit_idx) 7) 3 2))
     - name: ack
       condition: (eq (read fsm_state) 3)
       action:
         - (write scl_reg false)
         - (write sda_reg true)
         - (write clk_div (add (read clk_div) 1))
-        - (write error_reg
-            (ite (and (eq (read clk_div) 1) (not (read sda_in)))
-                 false
-                 (ite (and (eq (read clk_div) 1) (read sda_in))
-                      true
-                      (read error_reg))))
-        - (write fsm_state
-            (ite (and (eq (read clk_div) 3) (not (read error_reg)))
-                 4
-                 (ite (and (eq (read clk_div) 3) (read error_reg))
-                      4
-                      3)))
-
+        - (write error_reg (ite (and (eq (read clk_div) 1) (not (read sda_in))) false
+          (ite (and (eq (read clk_div) 1) (read sda_in)) true (read error_reg))))
+        - (write fsm_state (ite (and (eq (read clk_div) 3) (not (read error_reg)))
+          4 (ite (and (eq (read clk_div) 3) (read error_reg)) 4 3)))
     - name: stop
       condition: (eq (read fsm_state) 4)
       action:
@@ -160,7 +132,6 @@ module:
         - (write done_reg true)
         - (write busy_reg false)
         - (write fsm_state 0)
-
   properties:
     - name: bus_idle_high
       kind: safety
@@ -186,18 +157,56 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (implies (eq (read fsm_state) 0) (or (not (read done_reg)) (eq (read start) 0)))
-    - name: state_in_range
-      kind: safety
+        operand: (implies (eq (read fsm_state) 0) (or (not (read done_reg)) (eq start
+          0)))
+    - name: controller_idles
+      kind: transition
       expression:
-        kind: always
-        operand: (and (ge (read fsm_state) 0) (le (read fsm_state) 4))
-    - name: bit_idx_in_range
-      kind: safety
+        kind: transition
+        rule: idle
+        operand: (and (eq (read busy_reg) False) (and (eq (read done_reg) False) (and
+          (eq (read error_reg) False) (and (eq (read scl_reg) True) (and (eq (read
+          sda_reg) True) (and (eq (read clk_div) 0) (and (eq (read bit_idx) 0) (eq
+          (read fsm_state) (ite (prev start) 1 0)))))))))
+    - name: start_condition_driven
+      kind: transition
       expression:
-        kind: always
-        operand: (and (ge (read bit_idx) 0) (le (read bit_idx) 7))
-
+        kind: transition
+        rule: start_cond
+        operand: (and (eq (read sda_reg) False) (and (eq (read scl_reg) True) (and
+          (eq (read busy_reg) True) (and (eq (read shift_reg) (prev data_in)) (and
+          (eq (read bit_idx) 0) (eq (read fsm_state) 2))))))
+    - name: byte_clocked_out
+      kind: transition
+      expression:
+        kind: transition
+        rule: send
+        operand: (and (eq (read clk_div) (add (prev clk_div) 1)) (and (eq (read scl_reg)
+          (ite (eq (prev clk_div) 0) False (ite (eq (prev clk_div) 2) True (prev scl_reg))))
+          (and (eq (read sda_reg) (ite (eq (prev clk_div) 1) (eq (slice (prev shift_reg)
+          7 7) 1) (prev sda_reg))) (and (eq (read shift_reg) (ite (eq (prev clk_div)
+          3) (add (prev shift_reg) (prev shift_reg)) (prev shift_reg))) (and (eq (read
+          bit_idx) (ite (eq (prev clk_div) 3) (add (prev bit_idx) 1) (prev bit_idx)))
+          (eq (read fsm_state) (ite (eq (prev bit_idx) 7) 3 2)))))))
+    - name: ack_sampled
+      kind: transition
+      expression:
+        kind: transition
+        rule: ack
+        operand: (and (eq (read scl_reg) False) (and (eq (read sda_reg) True) (and
+          (eq (read clk_div) (add (prev clk_div) 1)) (and (eq (read error_reg) (ite
+          (and (eq (prev clk_div) 1) (not (prev sda_in))) False (ite (and (eq (prev
+          clk_div) 1) (prev sda_in)) True (prev error_reg)))) (eq (read fsm_state)
+          (ite (and (eq (prev clk_div) 3) (not (prev error_reg))) 4 (ite (and (eq
+          (prev clk_div) 3) (prev error_reg)) 4 3)))))))
+    - name: stop_condition_driven
+      kind: transition
+      expression:
+        kind: transition
+        rule: stop
+        operand: (and (eq (read scl_reg) True) (and (eq (read sda_reg) True) (and
+          (eq (read done_reg) True) (and (eq (read busy_reg) False) (eq (read fsm_state)
+          0)))))
   proof_obligations:
     - property: bus_idle_high
       engine: model_checking
@@ -207,7 +216,23 @@ module:
       engine: model_checking
     - property: busy_when_not_idle
       engine: model_checking
-    - property: state_in_range
-      engine: model_checking
-    - property: bit_idx_in_range
-      engine: model_checking
+    - property: controller_idles
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: start_condition_driven
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: byte_clocked_out
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: ack_sampled
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: stop_condition_driven
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

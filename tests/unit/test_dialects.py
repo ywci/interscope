@@ -21,7 +21,7 @@ def test_spec_dialect_operations():
         data_type="bits<3>",
         initial=0,
         attributes=["stable"]
-    )
+)
     assert state_op.name == "spec.state"
     assert state_op.state_name == "head"
     assert state_op.kind == "register"
@@ -35,7 +35,7 @@ def test_spec_dialect_operations():
         actions=["(mem_write mem head data_in)", "(write head 1)"],
         priority=1,
         rule_attributes=["atomic"]
-    )
+)
     assert rule_op.rule_name == "enqueue"
     assert rule_op.condition == "(not (read full))"
     assert len(rule_op.actions) == 2
@@ -45,7 +45,7 @@ def test_spec_dialect_operations():
         prop_name="no_overflow",
         kind="safety",
         expression={"kind": "always", "operand": "(implies (read full) (not enqueue))"}
-    )
+)
     assert prop_op.prop_name == "no_overflow"
     assert prop_op.expression["kind"] == "always"
 
@@ -55,7 +55,7 @@ def test_spec_dialect_operations():
         expression="(not (and enqueue dequeue))",
         clock="clk",
         severity="error"
-    )
+)
     assert directive_op.directive_name == "no_simultaneous"
     assert directive_op.kind == "assume"
     assert directive_op.expression == "(not (and enqueue dequeue))"
@@ -66,7 +66,7 @@ def test_spec_dialect_operations():
         kind="conflict_free",
         rule_order=[],
         conflict_sets=[["enqueue", "dequeue"]]
-    )
+)
     assert schedule_op.kind == "conflict_free"
     assert schedule_op.conflict_sets == [["enqueue", "dequeue"]]
 
@@ -79,7 +79,7 @@ def test_spec_dialect_operations():
         directive_ops=[directive_op],
         schedule_op=schedule_op,
         proof_obligations=[{"property": "no_overflow"}]
-    )
+)
     assert spec_module.name == "fifo"
     assert spec_module.version == "0.1"
     assert len(spec_module.state_ops) == 1
@@ -97,7 +97,7 @@ def test_spec_interface_dataclass():
         direction="input",
         data_type="bits<32>",
         protocol="ready_valid"
-    )
+)
     assert iface.name == "data_in"
     assert iface.direction == "input"
     assert iface.data_type == "bits<32>"
@@ -141,7 +141,7 @@ def test_assert_dialect_operations():
         always_checks=[always],
         properties=[prop],
         covers=[cover]
-    )
+)
     assert mod.name == "fifo_assert"
     assert mod.clock == clock_op
 
@@ -156,7 +156,7 @@ def test_koika_dialect_operations():
         rule_name="enqueue",
         condition="not full",
         actions=["write(head, head+1)"]
-    )
+)
     assert rule.rule_name == "enqueue"
     assert "write(head, head+1)" in rule.actions
 
@@ -164,7 +164,7 @@ def test_koika_dialect_operations():
         design_name="fifo",
         rules=["enqueue", "dequeue"],
         schedule="conflict_free"
-    )
+)
     assert design.design_name == "fifo"
     assert design.rules == ["enqueue", "dequeue"]
 
@@ -172,7 +172,7 @@ def test_koika_dialect_operations():
         theorem_name="no_overflow",
         statement="forall st, reachable st -> full st -> not enqueue st",
         tactic_hints=["induction", "simpl"]
-    )
+)
     assert thm.theorem_name == "no_overflow"
 
     mod = koika.KoikaModule(
@@ -180,7 +180,7 @@ def test_koika_dialect_operations():
         rule_ops=[rule],
         design_op=design,
         theorem_ops=[thm]
-    )
+)
     assert mod.name == "fifo_koika"
 
 
@@ -189,10 +189,10 @@ def test_koika_from_spec_module_succeeds():
     spec_mod = isir.SpecModule(name="test")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="x", kind="register", data_type="bool", initial=False)
-    )
+)
     spec_mod.rule_ops.append(
         isir.SpecRuleOp(rule_name="dummy", condition="true", actions=[])
-    )
+)
     result = koika.from_spec_module(spec_mod)
     assert isinstance(result, koika.KoikaModule)
     assert result.name == "test"
@@ -203,7 +203,7 @@ def test_acl2_dialect_operations():
         func_name="next-state",
         args=["st", "inputs"],
         body="(cond ((enqueue inputs) ...) (t st))"
-    )
+)
     assert defun.func_name == "next-state"
     assert defun.args == ["st", "inputs"]
 
@@ -211,14 +211,14 @@ def test_acl2_dialect_operations():
         thm_name="no-overflow",
         statement="(implies (full st) (not (enqueue st)))",
         hints=["(Goal :induct t)"]
-    )
+)
     assert defthm.thm_name == "no-overflow"
 
     defun_sk = acl2.ACL2DefunSkOp(
         pred_name="exists-full",
         exists_vars=["st"],
         body="(full st)"
-    )
+)
     assert defun_sk.pred_name == "exists-full"
 
     mod = acl2.ACL2Module(
@@ -226,7 +226,7 @@ def test_acl2_dialect_operations():
         defuns=[defun],
         defthms=[defthm],
         defun_sk_ops=[defun_sk]
-    )
+)
     assert len(mod.defuns) == 1
 
 
@@ -257,7 +257,7 @@ def test_rtl_dialect_operations():
     mapping = rtl.RTLMapping(
         design_name="fifo",
         entries=[rtl.MappingEntry(rtl_signal="top.head", isir_ref="module.state[name=head]", kind="register")]
-    )
+)
     assert len(mapping.entries) == 1
     json_dict = mapping.to_json()
     assert json_dict["design"] == "fifo"
@@ -268,7 +268,7 @@ def test_rtl_dialect_operations():
         modules={"fifo": rtl_module},
         mapping=mapping,
         design_name="fifo",
-    )
+)
     assert container.design_name == "fifo"
     assert "fifo" in container.modules
     assert container.mapping is not None

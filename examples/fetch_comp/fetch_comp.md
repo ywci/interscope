@@ -23,4 +23,4 @@
 
 ## Properties
 
-- **pc_nonneg** (safety): always, `pc` ≥ 0.
+- **pc_advances_or_branches** (transition): after each step, `pc` equals if stall, then prev(pc), otherwise if prev(bpu_predict), then branch_target, otherwise prev(pc) + 1.

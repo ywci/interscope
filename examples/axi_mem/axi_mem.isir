@@ -10,14 +10,12 @@ module:
       async: false
       affects: all
   inputs:
-    # AXI read-address channel (simplified: no burst/len).
     - name: araddr
       direction: input
       type: "bits<4>"
     - name: arvalid
       direction: input
       type: "bool"
-    # AXI write-address / write-data channel.
     - name: awaddr
       direction: input
       type: "bits<4>"
@@ -33,8 +31,10 @@ module:
   state:
     - name: mem
       kind: memory
-      type: { type: "memory", elem: "bits<8>", depth: 16 }
-    # AXI read-data / write-response channels (registered, one-cycle).
+      type:
+        type: memory
+        elem: "bits<8>"
+        depth: 16
     - name: rdata
       kind: register
       type: "bits<8>"
@@ -48,13 +48,11 @@ module:
       type: "bool"
       initial: false
   rules:
-    # Read: AR handshake -> serve the word on the R channel.
     - name: do_read
       condition: arvalid
       action:
         - (write rdata (mem_read mem araddr))
         - (write rvalid true)
-    # Write: AW & W handshake -> store the word, ack on the B channel.
     - name: do_write
       condition: (and awvalid wvalid)
       action:
@@ -65,18 +63,48 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (or (eq (read rvalid) true) (eq (read rvalid) false))
+        operand: (or (eq (read rvalid) True) (eq (read rvalid) False))
     - name: bvalid_bool
       kind: safety
       expression:
         kind: always
-        operand: (or (eq (read bvalid) true) (eq (read bvalid) false))
+        operand: (or (eq (read bvalid) True) (eq (read bvalid) False))
+    - name: read_returns_data
+      kind: transition
+      expression:
+        kind: transition
+        rule: do_read
+        operand: (eq (read rvalid) True)
+    - name: write_acknowledges
+      kind: transition
+      expression:
+        kind: transition
+        rule: do_write
+        operand: (eq (read bvalid) True)
+    - name: read_returns_data
+      kind: transition
+      expression:
+        kind: transition
+        rule: do_read
+        operand: (eq (read rdata) (mem_read mem araddr))
   proof_obligations:
+    - property: read_returns_data
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: write_acknowledges
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: rvalid_bool
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: bvalid_bool
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
+    - property: read_returns_data
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

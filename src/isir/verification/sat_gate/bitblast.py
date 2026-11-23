@@ -1,11 +1,9 @@
 # src/isir/verification/sat_gate/bitblast.py
 #
-# Direct bit-blasting with Tseitin encoding (§9.4).  No ABC, no optimization
+# Direct bit-blasting with Tseitin encoding. No ABC, no optimization
 # that renames named signals; feedback goes through the symbol table.
-"""Tseitin bit-blaster for the F_exact gate fragment."""
 
-from typing import Dict, List, Sequence
-
+from typing import List, Sequence
 from isir.verification.sat_gate.symbols import SymbolTable
 
 

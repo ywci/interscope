@@ -40,7 +40,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
         types=_convert_types(getattr(ast_module, 'types', [])),
         components=_convert_components(getattr(ast_module, 'components', [])),
         fairness=_convert_fairness(getattr(ast_module, 'fairness', []))
-    )
+)
 
     # Uninterpreted functions and axioms (lowered to Coq Parameter/Axiom)
     for f in getattr(ast_module, 'functions', []):
@@ -73,7 +73,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
             data_type=_serialize_type(state.type),
             initial=state.initial,
             attributes=getattr(state, 'attributes', [])
-        ))
+))
 
     # Rules
     for rule in getattr(ast_module, 'rules', []):
@@ -83,7 +83,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
             actions=rule.action,
             priority=getattr(rule, 'priority', None),
             rule_attributes=getattr(rule, 'attributes', [])
-        ))
+))
 
     # Properties
     for prop in getattr(ast_module, 'properties', []):
@@ -103,7 +103,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
             },
             assumes=prop.assumes,
             guarantees=prop.guarantees
-        ))
+))
 
     # Directives
     for directive in getattr(ast_module, 'directives', []):
@@ -113,7 +113,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
             expression=directive.expression,
             clock=getattr(directive, 'clock', None),
             severity=getattr(directive, 'severity', 'error')
-        ))
+))
 
     # Schedule
     schedule = getattr(ast_module, 'schedule', None)
@@ -122,7 +122,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
             kind=schedule.kind,
             rule_order=schedule.rule_order,
             conflict_sets=schedule.conflict_sets
-        )
+)
 
     # Proof obligations (stored as dicts for now; may later become structured)
     for po in getattr(ast_module, 'proof_obligations', []):
@@ -202,7 +202,7 @@ def _convert_interface(iface) -> Interface:
         direction=iface.direction,
         data_type=_serialize_type(iface.type),
         protocol=getattr(iface, 'protocol', None)
-    )
+)
 
 
 def _convert_types(types) -> List[Dict[str, Any]]:

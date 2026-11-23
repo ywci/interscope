@@ -32,7 +32,10 @@ module:
   state:
     - name: mem
       kind: memory
-      type: { type: "memory", elem: "bits<32>", depth: 8 }
+      type:
+        type: memory
+        elem: "bits<32>"
+        depth: 8
     - name: write_ptr
       kind: register
       type: "bits<3>"
@@ -80,83 +83,61 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (implies (and write_en (read full)) false)
+        operand: (implies (and write_en full) False)
     - name: no_underflow
       kind: safety
       expression:
         kind: always
-        operand: (implies (and read_en (read empty)) false)
+        operand: (implies (and read_en empty) False)
     - name: count_bound
       kind: safety
       expression:
         kind: always
         operand: (and (ge (read count) 0) (le (read count) 8))
-    - name: fifo_bound
-      kind: safety
+    - name: write_increments
+      kind: transition
       expression:
-        kind: always
-        operand: (and (ge (read count) 0) (le (read count) 8))
-    - name: write_ptr_self
-      kind: safety
+        kind: transition
+        rule: write
+        operand: (and (eq (read write_ptr) (add (prev write_ptr) 1)) (eq (read count)
+          (add (prev count) 1)))
+    - name: read_decrements
+      kind: transition
       expression:
-        kind: always
-        operand: (eq (read write_ptr) (read write_ptr))
-    - name: read_ptr_self
-      kind: safety
+        kind: transition
+        rule: read
+        operand: (and (eq (read read_ptr) (add (prev read_ptr) 1)) (eq (read count)
+          (sub (prev count) 1)))
+    - name: flags_track_count
+      kind: transition
       expression:
-        kind: always
-        operand: (eq (read read_ptr) (read read_ptr))
-    - name: full_is_bool
-      kind: safety
+        kind: transition
+        rule: update_flags
+        operand: (and (eq full (eq (prev count) 8)) (eq empty (eq (prev count) 0)))
+    - name: read_returns_stored_data
+      kind: transition
       expression:
-        kind: always
-        operand: (or (eq (read full) true) (eq (read full) false))
-    - name: empty_is_bool
-      kind: safety
-      expression:
-        kind: always
-        operand: (or (eq (read empty) true) (eq (read empty) false))
-    - name: write_ptr_nonneg
-      kind: safety
-      expression:
-        kind: always
-        operand: (ge (read write_ptr) 0)
-    - name: read_ptr_nonneg
-      kind: safety
-      expression:
-        kind: always
-        operand: (ge (read read_ptr) 0)
-
+        kind: transition
+        rule: read
+        operand: (eq (read data_out) (mem_read mem (prev read_ptr)))
   proof_obligations:
-    - property: fifo_bound
+    - property: write_increments
       status: unproved
       engine: theorem_proving
       backend: koika_acl2
-    - property: write_ptr_self
+    - property: read_decrements
       status: unproved
       engine: theorem_proving
-      backend: acl2
-    - property: read_ptr_self
+      backend: koika_acl2
+    - property: flags_track_count
       status: unproved
       engine: theorem_proving
-      backend: acl2
-    - property: full_is_bool
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: empty_is_bool
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: write_ptr_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: read_ptr_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: no_overflow
       engine: model_checking
     - property: no_underflow
       engine: model_checking
+    - property: read_returns_stored_data
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

@@ -114,7 +114,7 @@ class TestSimSpecExecution:
             cycles=100,
             vcd_path=str(vcd),
             metadata={"simulation_tool": "verilator"}
-        )
+)
         with patch("pathlib.Path.exists", return_value=True), \
              patch("isir.cli.sim.validate_isir_file"), \
              patch("isir.cli.sim.parse_isir") as mock_parse, \

@@ -101,7 +101,7 @@ class TestGetLemmaHints:
     def test_backend_case_insensitive(self):
         assert get_lemma_hints("KOIKA", "overflow_x") == get_lemma_hints(
             "koika", "overflow_x"
-        )
+)
 
     def test_returns_new_list_each_call(self):
         a = get_lemma_hints("koika", "overflow_x")

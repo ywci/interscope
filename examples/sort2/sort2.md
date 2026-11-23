@@ -21,5 +21,5 @@
 
 ## Properties
 
-- **sorted** (safety): always, `lo` ≤ `hi`.
-- **lo_hi_correct** (transition): after each step, `lo` equals min2(a_in, b_in) and `hi` equals max2(a_in, b_in).
+- **sorted** (safety): always, lo ≤ hi.
+- **lo_hi_correct** (transition): after each step, lo equals min2(a_in, b_in) and hi equals max2(a_in, b_in).

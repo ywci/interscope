@@ -31,15 +31,15 @@ def _make_minimal_spec_module(name="test"):
     mod = SpecModule(name=name)
     mod.state_ops.append(
         SpecStateOp(state_name="x", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     mod.rule_ops.append(SpecRuleOp(rule_name="nop", condition="true", actions=[]))
     mod.property_ops.append(
         SpecPropertyOp(
             prop_name="simple_prop",
             kind="safety",
             expression={"kind": "always", "operand": "(eq (read x) 0)"},
-        )
-    )
+)
+)
     return mod
 
 
@@ -76,10 +76,10 @@ class TestVerifyTheoremProving:
             "provers": {"koika": {"prove": {}}},
             "proof": {"perf": {"enabled": False}}
         }
-    )
+)
     def test_koika_proof_passes(
         self, mock_cfg, mock_val, mock_parse, mock_conv, mock_skill, tmp_path
-    ):
+):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "simple_prop", "engine": "theorem_proving", "backend": "koika"}
@@ -93,11 +93,11 @@ class TestVerifyTheoremProving:
         mock_skill.return_value = mock_skill_instance
         mock_skill_instance.prove.return_value = ProofResult(
             success=True, proof_script="Proof. trivial. Qed."
-        )
+)
 
         with patch("pathlib.Path.exists", return_value=True), patch(
             "pathlib.Path.read_text", return_value="dummy"
-        ):
+):
             args = argparse.Namespace(
                 input=str(tmp_path / "test.isir"),
                 backend=None,
@@ -115,7 +115,7 @@ class TestVerifyTheoremProving:
                 no_trace_alignment=False,
                 no_reflection=False,
                 output_format="text"
-            )
+)
             ret = verify_spec(args)
 
         assert ret == 0
@@ -132,10 +132,10 @@ class TestVerifyTheoremProving:
             "provers": {"koika": {"prove": {}}},
             "proof": {"perf": {"enabled": False}},
         }
-    )
+)
     def test_koika_proof_fails(
         self, mock_cfg, mock_val, mock_parse, mock_conv, mock_skill, tmp_path
-    ):
+):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "simple_prop", "engine": "theorem_proving", "backend": "koika"}
@@ -147,7 +147,7 @@ class TestVerifyTheoremProving:
         mock_skill.return_value = mock_skill_instance
         mock_skill_instance.prove.return_value = ProofResult(
             success=False, error_message="proof failed"
-        )
+)
 
         with patch("pathlib.Path.exists", return_value=True):
             args = argparse.Namespace(
@@ -167,7 +167,7 @@ class TestVerifyTheoremProving:
                 no_trace_alignment=False,
                 no_reflection=False,
                 output_format="text"
-            )
+)
             ret = verify_spec(args)
 
         assert ret == 1
@@ -183,10 +183,10 @@ class TestVerifyTheoremProving:
             "provers": {"koika": {"prove": {}}},
             "proof": {"perf": {"enabled": False}},
         },
-    )
+)
     def test_backend_filtering(
         self, mock_cfg, mock_val, mock_parse, mock_conv, mock_skill, tmp_path
-    ):
+):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "prop_a", "engine": "theorem_proving", "backend": "koika"},
@@ -217,7 +217,7 @@ class TestVerifyTheoremProving:
                 no_trace_alignment=False,
                 no_reflection=False,
                 output_format="text"
-            )
+)
             verify_spec(args)
 
         assert mock_skill_instance.prove.call_count == 1
@@ -238,7 +238,7 @@ class TestVerifyModelChecking:
             "verification": {"bmc_max_depth": 100},
             "proof": {"perf": {"enabled": False}},
         }
-    )
+)
     def test_mc_passes(
         self,
         mock_cfg,
@@ -248,7 +248,7 @@ class TestVerifyModelChecking:
         mock_rtl,
         mock_mc,
         tmp_path
-    ):
+):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "simple_prop", "engine": "model_checking", "backend": None}
@@ -262,7 +262,7 @@ class TestVerifyModelChecking:
         mock_rtl.return_value = MagicMock()
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
             "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
-        ), patch("shutil.which", return_value="/usr/bin/sby"):
+), patch("shutil.which", return_value="/usr/bin/sby"):
             mock_mc.return_value = {
                 "success": True,
                 "status": "proved",
@@ -288,7 +288,7 @@ class TestVerifyModelChecking:
                 no_trace_alignment=False,
                 no_reflection=False,
                 output_format="text"
-            )
+)
             ret = verify_spec(args)
 
         assert ret == 0
@@ -306,7 +306,7 @@ class TestVerifyModelChecking:
             "verification": {"bmc_max_depth": 100},
             "proof": {"perf": {"enabled": False}},
         }
-    )
+)
     def test_mc_counterexample(
         self,
         mock_cfg,
@@ -316,7 +316,7 @@ class TestVerifyModelChecking:
         mock_rtl,
         mock_mc,
         tmp_path
-    ):
+):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "simple_prop", "engine": "model_checking", "backend": None}
@@ -336,7 +336,7 @@ class TestVerifyModelChecking:
 
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
             "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
-        ):
+):
             args = argparse.Namespace(
                 input=str(tmp_path / "test.isir"),
                 backend="model_checking",
@@ -354,7 +354,7 @@ class TestVerifyModelChecking:
                 no_trace_alignment=False,
                 no_reflection=False,
                 output_format="text"
-            )
+)
             ret = verify_spec(args)
 
         assert ret == 1
@@ -366,7 +366,7 @@ class TestVerifyModelChecking:
     @patch("isir.cli.verify.validate_isir_file")
     @patch(
         "isir.cli.verify.load_config", return_value={"directories": {"build": "build"}}
-    )
+)
     def test_mc_tool_error(
         self,
         mock_cfg,
@@ -376,7 +376,7 @@ class TestVerifyModelChecking:
         mock_rtl,
         mock_mc,
         tmp_path
-    ):
+):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "simple_prop", "engine": "model_checking", "backend": None}
@@ -386,7 +386,7 @@ class TestVerifyModelChecking:
 
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
             "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
-        ):
+):
             args = argparse.Namespace(
                 input=str(tmp_path / "test.isir"),
                 backend="model_checking",
@@ -404,7 +404,7 @@ class TestVerifyModelChecking:
                 no_trace_alignment=False,
                 no_reflection=False,
                 output_format="text"
-            )
+)
             ret = verify_spec(args)
 
         assert ret == 1
@@ -423,7 +423,7 @@ class TestVerifyModelChecking:
             "verification": {"bmc_max_depth": 100},
             "proof": {"perf": {"enabled": False}},
         },
-    )
+)
     def test_mixed_theorem_and_mc(
         self,
         mock_cfg,
@@ -435,7 +435,7 @@ class TestVerifyModelChecking:
         mock_mc,
         mock_skill,
         tmp_path
-    ):
+):
         mod = _make_minimal_spec_module()
         mod.proof_obligations = [
             {"property": "simple_prop", "engine": "theorem_proving", "backend": "koika"},
@@ -449,7 +449,7 @@ class TestVerifyModelChecking:
         mock_skill.return_value = mock_skill_instance
         mock_skill_instance.prove.return_value = ProofResult(
             success=True, proof_script="dummy"
-        )
+)
 
         mock_mc.return_value = {
             "success": True,
@@ -461,7 +461,7 @@ class TestVerifyModelChecking:
 
         with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
             "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
-        ), patch("shutil.which", return_value="/usr/bin/sby"):
+), patch("shutil.which", return_value="/usr/bin/sby"):
             args = argparse.Namespace(
                 input=str(tmp_path / "test.isir"),
                 backend=None,
@@ -479,7 +479,7 @@ class TestVerifyModelChecking:
                 no_trace_alignment=False,
                 no_reflection=False,
                 output_format="text",
-            )
+)
             ret = verify_spec(args)
 
         assert ret == 0
@@ -492,7 +492,7 @@ class TestReport:
         results = [
             ProofObligationResult(
                 property="p", status=Status.PASS, backend="koika"
-            )
+)
         ]
         report_path = tmp_path / "report.json"
         args = argparse.Namespace(
@@ -502,7 +502,7 @@ class TestReport:
             debug=False,
             output_format="text",
             show_proof=False
-        )
+)
         _finish_summary(results, args)
         assert report_path.exists()
         data = json.loads(report_path.read_text())
@@ -513,11 +513,11 @@ class TestReport:
         results = [
             ProofObligationResult(
                 property="a", status=Status.PASS, backend="koika"
-            ),
+),
             ProofObligationResult(
                 property="b", status=Status.FAIL, backend="acl2",
                 error_message="error msg"
-            )
+)
         ]
         args = argparse.Namespace(
             input="test.isir",
@@ -526,7 +526,7 @@ class TestReport:
             debug=False,
             output_format="text",
             show_proof=False
-        )
+)
         ret = _finish_summary(results, args)
         captured = capsys.readouterr()
         assert "PASS: a (koika)" in captured.out

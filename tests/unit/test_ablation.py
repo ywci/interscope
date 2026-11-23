@@ -36,7 +36,7 @@ class TestAblationFlags:
                 isir.SpecPropertyOp(prop_name="p_comb", kind="combinational",
                                     expression={"kind": "combinational", "operand": "y"}),
             ],
-        )
+)
         assert _property_kind(spec, "p_safety") == "always"   # inductive
         assert _property_kind(spec, "p_comb") == "combinational"
         assert _property_kind(spec, "missing") is None

@@ -103,7 +103,7 @@ def _run_isir(subcommand: str, args: list, timeout: int = 120, **kwargs) -> subp
         env=env,
         cwd=str(PROJECT_ROOT),
         **kwargs,
-    )
+)
 
 
 @pytest.fixture
@@ -348,7 +348,7 @@ def test_perf_koika_alu(alu_spec_path, build_dir, perf_config_path):
         f"PERF verification crashed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
         f"STDOUT: {result.stdout}"
-    )
+)
 
 
 @pytest.mark.integration
@@ -375,7 +375,7 @@ def test_perf_acl2_alu(alu_spec_path, build_dir, perf_config_path):
         f"PERF ACL2 verification crashed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
         f"STDOUT: {result.stdout}"
-    )
+)
 
 
 @pytest.mark.integration
@@ -403,7 +403,7 @@ def test_perf_with_model_checking_alu(alu_spec_path, build_dir, perf_config_path
         f"PERF with MC verification crashed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
         f"STDOUT: {result.stdout}"
-    )
+)
 
 
 @pytest.mark.integration
@@ -424,7 +424,7 @@ def test_perf_conflict_detection(alu_spec_path, build_dir, conflict_config_path)
     assert result.returncode != 0, "Expected conflict error but verification succeeded"
     assert "Configuration conflict" in result.stderr or "use_proof_library" in result.stderr, (
         f"Expected conflict error message not found.\nSTDERR: {result.stderr}"
-    )
+)
 
 
 @pytest.mark.integration
@@ -463,4 +463,4 @@ def test_perf_stats_flag_alu(alu_spec_path, build_dir, perf_config_path):
     ]
     assert any(marker in output for marker in expected_markers), (
         f"PERF statistics not printed.\nOutput: {output}"
-    )
+)

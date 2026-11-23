@@ -31,7 +31,7 @@ module:
   state:
     - name: grant
       kind: register
-      type: "bits<3>"   # granted requestor id (0..5)
+      type: "bits<3>"
       initial: 0
     - name: grant_valid
       kind: register
@@ -41,17 +41,10 @@ module:
     - name: arbitrate
       condition: "true"
       action:
-        # Fixed-priority arbiter: lowest-index valid request wins.
-        - (write grant
-            (ite req0_valid 0
-            (ite req1_valid 1
-            (ite req2_valid 2
-            (ite req3_valid 3
-            (ite req4_valid 4
-            (ite req5_valid 5 0)))))))
-        - (write grant_valid
-            (or (or (or req0_valid req1_valid) (or req2_valid req3_valid))
-                (or req4_valid req5_valid)))
+        - (write grant (ite req0_valid 0 (ite req1_valid 1 (ite req2_valid 2 (ite
+          req3_valid 3 (ite req4_valid 4 (ite req5_valid 5 0)))))))
+        - (write grant_valid (or (or (or req0_valid req1_valid) (or req2_valid req3_valid))
+          (or req4_valid req5_valid)))
   properties:
     - name: grant0_when_req0
       kind: transition
@@ -64,15 +57,14 @@ module:
       expression:
         kind: transition
         rule: arbitrate
-        operand: (eq (read grant_valid)
-                     (or (or (or req0_valid req1_valid) (or req2_valid req3_valid))
-                         (or req4_valid req5_valid)))
+        operand: (eq (read grant_valid) (or (or (or req0_valid req1_valid) (or req2_valid
+          req3_valid)) (or req4_valid req5_valid)))
   proof_obligations:
     - property: grant0_when_req0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: grant_valid_when_any
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

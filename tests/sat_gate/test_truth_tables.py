@@ -1,8 +1,6 @@
 # tests/sat_gate/test_truth_tables.py
-"""Per-operator truth tables (§20.3): the CNF's semantics match the reference."""
 
 from sat_helper import dpll_sat, vars_of
-
 from isir.verification.sat_gate.bitblast import BitBlaster
 from isir.verification.sat_gate.evaluate import evaluate_bitwise, evaluate_not
 

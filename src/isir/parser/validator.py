@@ -123,7 +123,7 @@ def validate_isir(raw_data: Dict[str, Any], max_errors: int = 10):
             " -> ".join(str(p) for p in err.absolute_path)
             if err.absolute_path
             else "<root>"
-        )
+)
         error_msgs.append(f"  {path}: {err.message}")
 
     summary = f"Schema validation failed with {len(errors)} error(s)"

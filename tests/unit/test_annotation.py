@@ -1,6 +1,6 @@
 # tests/unit/test_annotation.py
 #
-# Offline annotation (Section 8): pending -> verified in five ordered steps.
+# Offline annotation : pending -> verified in five ordered steps.
 
 from isir.dialects.evolving_spec import (
     ErrorClass, EvolvingItem, EvolvingSpec, IssueAttribution, VerificationMode,
@@ -15,7 +15,7 @@ def _record(ref, primary, mode, error_class, related=(), counterexample=None, so
         evidence_source=EvidenceSource.SIMULATION, proof_status=ProofStatus.DISPROVED,
         error_class=error_class, related_spec_item_ids=list(related),
         counterexample=counterexample, source_mapping_ref=source_map, evidence_hash=f"h:{ref}",
-    )
+)
 
 
 class TestRecordToFinding:

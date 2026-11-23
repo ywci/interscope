@@ -1,13 +1,11 @@
 # src/isir/verification/sat_gate/oracle/replay.py
 #
-# Independent replay oracle (§20.2): re-derive named signal values from the
+# Independent replay oracle: re-derive named signal values from the
 # SAT model via the symbol table and re-execute against the reference
-# semantics.  This is deliberately a SEPARATE implementation from the lifter,
+# semantics. This is deliberately a SEPARATE implementation from the lifter,
 # so a shared-lifter bug is not invisible to the oracle.
-"""Replay a SAT model against reference semantics."""
 
-from typing import Callable, Dict, Sequence
-
+from typing import Callable, Dict
 from isir.verification.sat_gate.bitblast import BitBlaster
 
 

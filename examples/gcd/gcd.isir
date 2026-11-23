@@ -43,21 +43,18 @@ module:
       kind: register
       type: "bits<16>"
       initial: 0
-
-  # Subtractive Euclidean algorithm as a recursive semantic model.  Its
-  # one-step facts (e.g. gcd_sub (a-b) b = gcd_sub a b when a > b) are
-  # definitional unfoldings of the well-founded recursion.
   functions:
     - name: gcd_sub
-      params: [{name: a, type: "bits<16>"}, {name: b, type: "bits<16>"}]
+      params:
+        - name: a
+          type: "bits<16>"
+        - name: b
+          type: "bits<16>"
       return: "bits<16>"
       recursive: true
       measure: (add a b)
-      body: (ite (eq a 0) b
-            (ite (eq b 0) a
-            (ite (gt a b) (gcd_sub (sub a b) b)
-                 (gcd_sub a (sub b a)))))
-
+      body: (ite (eq a 0) b (ite (eq b 0) a (ite (gt a b) (gcd_sub (sub a b) b) (gcd_sub
+        a (sub b a)))))
   rules:
     - name: load
       condition: start
@@ -79,21 +76,21 @@ module:
         - (write done true)
         - (write result (read a))
   properties:
-    - name: operands_nonneg
+    - name: done_implies_result_equals_a
       kind: safety
       expression:
         kind: always
-        operand: (and (ge (read a) 0) (ge (read b) 0))
+        operand: (implies done (eq result (read a)))
     - name: done_implies_equal
       kind: safety
       expression:
         kind: always
-        operand: (implies (read done) (eq (read a) (read b)))
+        operand: (implies done (eq (read a) (read b)))
     - name: done_implies_result_eq_a
       kind: safety
       expression:
         kind: always
-        operand: (implies (read done) (eq (read result) (read a)))
+        operand: (implies done (eq result (read a)))
     - name: gcd_commutes
       kind: combinational
       expression:
@@ -119,18 +116,6 @@ module:
         operand: (gcd_sub 10 6)
         reference: (gcd_sub 4 6)
   proof_obligations:
-    - property: done_implies_equal
-      status: unproved
-      engine: theorem_proving
-      backend: koika
-    - property: done_implies_result_eq_a
-      status: unproved
-      engine: theorem_proving
-      backend: koika
-    - property: operands_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: koika
     - property: gcd_commutes
       status: unproved
       engine: theorem_proving
@@ -142,18 +127,22 @@ module:
     - property: gcd_sub_computes
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: gcd_sub_computes
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: gcd_sub_step
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: gcd_sub_step
+      backend: koika_acl2
+    - property: done_implies_equal
       status: unproved
       engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
+    - property: done_implies_result_eq_a
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: done_implies_result_equals_a
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: done_implies_equal
       engine: model_checking

@@ -24,28 +24,28 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir check",
         description="Check properties in an ISIR design against an abstract trace."
-    )
+)
     parser.add_argument(
         "trace",
         type=str,
         help="Path to abstract trace YAML file (from `isir lift`)",
-    )
+)
     parser.add_argument(
         "--spec", "-s",
         type=str,
         required=True,
         help="Path to the original .isir file",
-    )
+)
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
-    )
+)
     parser.add_argument(
         "--no-validate",
         action="store_true",
         help="Skip JSON-schema validation of the trace file",
-    )
+)
     return parser
 
 
@@ -141,7 +141,7 @@ def check_trace(args: argparse.Namespace) -> int:
         logger.error(
             "Invalid trace format: no 'cycles' list found "
             "(expected either top-level 'cycles' or 'trace.cycles')"
-        )
+)
         return 1
 
     try:

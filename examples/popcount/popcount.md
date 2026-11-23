@@ -25,5 +25,9 @@
 
 ## Properties
 
-- **count_le_index** (safety): always, `count` ≤ `index`.
-- **count_nonneg** (safety): always, `count` ≥ 0.
+- **count_le_index** (safety): always, count ≤ `index`.
+- **done_iff_index_eq_8** (safety): always, done equals `index` equals 8.
+- **popcount_loads_value** (transition): after each step, `value` equals prev(data) and count equals 0 and `index` equals 0 and done equals false.
+- **set_bit_counted** (transition): after each step, count equals prev(count) + 1 and `value` equals div(prev(value), 2) and `index` equals prev(index) + 1.
+- **clear_bit_shifted** (transition): after each step, `value` equals div(prev(value), 2) and `index` equals prev(index) + 1.
+- **popcount_finishes** (transition): after each step, done equals true.

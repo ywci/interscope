@@ -10,7 +10,6 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: x
       direction: input
@@ -20,38 +19,32 @@ module:
       direction: input
       type: "bool"
       protocol: fixed_cycle
-
   outputs:
     - name: y
       direction: output
       type: "bits<8>"
       protocol: fixed_cycle
-
   state:
     - name: y
       kind: register
       type: "bits<8>"
       initial: 0
-
   functions:
     - name: sigmoid
       params:
         - name: v
           type: "bits<8>"
       return: "bits<8>"
-
   axioms:
     - name: sigmoid_zero_is_zero
       statement: (eq (sigmoid 0) 0)
     - name: sigmoid_stays_in_range
       statement: (lt (sigmoid v) 256)
-
   rules:
     - name: activate
       condition: enable
       action:
         - (write y (sigmoid (read x)))
-
   properties:
     - name: y_bounded
       kind: safety
@@ -63,16 +56,15 @@ module:
       expression:
         kind: transition
         rule: activate
-        operand: (eq (read y) (sigmoid x))
-
+        operand: (eq y (sigmoid x))
   proof_obligations:
-    - property: y_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika
     - property: activate_passes_sigmoid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
+    - property: y_bounded
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: y_bounded
       engine: model_checking

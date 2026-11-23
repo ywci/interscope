@@ -20,12 +20,14 @@
 
 ## Behavior (rules)
 
-- **push** — when push and `sp` < 8, mem_write(mem, `sp`, data_in); set `sp` to `sp` + 1.
-- **pop** — when pop and `sp` > 0, set `data_out` to mem_read(mem, `sp` − 1); set `sp` to `sp` − 1.
+- **push** — when push and `sp` < 8, mem_write(mem, `sp`[2:0], data_in); set `sp` to `sp` + 1.
+- **pop** — when pop and `sp` > 0, set `data_out` to mem_read(mem, `sp` − 1[2:0]); set `sp` to `sp` − 1.
 - **update_flags** — when true, set `full` to `sp` equals 8; set `empty` to `sp` equals 0.
 
 ## Properties
 
-- **sp_in_range** (safety): always, `sp` ≥ 0 and `sp` ≤ 8.
-- **full_is_bool** (safety): always, `full` equals true or `full` equals false.
-- **empty_is_bool** (safety): always, `empty` equals true or `empty` equals false.
+- **full_iff_sp_eq_depth** (safety): always, full equals `sp` equals 8.
+- **push_increments** (transition): after each step, `sp` equals prev(sp) + 1.
+- **pop_decrements** (transition): after each step, `sp` equals prev(sp) − 1.
+- **flags_track_sp** (transition): after each step, full equals prev(sp) equals 8 and empty equals prev(sp) equals 0.
+- **pop_returns_data** (transition): after each step, `data_out` equals mem_read(mem, prev(sp) − 1[2:0]).

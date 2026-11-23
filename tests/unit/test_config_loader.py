@@ -296,7 +296,7 @@ class TestLoadConfig:
         cfg_file = _write_yaml(
             tmp_path / "config.yaml",
             {"llm": {"temperature": 0.9}, "verification": {"bmc_max_depth": 42}},
-        )
+)
         cfg = load_config(config_path=cfg_file, force_reload=True)
         assert cfg["llm"]["temperature"] == 0.9
         assert cfg["verification"]["bmc_max_depth"] == 42
@@ -311,16 +311,16 @@ class TestLoadConfig:
         main_file = _write_yaml(
             tmp_path / "config.yaml",
             {"llm": {"temperature": 0.5}, "verification": {"bmc_max_depth": 50}},
-        )
+)
         ext_file = _write_yaml(
             tmp_path / "ext.yaml",
             {"llm": {"max_tokens": 100}, "verification": {"ic3_max_steps": 500}},
-        )
+)
         cfg = load_config(
             config_path=main_file,
             force_reload=True,
             external_config_path=ext_file,
-        )
+)
         assert cfg["llm"]["temperature"] == 0.5
         assert cfg["llm"]["max_tokens"] == 100
         assert cfg["verification"]["bmc_max_depth"] == 50
@@ -329,11 +329,11 @@ class TestLoadConfig:
     def test_caching_returns_same_object(self, tmp_path):
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 123}}
-        )
+)
         first = load_config(config_path=cfg_file, force_reload=True)
         other = _write_yaml(
             tmp_path / "other.yaml", {"verification": {"bmc_max_depth": 999}}
-        )
+)
         second = load_config(config_path=other, force_reload=False)
         assert second is first
         assert second["verification"]["bmc_max_depth"] == 123
@@ -341,7 +341,7 @@ class TestLoadConfig:
     def test_force_reload_reads_fresh_file(self, tmp_path):
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 1}}
-        )
+)
         assert load_config(config_path=cfg_file, force_reload=True)["verification"]["bmc_max_depth"] == 1
         _write_yaml(tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 2}})
         assert load_config(config_path=cfg_file, force_reload=True)["verification"]["bmc_max_depth"] == 2
@@ -353,7 +353,7 @@ class TestLoadConfig:
                 "proof": {"perf": {"enabled": True}},
                 "provers": {"koika": {"use_proof_library": True}},
             },
-        )
+)
         with pytest.raises(ValueError, match="PERF"):
             load_config(config_path=cfg_file, force_reload=True)
 
@@ -364,7 +364,7 @@ class TestLoadConfig:
                 "proof": {"perf": {"enabled": True}},
                 "provers": {"koika": {"use_proof_library": False}},
             },
-        )
+)
         cfg = load_config(config_path=cfg_file, force_reload=True)
         assert cfg["proof"]["perf"]["enabled"] is True
 
@@ -379,7 +379,7 @@ class TestGetAndReloadConfig:
     def test_get_config_nested(self, tmp_path):
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 7}}
-        )
+)
         load_config(config_path=cfg_file, force_reload=True)
         assert get_config("verification.bmc_max_depth") == 7
         assert get_config("verification.default_backend") == "koika"
@@ -398,7 +398,7 @@ class TestGetAndReloadConfig:
     def test_get_config_whole_dict(self, tmp_path):
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 7}}
-        )
+)
         load_config(config_path=cfg_file, force_reload=True)
         whole = get_config()
         assert whole["verification"]["bmc_max_depth"] == 7
@@ -406,7 +406,7 @@ class TestGetAndReloadConfig:
     def test_reload_config_uses_specir_config(self, tmp_path, monkeypatch):
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 42}}
-        )
+)
         monkeypatch.setenv("ISIR_CONFIG", str(cfg_file))
         cfg = reload_config()
         assert cfg["verification"]["bmc_max_depth"] == 42
@@ -414,7 +414,7 @@ class TestGetAndReloadConfig:
     def test_reload_config_forces_reload(self, tmp_path, monkeypatch):
         cfg_file = _write_yaml(
             tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 1}}
-        )
+)
         monkeypatch.setenv("ISIR_CONFIG", str(cfg_file))
         assert load_config(config_path=cfg_file, force_reload=True)["verification"]["bmc_max_depth"] == 1
         _write_yaml(tmp_path / "config.yaml", {"verification": {"bmc_max_depth": 2}})

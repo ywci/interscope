@@ -10,7 +10,6 @@ module:
       async: false
       affects: all
   inputs:
-    # REQ from RN0 / RN1 (RN -> router).
     - name: req0_valid
       direction: input
       type: "bool"
@@ -35,7 +34,6 @@ module:
     - name: req1_data
       direction: input
       type: "bits<8>"
-    # SNP from slice0 / slice1 (slice -> router).
     - name: snp0_valid
       direction: input
       type: "bool"
@@ -60,7 +58,6 @@ module:
     - name: snp1_op
       direction: input
       type: "bool"
-    # GRANT from slice0 / slice1 (slice -> router).
     - name: grant0_valid
       direction: input
       type: "bool"
@@ -91,7 +88,6 @@ module:
     - name: grant1_data
       direction: input
       type: "bits<8>"
-    # RSP from RN0 / RN1 (RN -> router).
     - name: rsp0_valid
       direction: input
       type: "bool"
@@ -111,7 +107,6 @@ module:
       direction: input
       type: "bool"
   state:
-    # REQ routed to slice0 / slice1.
     - name: rs0_valid
       kind: register
       type: "bool"
@@ -152,7 +147,6 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    # SNP routed to RN0 / RN1.
     - name: sr0_valid
       kind: register
       type: "bool"
@@ -177,7 +171,6 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
-    # GRANT routed to RN0 / RN1.
     - name: gr0_valid
       kind: register
       type: "bool"
@@ -210,12 +203,10 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    # Pending snoop origin slice (0 = slice0, 1 = slice1).
     - name: pending_slice
       kind: register
       type: "bool"
       initial: false
-    # RSP routed (exact) to slice0 / slice1.
     - name: ps0_valid
       kind: register
       type: "bool"
@@ -241,16 +232,17 @@ module:
       type: "bool"
       initial: false
   rules:
-    # REQ routing: address bit 0 selects the slice (0 -> slice0, 1 -> slice1).
     - name: route_req0
       condition: "true"
       action:
-        - (write rs0_valid (and (read req0_valid) (eq (slice (read req0_addr) 0 0) 0)))
+        - (write rs0_valid (and (read req0_valid) (eq (slice (read req0_addr) 0 0)
+          0)))
         - (write rs0_core false)
         - (write rs0_write (read req0_write))
         - (write rs0_addr (read req0_addr))
         - (write rs0_data (read req0_data))
-        - (write rs1_valid (and (read req0_valid) (eq (slice (read req0_addr) 0 0) 1)))
+        - (write rs1_valid (and (read req0_valid) (eq (slice (read req0_addr) 0 0)
+          1)))
         - (write rs1_core false)
         - (write rs1_write (read req0_write))
         - (write rs1_addr (read req0_addr))
@@ -258,17 +250,26 @@ module:
     - name: route_req1
       condition: "true"
       action:
-        - (write rs0_valid (or (read rs0_valid) (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 0))))
-        - (write rs1_valid (or (read rs1_valid) (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 1))))
-        - (write rs0_core (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 0)) true (read rs0_core)))
-        - (write rs1_core (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 1)) true (read rs1_core)))
-        - (write rs0_write (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 0)) (read req1_write) (read rs0_write)))
-        - (write rs1_write (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 1)) (read req1_write) (read rs1_write)))
-        - (write rs0_addr (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 0)) (read req1_addr) (read rs0_addr)))
-        - (write rs1_addr (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 1)) (read req1_addr) (read rs1_addr)))
-        - (write rs0_data (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 0)) (read req1_data) (read rs0_data)))
-        - (write rs1_data (ite (and (read req1_valid) (eq (slice (read req1_addr) 0 0) 1)) (read req1_data) (read rs1_data)))
-    # SNP routing: snp_core selects the RN (false -> RN0, true -> RN1).
+        - (write rs0_valid (or (read rs0_valid) (and (read req1_valid) (eq (slice
+          (read req1_addr) 0 0) 0))))
+        - (write rs1_valid (or (read rs1_valid) (and (read req1_valid) (eq (slice
+          (read req1_addr) 0 0) 1))))
+        - (write rs0_core (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 0)) true (read rs0_core)))
+        - (write rs1_core (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 1)) true (read rs1_core)))
+        - (write rs0_write (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 0)) (read req1_write) (read rs0_write)))
+        - (write rs1_write (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 1)) (read req1_write) (read rs1_write)))
+        - (write rs0_addr (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 0)) (read req1_addr) (read rs0_addr)))
+        - (write rs1_addr (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 1)) (read req1_addr) (read rs1_addr)))
+        - (write rs0_data (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 0)) (read req1_data) (read rs0_data)))
+        - (write rs1_data (ite (and (read req1_valid) (eq (slice (read req1_addr)
+          0 0) 1)) (read req1_data) (read rs1_data)))
     - name: route_snp0
       condition: "true"
       action:
@@ -281,14 +282,19 @@ module:
     - name: route_snp1
       condition: "true"
       action:
-        - (write sr0_valid (or (read sr0_valid) (and (read snp1_valid) (not (read snp1_core)))))
+        - (write sr0_valid (or (read sr0_valid) (and (read snp1_valid) (not (read
+          snp1_core)))))
         - (write sr1_valid (or (read sr1_valid) (and (read snp1_valid) (read snp1_core))))
-        - (write sr0_op (ite (and (read snp1_valid) (not (read snp1_core))) (read snp1_op) (read sr0_op)))
-        - (write sr1_op (ite (and (read snp1_valid) (read snp1_core)) (read snp1_op) (read sr1_op)))
-        - (write sr0_addr (ite (and (read snp1_valid) (not (read snp1_core))) (read snp1_addr) (read sr0_addr)))
-        - (write sr1_addr (ite (and (read snp1_valid) (read snp1_core)) (read snp1_addr) (read sr1_addr)))
-        - (write pending_slice (ite (read snp1_valid) true (ite (read snp0_valid) false (read pending_slice))))
-    # GRANT routing: grant_core selects the RN.
+        - (write sr0_op (ite (and (read snp1_valid) (not (read snp1_core))) (read
+          snp1_op) (read sr0_op)))
+        - (write sr1_op (ite (and (read snp1_valid) (read snp1_core)) (read snp1_op)
+          (read sr1_op)))
+        - (write sr0_addr (ite (and (read snp1_valid) (not (read snp1_core))) (read
+          snp1_addr) (read sr0_addr)))
+        - (write sr1_addr (ite (and (read snp1_valid) (read snp1_core)) (read snp1_addr)
+          (read sr1_addr)))
+        - (write pending_slice (ite (read snp1_valid) true (ite (read snp0_valid)
+          false (read pending_slice))))
     - name: route_grant0
       condition: "true"
       action:
@@ -303,30 +309,160 @@ module:
     - name: route_grant1
       condition: "true"
       action:
-        - (write gr0_valid (or (read gr0_valid) (and (read grant1_valid) (not (read grant1_core)))))
+        - (write gr0_valid (or (read gr0_valid) (and (read grant1_valid) (not (read
+          grant1_core)))))
         - (write gr1_valid (or (read gr1_valid) (and (read grant1_valid) (read grant1_core))))
-        - (write gr0_write (ite (and (read grant1_valid) (not (read grant1_core))) (read grant1_write) (read gr0_write)))
-        - (write gr1_write (ite (and (read grant1_valid) (read grant1_core)) (read grant1_write) (read gr1_write)))
-        - (write gr0_addr (ite (and (read grant1_valid) (not (read grant1_core))) (read grant1_addr) (read gr0_addr)))
-        - (write gr1_addr (ite (and (read grant1_valid) (read grant1_core)) (read grant1_addr) (read gr1_addr)))
-        - (write gr0_data (ite (and (read grant1_valid) (not (read grant1_core))) (read grant1_data) (read gr0_data)))
-        - (write gr1_data (ite (and (read grant1_valid) (read grant1_core)) (read grant1_data) (read gr1_data)))
-    # RSP routing: broadcast the RNs' snoop responses to both slices (the inactive
-    # slice ignores them via its snoop-rule precondition).
+        - (write gr0_write (ite (and (read grant1_valid) (not (read grant1_core)))
+          (read grant1_write) (read gr0_write)))
+        - (write gr1_write (ite (and (read grant1_valid) (read grant1_core)) (read
+          grant1_write) (read gr1_write)))
+        - (write gr0_addr (ite (and (read grant1_valid) (not (read grant1_core)))
+          (read grant1_addr) (read gr0_addr)))
+        - (write gr1_addr (ite (and (read grant1_valid) (read grant1_core)) (read
+          grant1_addr) (read gr1_addr)))
+        - (write gr0_data (ite (and (read grant1_valid) (not (read grant1_core)))
+          (read grant1_data) (read gr0_data)))
+        - (write gr1_data (ite (and (read grant1_valid) (read grant1_core)) (read
+          grant1_data) (read gr1_data)))
     - name: route_rsp
       condition: "true"
       action:
-        - (write ps0_valid (and (or (read rsp0_valid) (read rsp1_valid)) (not (read pending_slice))))
+        - (write ps0_valid (and (or (read rsp0_valid) (read rsp1_valid)) (not (read
+          pending_slice))))
         - (write ps0_core (ite (read rsp1_valid) (read rsp1_core) (read rsp0_core)))
         - (write ps0_op (ite (read rsp1_valid) (read rsp1_op) (read rsp0_op)))
         - (write ps1_valid (and (or (read rsp0_valid) (read rsp1_valid)) (read pending_slice)))
         - (write ps1_core (ite (read rsp1_valid) (read rsp1_core) (read rsp0_core)))
         - (write ps1_op (ite (read rsp1_valid) (read rsp1_op) (read rsp0_op)))
-  # Declared routing-correctness invariants: a routed valid only when its source
-  # is valid.  The auto-prover cannot close these because the address-bit routing
-  # uses `slice` + `eq` (Opaque / Nat.eqb match), which blocks the and/or reasoning.
   invariants:
     - name: rs0_valid_implies_req
       operand: (implies (read rs0_valid) (or (read req0_valid) (read req1_valid)))
     - name: sr0_valid_implies_snp
       operand: (implies (read sr0_valid) (or (read snp0_valid) (read snp1_valid)))
+  properties:
+    - name: req0_routes_to_slice
+      kind: transition
+      expression:
+        kind: transition
+        rule: route_req0
+        operand: (and (eq (read rs0_valid) (and (prev req0_valid) (eq (slice (prev
+          req0_addr) 0 0) 0))) (and (eq (read rs0_core) False) (and (eq (read rs0_write)
+          (prev req0_write)) (and (eq (read rs0_addr) (prev req0_addr)) (and (eq (read
+          rs0_data) (prev req0_data)) (and (eq (read rs1_valid) (and (prev req0_valid)
+          (eq (slice (prev req0_addr) 0 0) 1))) (and (eq (read rs1_core) False) (and
+          (eq (read rs1_write) (prev req0_write)) (and (eq (read rs1_addr) (prev req0_addr))
+          (eq (read rs1_data) (prev req0_data)))))))))))
+    - name: req1_routes_to_slice
+      kind: transition
+      expression:
+        kind: transition
+        rule: route_req1
+        operand: (and (eq (read rs0_valid) (or (prev rs0_valid) (and (prev req1_valid)
+          (eq (slice (prev req1_addr) 0 0) 0)))) (and (eq (read rs1_valid) (or (prev
+          rs1_valid) (and (prev req1_valid) (eq (slice (prev req1_addr) 0 0) 1))))
+          (and (eq (read rs0_core) (ite (and (prev req1_valid) (eq (slice (prev req1_addr)
+          0 0) 0)) True (prev rs0_core))) (and (eq (read rs1_core) (ite (and (prev
+          req1_valid) (eq (slice (prev req1_addr) 0 0) 1)) True (prev rs1_core)))
+          (and (eq (read rs0_write) (ite (and (prev req1_valid) (eq (slice (prev req1_addr)
+          0 0) 0)) (prev req1_write) (prev rs0_write))) (and (eq (read rs1_write)
+          (ite (and (prev req1_valid) (eq (slice (prev req1_addr) 0 0) 1)) (prev req1_write)
+          (prev rs1_write))) (and (eq (read rs0_addr) (ite (and (prev req1_valid)
+          (eq (slice (prev req1_addr) 0 0) 0)) (prev req1_addr) (prev rs0_addr)))
+          (and (eq (read rs1_addr) (ite (and (prev req1_valid) (eq (slice (prev req1_addr)
+          0 0) 1)) (prev req1_addr) (prev rs1_addr))) (and (eq (read rs0_data) (ite
+          (and (prev req1_valid) (eq (slice (prev req1_addr) 0 0) 0)) (prev req1_data)
+          (prev rs0_data))) (eq (read rs1_data) (ite (and (prev req1_valid) (eq (slice
+          (prev req1_addr) 0 0) 1)) (prev req1_data) (prev rs1_data))))))))))))
+    - name: snoop0_routes_to_slice
+      kind: transition
+      expression:
+        kind: transition
+        rule: route_snp0
+        operand: (and (eq (read sr0_valid) (and (prev snp0_valid) (not (prev snp0_core))))
+          (and (eq (read sr0_op) (prev snp0_op)) (and (eq (read sr0_addr) (prev snp0_addr))
+          (and (eq (read sr1_valid) (and (prev snp0_valid) (prev snp0_core))) (and
+          (eq (read sr1_op) (prev snp0_op)) (eq (read sr1_addr) (prev snp0_addr)))))))
+    - name: snoop1_routes_to_slice
+      kind: transition
+      expression:
+        kind: transition
+        rule: route_snp1
+        operand: (and (eq (read sr0_valid) (or (prev sr0_valid) (and (prev snp1_valid)
+          (not (prev snp1_core))))) (and (eq (read sr1_valid) (or (prev sr1_valid)
+          (and (prev snp1_valid) (prev snp1_core)))) (and (eq (read sr0_op) (ite (and
+          (prev snp1_valid) (not (prev snp1_core))) (prev snp1_op) (prev sr0_op)))
+          (and (eq (read sr1_op) (ite (and (prev snp1_valid) (prev snp1_core)) (prev
+          snp1_op) (prev sr1_op))) (and (eq (read sr0_addr) (ite (and (prev snp1_valid)
+          (not (prev snp1_core))) (prev snp1_addr) (prev sr0_addr))) (and (eq (read
+          sr1_addr) (ite (and (prev snp1_valid) (prev snp1_core)) (prev snp1_addr)
+          (prev sr1_addr))) (eq (read pending_slice) (ite (prev snp1_valid) True (ite
+          (prev snp0_valid) False (prev pending_slice))))))))))
+    - name: grant0_routes_to_slice
+      kind: transition
+      expression:
+        kind: transition
+        rule: route_grant0
+        operand: (and (eq (read gr0_valid) (and (prev grant0_valid) (not (prev grant0_core))))
+          (and (eq (read gr0_write) (prev grant0_write)) (and (eq (read gr0_addr)
+          (prev grant0_addr)) (and (eq (read gr0_data) (prev grant0_data)) (and (eq
+          (read gr1_valid) (and (prev grant0_valid) (prev grant0_core))) (and (eq
+          (read gr1_write) (prev grant0_write)) (and (eq (read gr1_addr) (prev grant0_addr))
+          (eq (read gr1_data) (prev grant0_data)))))))))
+    - name: grant1_routes_to_slice
+      kind: transition
+      expression:
+        kind: transition
+        rule: route_grant1
+        operand: (and (eq (read gr0_valid) (or (prev gr0_valid) (and (prev grant1_valid)
+          (not (prev grant1_core))))) (and (eq (read gr1_valid) (or (prev gr1_valid)
+          (and (prev grant1_valid) (prev grant1_core)))) (and (eq (read gr0_write)
+          (ite (and (prev grant1_valid) (not (prev grant1_core))) (prev grant1_write)
+          (prev gr0_write))) (and (eq (read gr1_write) (ite (and (prev grant1_valid)
+          (prev grant1_core)) (prev grant1_write) (prev gr1_write))) (and (eq (read
+          gr0_addr) (ite (and (prev grant1_valid) (not (prev grant1_core))) (prev
+          grant1_addr) (prev gr0_addr))) (and (eq (read gr1_addr) (ite (and (prev
+          grant1_valid) (prev grant1_core)) (prev grant1_addr) (prev gr1_addr))) (and
+          (eq (read gr0_data) (ite (and (prev grant1_valid) (not (prev grant1_core)))
+          (prev grant1_data) (prev gr0_data))) (eq (read gr1_data) (ite (and (prev
+          grant1_valid) (prev grant1_core)) (prev grant1_data) (prev gr1_data))))))))))
+    - name: response_routes_back_to_slice
+      kind: transition
+      expression:
+        kind: transition
+        rule: route_rsp
+        operand: (and (eq (read ps0_valid) (and (or (prev rsp0_valid) (prev rsp1_valid))
+          (not (prev pending_slice)))) (and (eq (read ps0_core) (ite (prev rsp1_valid)
+          (prev rsp1_core) (prev rsp0_core))) (and (eq (read ps0_op) (ite (prev rsp1_valid)
+          (prev rsp1_op) (prev rsp0_op))) (and (eq (read ps1_valid) (and (or (prev
+          rsp0_valid) (prev rsp1_valid)) (prev pending_slice))) (and (eq (read ps1_core)
+          (ite (prev rsp1_valid) (prev rsp1_core) (prev rsp0_core))) (eq (read ps1_op)
+          (ite (prev rsp1_valid) (prev rsp1_op) (prev rsp0_op))))))))
+  proof_obligations:
+    - property: req0_routes_to_slice
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: req1_routes_to_slice
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: snoop0_routes_to_slice
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: snoop1_routes_to_slice
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: grant0_routes_to_slice
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: grant1_routes_to_slice
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: response_routes_back_to_slice
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

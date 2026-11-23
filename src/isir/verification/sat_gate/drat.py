@@ -1,9 +1,8 @@
 # src/isir/verification/sat_gate/drat.py
 #
 # Minimal independent DRAT proof checker (RUP + RAT), used to certify UNSAT at
-# T3 without depending on an external drat-trim.  This is the checker the
+# T3 without depending on an external drat-trim. This is the checker the
 # certificate points at; it is deliberately simple and auditable.
-"""DRAT proof checking (RUP + RAT)."""
 
 from typing import Iterable, List, Sequence, Set
 

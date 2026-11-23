@@ -19,6 +19,5 @@
 
 ## Properties
 
-- **enc_in_range** (safety): always, `enc` ≥ 0 and `enc` ≤ 7.
-- **valid_is_bool** (safety): always, `valid` equals true or `valid` equals false.
-- **enc_correct** (transition): after each step, `enc` equals prio_enc(data) and `valid` equals data does not equal 0.
+- **valid_iff_data_nonzero** (safety): always, valid equals data does not equal 0.
+- **enc_correct** (transition): after each step, enc equals prio_enc(data) and valid equals data does not equal 0.

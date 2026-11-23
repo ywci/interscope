@@ -23,7 +23,7 @@ def _parse_vcd(vcd_path: Path) -> trace.TraceModule:
     """
     trace_mod = trace.TraceModule(
         module_op=trace.TraceModuleOp(trace_name=vcd_path.stem)
-    )
+)
 
     with open(vcd_path, "r") as f:
         lines = f.readlines()
@@ -182,7 +182,7 @@ def _parse_vcd(vcd_path: Path) -> trace.TraceModule:
         "Parsed VCD: %d signals, %d cycles",
         len(trace_mod.signals),
         len(trace_mod.cycles),
-    )
+)
     return trace_mod
 
 
@@ -212,7 +212,7 @@ def convert(vcd_path: Path, mapping_file: Optional[Path] = None) -> trace.TraceM
                 signal_name=entry["rtl_signal"],
                 isir_ref=entry["isir_ref"],
                 kind=entry["kind"],
-            )
+)
             trace_mod.annotations.append(ann)
 
     return trace_mod

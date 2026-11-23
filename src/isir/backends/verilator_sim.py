@@ -100,7 +100,7 @@ def generate_testbench(
         cycles=cycles,
         rst_active=rst_active,
         rst_inactive=rst_inactive
-    )
+)
     output_path.write_text(content)
     logger.info("Generated testbench: %s", output_path)
     return output_path
@@ -138,7 +138,7 @@ def build_simulation(
     if not verilator:
         raise VerilatorError(
             "Verilator not found. Install it or set 'verilator_path' in config.yaml."
-        )
+)
 
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -149,7 +149,7 @@ def build_simulation(
             top_module=top_module,
             output_path=testbench_path,
             vcd_filename="sim.vcd"
-        )
+)
 
     cmd = [verilator, "--cc", "--exe", "--build", "-j", "0", "-Wall"]
 
@@ -175,7 +175,7 @@ def build_simulation(
             text=True,
             timeout=300,
             cwd=str(output_dir)
-        )
+)
     except subprocess.TimeoutExpired:
         raise VerilatorError("Verilator build timed out (5 minutes)")
 
@@ -184,7 +184,7 @@ def build_simulation(
         raise VerilatorError(
             f"Verilator build failed with code {result.returncode}:\n"
             f"{result.stderr[:1000]}"
-        )
+)
 
     sim_exe = output_dir / "obj_dir" / f"V{top_module}"
     if not sim_exe.exists():
@@ -197,7 +197,7 @@ def build_simulation(
         raise VerilatorError(
             f"Simulation executable not found after build. "
             f"Expected: {sim_exe}"
-        )
+)
 
     logger.info("Simulation executable: %s", sim_exe)
     return sim_exe
@@ -234,19 +234,19 @@ def run_simulation(
             text=True,
             timeout=timeout,
             cwd=str(sim_exe.parent)
-        )
+)
     except subprocess.TimeoutExpired:
         raise VerilatorError(
             f"Simulation timed out after {timeout}s. "
             "Increase 'simulation_timeout' in config.yaml or reduce cycles."
-        )
+)
 
     if result.returncode != 0:
         logger.error("Simulation failed:\n%s", result.stderr)
         raise VerilatorError(
             f"Simulation exited with code {result.returncode}:\n"
             f"{result.stderr[:1000]}"
-        )
+)
 
     generated_vcd = sim_exe.parent / "sim.vcd"
     if not generated_vcd.exists():
@@ -258,7 +258,7 @@ def run_simulation(
         raise VerilatorError(
             f"VCD file not found after simulation. "
             f"Expected: {generated_vcd}"
-        )
+)
 
     vcd_path = Path(vcd_path).resolve()
     vcd_path.parent.mkdir(parents=True, exist_ok=True)
@@ -335,7 +335,7 @@ def simulate(
     else:
         raise TypeError(
             f"Expected RTLModuleContainer, Path, or str, got {type(rtl_module_or_path)}"
-        )
+)
 
     if output_dir is None:
         output_dir = Path(tempfile.mkdtemp(prefix="isir_sim_"))
@@ -364,14 +364,14 @@ def simulate(
         trace_enable=True,
         testbench_path=testbench_path,
         extra_verilator_args=ver_args,
-    )
+)
 
     try:
         vcd = run_simulation(
             sim_exe=sim_exe,
             vcd_path=vcd_path,
             cycles=cycles
-        )
+)
     finally:
         if not keep_build:
             obj_dir = output_dir / "obj_dir"
@@ -425,4 +425,4 @@ def simulate_from_config(
         cycles=cycles,
         verilator_path=verilator_path,
         keep_build=keep_build
-    )
+)

@@ -1,6 +1,6 @@
 # src/isir/lowering/spec_consistency.py
 #
-# Self-Consistency verification (Section 3 of the Evolving Specification plan):
+# Self-Consistency verification:
 # checks the Confirmed specification itself — is it internally consistent and
 # satisfiable? — by asking z3 whether a model exists, rather than whether the
 # negation is UNSAT (which is what smt_refine.py does for refinement).
@@ -154,7 +154,7 @@ def check_self_consistency(spec: SpecModule, z3_bin: str = "z3") -> SpecConsiste
 
 def check_rtl_conformance(spec: SpecModule, trace: List[Dict[str, Any]],
                           evidence_prefix: str = "rtl") -> List[Any]:
-    """RTL Conformance verification (Section 3, Mode B): check the Confirmed
+    """RTL Conformance verification: check the Confirmed
     specification's safety/invariant properties against a Candidate-RTL trace
     (a list of `{"state": ..., "inputs": ..., "memories": ...}` cycles).
 
@@ -165,7 +165,7 @@ def check_rtl_conformance(spec: SpecModule, trace: List[Dict[str, Any]],
     """
     from isir.dialects.evolving_spec import (
         ErrorClass, EvidenceSource, ProofStatus, RawEvidenceRecord, VerificationMode,
-    )
+)
     from isir.utils.expr import eval_expr, parse_sexpr
 
     records: List[Any] = []
@@ -198,6 +198,6 @@ def check_rtl_conformance(spec: SpecModule, trace: List[Dict[str, Any]],
                     proof_status=ProofStatus.DISPROVED,
                     error_class=ErrorClass.COUNTEREXAMPLE,
                     counterexample={"cycle": cycle},
-                ))
+))
                 break  # one record per property
     return records

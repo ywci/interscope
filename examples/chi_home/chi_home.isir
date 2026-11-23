@@ -10,7 +10,6 @@ module:
       async: false
       affects: all
   inputs:
-    # REQ channel (RN -> HN).
     - name: req_valid
       direction: input
       type: "bool"
@@ -22,16 +21,14 @@ module:
       type: "bits<4>"
     - name: req_core
       direction: input
-      type: "bool"      # which RN issued the request (false=RN0, true=RN1)
+      type: "bool"
     - name: req_data
       direction: input
       type: "bits<8>"
-    # RSP channel (RN -> HN): snoop response.
     - name: snp_rsp_valid
       direction: input
       type: "bool"
   state:
-    # Directory: the MESI state each RN currently holds (mirrors the RNs' L1D).
     - name: c0_state
       kind: register
       type: "bits<2>"
@@ -48,7 +45,6 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
-    # Transaction state: a request in flight.
     - name: pending
       kind: register
       type: "bool"
@@ -69,12 +65,10 @@ module:
       kind: register
       type: "bool"
       initial: false
-    # REQ flow control: free REQ buffer slots (credit-based back-pressure).
     - name: req_credits
       kind: register
       type: "bits<2>"
       initial: 2
-    # SNP channel output (HN -> RN).
     - name: snp_valid
       kind: register
       type: "bool"
@@ -91,7 +85,6 @@ module:
       kind: register
       type: "bool"
       initial: false
-    # RSP channel output (HN -> RN): grant.
     - name: grant_valid
       kind: register
       type: "bool"
@@ -110,18 +103,25 @@ module:
       initial: 0
   functions:
     - name: has_line
-      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      params:
+        - name: s
+          type: "bits<2>"
+        - name: a
+          type: "bits<4>"
+        - name: ra
+          type: "bits<4>"
       return: "bool"
       body: (and (neq s 0) (eq a ra))
     - name: is_modified
-      params: [{name: s, type: "bits<2>"}]
+      params:
+        - name: s
+          type: "bits<2>"
       return: "bool"
       body: (eq s 3)
   rules:
-    # REQ: latch the request and issue a snoop to the peer RN.  Gated on an
-    # available REQ credit (back-pressure when the home is full).
     - name: request
-      condition: (and (and (not (read pending)) req_valid) (neq (read req_credits) 0))
+      condition: (and (and (not (read pending)) req_valid) (neq (read req_credits)
+        0))
       action:
         - (write pending true)
         - (write pending_core req_core)
@@ -133,15 +133,15 @@ module:
         - (write snp_core (not req_core))
         - (write snp_addr req_addr)
         - (write snp_op req_write)
-    # Snoop response arrived: record it and update the peer's directory entry.
     - name: snoop
       condition: (and (and (read pending) (not (read snooped))) snp_rsp_valid)
       action:
         - (write snooped true)
         - (write snp_valid false)
-        - (write c0_state (ite (eq (read snp_core) false) (ite (read snp_op) 0 1) (read c0_state)))
-        - (write c1_state (ite (eq (read snp_core) true) (ite (read snp_op) 0 1) (read c1_state)))
-    # Grant the requester (snoop-before-grant): update the requester's directory.
+        - (write c0_state (ite (eq (read snp_core) false) (ite (read snp_op) 0 1)
+          (read c0_state)))
+        - (write c1_state (ite (eq (read snp_core) true) (ite (read snp_op) 0 1) (read
+          c1_state)))
     - name: grant
       condition: (and (read pending) (read snooped))
       action:
@@ -149,41 +149,92 @@ module:
         - (write grant_core (read pending_core))
         - (write grant_write (read pending_write))
         - (write grant_addr (read pending_addr))
-        - (write c0_state (ite (eq (read pending_core) false) (ite (read pending_write) 3 1) (read c0_state)))
-        - (write c0_addr (ite (eq (read pending_core) false) (read pending_addr) (read c0_addr)))
-        - (write c1_state (ite (eq (read pending_core) true) (ite (read pending_write) 3 1) (read c1_state)))
-        - (write c1_addr (ite (eq (read pending_core) true) (read pending_addr) (read c1_addr)))
+        - (write c0_state (ite (eq (read pending_core) false) (ite (read pending_write)
+          3 1) (read c0_state)))
+        - (write c0_addr (ite (eq (read pending_core) false) (read pending_addr) (read
+          c0_addr)))
+        - (write c1_state (ite (eq (read pending_core) true) (ite (read pending_write)
+          3 1) (read c1_state)))
+        - (write c1_addr (ite (eq (read pending_core) true) (read pending_addr) (read
+          c1_addr)))
         - (write pending false)
         - (write snooped false)
-        # Return the REQ credit now that the transaction completed.
         - (write req_credits (add (read req_credits) 1))
-    # Deassert the grant one cycle after it was issued.
     - name: clear_grant
       condition: (not (and (read pending) (read snooped)))
       action:
         - (write grant_valid false)
-  # The full SWMR is true by snoop-before-grant ordering (the peer is invalidated
-  # before the requester is granted), so it is declared as an invariant.  The
-  # snoop-clears-peer and grant-follows-snoop lemmas are structural corollaries of
-  # the `snoop`/`grant` rules.
   properties:
     - name: has_line_holds_line
       kind: safety
       expression:
         kind: always
-        operand: (implies (has_line (read c0_state) (read c0_addr) (read c0_addr)) (neq (read c0_state) 0))
-
+        operand: (implies (has_line (read c0_state) (read c0_addr) (read c0_addr))
+          (neq (read c0_state) 0))
+    - name: request_accepts_and_snoops
+      kind: transition
+      expression:
+        kind: transition
+        rule: request
+        operand: (and (eq (read pending) True) (and (eq (read pending_core) req_core)
+          (and (eq (read pending_write) req_write) (and (eq (read pending_addr) req_addr)
+          (and (eq (read snooped) False) (and (eq (read req_credits) (sub (prev req_credits)
+          1)) (and (eq (read snp_valid) True) (and (eq (read snp_core) (not req_core))
+          (and (eq (read snp_addr) req_addr) (eq (read snp_op) req_write))))))))))
+    - name: snoop_response_updates_peer_state
+      kind: transition
+      expression:
+        kind: transition
+        rule: snoop
+        operand: (and (eq (read snooped) True) (and (eq (read snp_valid) False) (and
+          (eq (read c0_state) (ite (eq (prev snp_core) False) (ite (prev snp_op) 0
+          1) (prev c0_state))) (eq (read c1_state) (ite (eq (prev snp_core) True)
+          (ite (prev snp_op) 0 1) (prev c1_state))))))
+    - name: grant_updates_cache_and_releases
+      kind: transition
+      expression:
+        kind: transition
+        rule: grant
+        operand: (and (eq (read grant_valid) True) (and (eq (read grant_core) (prev
+          pending_core)) (and (eq (read grant_write) (prev pending_write)) (and (eq
+          (read grant_addr) (prev pending_addr)) (and (eq (read c0_state) (ite (eq
+          (prev pending_core) False) (ite (prev pending_write) 3 1) (prev c0_state)))
+          (and (eq (read c0_addr) (ite (eq (prev pending_core) False) (prev pending_addr)
+          (prev c0_addr))) (and (eq (read c1_state) (ite (eq (prev pending_core) True)
+          (ite (prev pending_write) 3 1) (prev c1_state))) (and (eq (read c1_addr)
+          (ite (eq (prev pending_core) True) (prev pending_addr) (prev c1_addr)))
+          (and (eq (read pending) False) (and (eq (read snooped) False) (eq (read
+          req_credits) (add (prev req_credits) 1))))))))))))
+    - name: grant_deasserts_when_idle
+      kind: transition
+      expression:
+        kind: transition
+        rule: clear_grant
+        operand: (eq (read grant_valid) False)
   proof_obligations:
+    - property: request_accepts_and_snoops
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: snoop_response_updates_peer_state
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: grant_updates_cache_and_releases
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: grant_deasserts_when_idle
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
   invariants:
     - name: single_writer
       operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))
-                        (eq (read c0_addr) (read c1_addr))))
-    # Flow-control soundness: REQ credits stay within [0, 2].  This follows from
-    # the stronger invariant `req_credits + pending = 2` (a credit is consumed on
-    # REQ and returned on grant), which is assumed rather than auto-proved.
+        (eq (read c0_addr) (read c1_addr))))
     - name: credits_bounded
       operand: (and (ge (read req_credits) 0) (le (read req_credits) 2))

@@ -1,12 +1,10 @@
 # src/isir/verification/sat_gate/certificate.py
 #
-# Risk class ↔ certification tier mapping and the certificate record (§5, §13).
-"""Risk classification and the certificate record."""
+# Risk class ↔ certification tier mapping and the certificate record.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
-
+from typing import Dict, List
 from isir.verification.sat_gate.policy import CertState, CertTier, EvidenceAction
 
 
@@ -17,23 +15,23 @@ class RiskClass(Enum):
 
 
 def risk_class_of(action: EvidenceAction) -> RiskClass:
-    """Map an evidence action to its risk class (§5.1)."""
+    """Map an evidence action to its risk class ."""
     if action in (EvidenceAction.CLOSE_VACUOUS, EvidenceAction.PROVE_BASE,
                   EvidenceAction.PROVE_STEP, EvidenceAction.REPORT_CEX):
         return RiskClass.SOUNDNESS_CRITICAL
-    if action is EvidenceAction.REJECT_CANDIDATE:
+    if action in (EvidenceAction.REJECT_CANDIDATE, EvidenceAction.DISABLE_CLASS):
         return RiskClass.COMPLETENESS_CRITICAL
     return RiskClass.SOFT
 
 
 def min_tier_for(action: EvidenceAction) -> CertTier:
-    """Minimum certification tier an action may be authorized at (§5.1)."""
-    if action is EvidenceAction.REPORT_CEX:
+    """Minimum certification tier an action may be authorized at ."""
+    if action in (EvidenceAction.REPORT_CEX, EvidenceAction.REJECT_CANDIDATE):
         return CertTier.REPLAY
     if action in (EvidenceAction.CLOSE_VACUOUS, EvidenceAction.PROVE_BASE,
                   EvidenceAction.PROVE_STEP):
         return CertTier.T3
-    if action is EvidenceAction.REJECT_CANDIDATE:
+    if action is EvidenceAction.DISABLE_CLASS:
         return CertTier.T1
     return CertTier.T0
 
@@ -41,7 +39,7 @@ def min_tier_for(action: EvidenceAction) -> CertTier:
 def verify_t3(formula: List[List[int]], assumptions: List[int],
               proof_lines: List[str]) -> bool:
     """Check a DRAT UNSAT proof against ``formula`` plus the assumption literals
-    as unit clauses (§13.3).
+    as unit clauses.
 
     The gotcha the plan calls out: checking against ``formula`` alone fails
     when the refutation used assumptions; the checker MUST receive the
@@ -55,7 +53,7 @@ def verify_t3(formula: List[List[int]], assumptions: List[int],
 
 @dataclass
 class Certificate:
-    """Certificate record (§13.7)."""
+    """Certificate record."""
     certificate_id: str
     epoch_hash: str
     query_kind: str

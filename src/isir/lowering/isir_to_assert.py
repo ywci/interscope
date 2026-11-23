@@ -109,8 +109,8 @@ def convert(spec_module: isir.SpecModule) -> asserts.AssertModule:
                     clock=eff_clock.clock_name if eff_clock else None,
                     reset=eff_reset.reset_condition if eff_reset else None,
                     label=label
-                )
-            )
+)
+)
         elif kind == "assert":
             always_checks.append(
                 asserts.AssertAlwaysOp(
@@ -118,8 +118,8 @@ def convert(spec_module: isir.SpecModule) -> asserts.AssertModule:
                     clock=eff_clock.clock_name if eff_clock else None,
                     reset=eff_reset.reset_condition if eff_reset else None,
                     label=label
-                )
-            )
+)
+)
         elif kind == "cover":
             covers.append(
                 asserts.AssertCoverOp(
@@ -127,8 +127,8 @@ def convert(spec_module: isir.SpecModule) -> asserts.AssertModule:
                     clock=eff_clock.clock_name if eff_clock else None,
                     reset=eff_reset.reset_condition if eff_reset else None,
                     label=label
-                )
-            )
+)
+)
         else:
             logger.warning(f"Unknown directive kind '{kind}'; ignoring.")
 
@@ -173,8 +173,8 @@ def convert(spec_module: isir.SpecModule) -> asserts.AssertModule:
                     clock=default_clock_op.clock_name if default_clock_op else None,
                     reset=default_reset_op.reset_condition if default_reset_op else None,
                     label=assum_label
-                )
-            )
+)
+)
 
     # Assemble the AssertModule
     return asserts.AssertModule(
@@ -186,4 +186,4 @@ def convert(spec_module: isir.SpecModule) -> asserts.AssertModule:
         properties=properties,
         covers=covers,
         metadata=spec_module.metadata
-    )
+)

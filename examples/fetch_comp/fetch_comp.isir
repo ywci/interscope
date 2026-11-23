@@ -15,16 +15,16 @@ module:
       type: "bool"
     - name: taken
       direction: input
-      type: "bool"     # actual branch outcome (feeds the BPU)
+      type: "bool"
     - name: branch_target
       direction: input
       type: "bits<4>"
   components:
-    # Branch predictor lives inside the fetch stage.
     - name: bpu
       module: "examples/bpu/bpu.isir"
       lift_properties: false
-      port_map: {taken: taken}
+      port_map:
+        taken: taken
   state:
     - name: pc
       kind: register
@@ -34,15 +34,18 @@ module:
     - name: advance
       condition: "true"
       action:
-        - (write pc (ite stall (read pc) (ite (read bpu_predict) branch_target (add (read pc) 1))))
+        - (write pc (ite stall (read pc) (ite (read bpu_predict) branch_target (add
+          (read pc) 1))))
   properties:
-    - name: pc_nonneg
-      kind: safety
+    - name: pc_advances_or_branches
+      kind: transition
       expression:
-        kind: always
-        operand: (ge (read pc) 0)
+        kind: transition
+        rule: advance
+        operand: (eq (read pc) (ite stall (prev pc) (ite (prev bpu_predict) branch_target
+          (add (prev pc) 1))))
   proof_obligations:
-    - property: pc_nonneg
+    - property: pc_advances_or_branches
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

@@ -40,7 +40,7 @@ def _parse_candidate(data: Dict[str, Any]) -> Candidate:
         confidence=data.get("confidence", 0.0),
         source=data.get("source"),
         alternatives=data.get("alternatives", []),
-    )
+)
 
 
 def _parse_one_of(data: Dict[str, Any]) -> OneOf:
@@ -48,7 +48,7 @@ def _parse_one_of(data: Dict[str, Any]) -> OneOf:
     return OneOf(
         alternatives=data.get("alternatives", []),
         resolution=data.get("resolution"),
-    )
+)
 
 
 def _parse_evidence_ref(data: Any) -> EvidenceRef:
@@ -87,7 +87,7 @@ def _parse_evidence_list(raw: Any, default_type: str = "simulation_trace", defau
                         ref=_parse_evidence_ref(item["ref"]),
                         engine=item["engine"],
                         status=item.get("status"),
-                    ))
+))
                 elif "type" in item and "value" in item:
                     ref = _parse_evidence_ref(item)
                     evidence_list.append(Evidence(type=default_type, ref=ref, engine=default_engine))
@@ -108,7 +108,7 @@ def _parse_evidence_list(raw: Any, default_type: str = "simulation_trace", defau
                 ref=_parse_evidence_ref(raw["ref"]),
                 engine=raw["engine"],
                 status=raw.get("status")
-            )]
+)]
         else:
             ref = _parse_evidence_ref(raw)
             return [Evidence(type=default_type, ref=ref, engine=default_engine)]
@@ -121,7 +121,7 @@ def _parse_parameter(data: Dict[str, Any]) -> Parameter:
         name=_require(data, "name", "parameter"),
         type=_require(data, "type", "parameter"),
         default=data.get("default")
-    )
+)
 
 
 def _parse_clock(data: Dict[str, Any]) -> Clock:
@@ -129,7 +129,7 @@ def _parse_clock(data: Dict[str, Any]) -> Clock:
         name=_require(data, "name", "clock"),
         edge=_require(data, "edge", "clock"),
         period=data.get("period")
-    )
+)
 
 
 def _parse_reset(data: Dict[str, Any]) -> Reset:
@@ -138,7 +138,7 @@ def _parse_reset(data: Dict[str, Any]) -> Reset:
         polarity=_require(data, "polarity", "reset"),
         async_reset=_require(data, "async", "reset"),
         affects=_require(data, "affects", "reset")
-    )
+)
 
 
 def _parse_interface(data: Dict[str, Any]) -> Interface:
@@ -147,7 +147,7 @@ def _parse_interface(data: Dict[str, Any]) -> Interface:
         direction=_require(data, "direction", "interface"),
         type=_require(data, "type", "interface"),
         protocol=data.get("protocol")
-    )
+)
 
 
 def _parse_user_type(data: Dict[str, Any]) -> UserType:
@@ -157,7 +157,7 @@ def _parse_user_type(data: Dict[str, Any]) -> UserType:
         values=data.get("values"),
         fields=data.get("fields"),
         encoding=data.get("encoding")
-    )
+)
 
 
 def _parse_component(data: Dict[str, Any]) -> ComponentInstance:
@@ -168,7 +168,7 @@ def _parse_component(data: Dict[str, Any]) -> ComponentInstance:
         parameters=data.get("parameters", {}),
         port_map=data.get("port_map", {}),
         evidence=evidence
-    )
+)
 
 
 def _parse_state(data: Dict[str, Any]) -> State:
@@ -180,7 +180,7 @@ def _parse_state(data: Dict[str, Any]) -> State:
         initial=data.get("initial"),
         attributes=data.get("attributes", []),
         evidence=evidence
-    )
+)
 
 
 def _parse_rule(data: Dict[str, Any]) -> Rule:
@@ -192,7 +192,7 @@ def _parse_rule(data: Dict[str, Any]) -> Rule:
         priority=data.get("priority"),
         attributes=data.get("attributes", []),
         evidence=evidence
-    )
+)
 
 
 def _parse_directive(data: Dict[str, Any]) -> Directive:
@@ -202,7 +202,7 @@ def _parse_directive(data: Dict[str, Any]) -> Directive:
         expression=_require(data, "expression", "directive"),
         clock=data.get("clock"),
         severity=data.get("severity")
-    )
+)
 
 
 def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
@@ -210,7 +210,7 @@ def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
     if kind not in ("always", "eventually", "until", "combinational", "transition", "independence", "after"):
         raise ISIRParseError(
             f"Invalid temporal expression kind '{kind}'. Must be always, eventually, until, combinational, transition, independence, or after."
-        )
+)
     if kind == "combinational" and data.get("reference") is None:
         raise ISIRParseError("Combinational property requires a 'reference' golden expression.")
     if kind == "transition" and data.get("operand") is None:
@@ -232,7 +232,7 @@ def _parse_temporal_expr(data: Dict[str, Any]) -> TemporalExpr:
         reference=data.get("reference"),
         independent_of=data.get("independent_of"),
         rule=data.get("rule")
-    )
+)
 
 
 def _parse_property(data: Dict[str, Any]) -> Property:
@@ -245,7 +245,7 @@ def _parse_property(data: Dict[str, Any]) -> Property:
         guarantees=data.get("guarantees", []),
         proof_status=data.get("proof_status", "unproved"),
         evidence=evidence
-    )
+)
 
 
 def _parse_schedule(data: Dict[str, Any]) -> Schedule:
@@ -253,7 +253,7 @@ def _parse_schedule(data: Dict[str, Any]) -> Schedule:
         kind=_require(data, "kind", "schedule"),
         rule_order=data.get("rule_order", []),
         conflict_sets=data.get("conflict_sets", [])
-    )
+)
 
 
 def _parse_fairness(data: Dict[str, Any]) -> Fairness:
@@ -261,7 +261,7 @@ def _parse_fairness(data: Dict[str, Any]) -> Fairness:
         name=_require(data, "name", "fairness"),
         type=_require(data, "type", "fairness"),
         condition=_require(data, "condition", "fairness")
-    )
+)
 
 
 def _parse_function(data: Dict[str, Any]) -> Function:
@@ -277,7 +277,7 @@ def _parse_function(data: Dict[str, Any]) -> Function:
         body=data.get("body"),
         recursive=bool(data.get("recursive", False)),
         measure=data.get("measure")
-    )
+)
 
 
 def _parse_axiom(data: Dict[str, Any], functions: Optional[List[Any]] = None) -> Axiom:
@@ -329,7 +329,7 @@ def _parse_axiom(data: Dict[str, Any], functions: Optional[List[Any]] = None) ->
         name=_require(data, "name", "axiom"),
         forall_vars=forall_vars,
         statement=statement
-    )
+)
 
 
 def _parse_invariant(data: Dict[str, Any]) -> Invariant:
@@ -337,7 +337,7 @@ def _parse_invariant(data: Dict[str, Any]) -> Invariant:
         name=_require(data, "name", "invariant"),
         operand=_require(data, "operand", "invariant"),
         assumed=bool(data.get("assumed", False))
-    )
+)
 
 
 def _parse_proof_obligation_feedback(data: Dict[str, Any]) -> ProofObligationFeedback:
@@ -345,14 +345,14 @@ def _parse_proof_obligation_feedback(data: Dict[str, Any]) -> ProofObligationFee
         iteration=_require(data, "iteration", "feedback"),
         error=_require(data, "error", "feedback"),
         resolution=_require(data, "resolution", "feedback")
-    )
+)
 
 
 def _parse_metadata(data: Dict[str, Any]) -> Metadata:
     return Metadata(
         engine=data.get("engine"),
         options=data.get("options", {})
-    )
+)
 
 
 def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
@@ -374,65 +374,65 @@ def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
         if not isinstance(perf_beam_size, int) or perf_beam_size < 1:
             raise ISIRParseError(
                 f"perf.beam_size must be a positive integer, got {perf_beam_size}"
-            )
+)
 
     perf_branches = perf_data.get("branches_per_node")
     if perf_branches is not None:
         if not isinstance(perf_branches, int) or perf_branches < 1:
             raise ISIRParseError(
                 f"perf.branches_per_node must be a positive integer, got {perf_branches}"
-            )
+)
 
     perf_depth_limit = perf_data.get("depth_limit")
     if perf_depth_limit is not None:
         if not isinstance(perf_depth_limit, int) or perf_depth_limit < 1:
             raise ISIRParseError(
                 f"perf.depth_limit must be a positive integer, got {perf_depth_limit}"
-            )
+)
 
     perf_primary_dimension = perf_data.get("primary_dimension")
     if perf_primary_dimension is not None and not isinstance(perf_primary_dimension, str):
         raise ISIRParseError(
             f"perf.primary_dimension must be a string, got {type(perf_primary_dimension)}"
-        )
+)
 
     perf_dimensions = perf_data.get("dimensions")
     if perf_dimensions is not None:
         if not isinstance(perf_dimensions, list):
             raise ISIRParseError(
                 f"perf.dimensions must be a list of strings, got {type(perf_dimensions)}"
-            )
+)
         if not perf_dimensions:
             raise ISIRParseError("perf.dimensions list cannot be empty")
         for dim in perf_dimensions:
             if not isinstance(dim, str):
                 raise ISIRParseError(
                     f"perf.dimensions must contain strings, got {type(dim)}"
-                )
+)
 
     perf_generation_temperature = perf_data.get("generation_temperature")
     if perf_generation_temperature is not None:
         if not isinstance(perf_generation_temperature, (int, float)):
             raise ISIRParseError(
                 f"perf.generation_temperature must be a number, got {type(perf_generation_temperature)}"
-            )
+)
         if not 0.0 <= perf_generation_temperature <= 1.0:
             raise ISIRParseError(
                 f"perf.generation_temperature must be between 0.0 and 1.0, "
                 f"got {perf_generation_temperature}"
-            )
+)
 
     perf_trace_alignment_weight = perf_data.get("trace_alignment_weight")
     if perf_trace_alignment_weight is not None:
         if not isinstance(perf_trace_alignment_weight, (int, float)):
             raise ISIRParseError(
                 f"perf.trace_alignment_weight must be a number, got {type(perf_trace_alignment_weight)}"
-            )
+)
         if not 0.0 <= perf_trace_alignment_weight <= 1.0:
             raise ISIRParseError(
                 f"perf.trace_alignment_weight must be between 0.0 and 1.0, "
                 f"got {perf_trace_alignment_weight}"
-            )
+)
 
     # Validate that primary_dimension is in dimensions if both are set
     if perf_primary_dimension is not None and perf_dimensions is not None:
@@ -440,7 +440,7 @@ def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
             raise ISIRParseError(
                 f"perf.primary_dimension '{perf_primary_dimension}' must be one of "
                 f"perf.dimensions: {perf_dimensions}"
-            )
+)
 
     # Determine engine - support "perf" as a valid engine value
     engine = data.get("engine", "theorem_proving")
@@ -448,7 +448,7 @@ def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
         logger.warning(
             f"Unknown engine '{engine}' in proof obligation, "
             f"defaulting to 'theorem_proving'"
-        )
+)
         engine = "theorem_proving"
 
     return ProofObligation(
@@ -469,7 +469,7 @@ def _parse_proof_obligation(data: Dict[str, Any]) -> ProofObligation:
         perf_dimensions=perf_dimensions,
         perf_generation_temperature=perf_generation_temperature,
         perf_trace_alignment_weight=perf_trace_alignment_weight
-    )
+)
 
 
 def _parse_module(data: Dict[str, Any]) -> Module:
@@ -496,7 +496,7 @@ def _parse_module(data: Dict[str, Any]) -> Module:
         proof_obligations=[_parse_proof_obligation(po) for po in data.get("proof_obligations", [])],
         metadata=_parse_metadata(data["metadata"]) if "metadata" in data else None,
         evidence=_parse_evidence_list(data.get("evidence"), default_type="simulation_trace", default_engine="unknown")
-    )
+)
 
 
 def _substitute_params(obj: Any, params: Dict[str, Any]) -> Any:
@@ -810,7 +810,7 @@ def _flatten_components(raw: Dict[str, Any], base_path: Path) -> Dict[str, Any]:
                 # primitive operators, matching the parent's own (unfolded) form.
                 operand = _unfold_function_bodies(
                     operand, child_module.get("functions", []) or []
-                )
+)
                 lifted_invariants.append({
                     "name": prop.get("name"),
                     "operand": operand,
@@ -887,7 +887,7 @@ def parse_isir(source: Union[str, Path], parameter_overrides: Optional[Dict[str,
         logger.warning(
             f"Unrecognized isir_version '{version}'. "
             f"Supported versions: {SUPPORTED_VERSIONS}. Proceeding, but validation may fail."
-        )
+)
 
     module_data = raw.get("module")
     if not module_data:
@@ -907,4 +907,4 @@ def parse_isir(source: Union[str, Path], parameter_overrides: Optional[Dict[str,
         module=module,
         metadata=top_metadata,
         evidence=top_evidence
-    )
+)

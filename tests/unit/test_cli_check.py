@@ -18,7 +18,7 @@ def _make_args(trace_path, spec_path, no_validate=False, debug=False):
         spec=str(spec_path),
         no_validate=no_validate,
         debug=debug,
-    )
+)
 
 
 def _make_spec():
@@ -52,7 +52,7 @@ class TestArgumentParser:
         parser = _setup_arg_parser()
         args = parser.parse_args(
             ["trace.yaml", "--spec", "spec.isir", "--no-validate", "--debug"]
-        )
+)
         assert args.no_validate is True
         assert args.debug is True
 
@@ -158,7 +158,7 @@ class TestCheckTrace:
             PropertyCheckResult(name="p1", holds=True),
             PropertyCheckResult(
                 name="p2", holds=False, failing_cycle=3, detail="state mismatch"
-            ),
+),
         ]
         with patch("isir.cli.check.parse_isir", return_value=_make_spec()), \
              patch("isir.cli.check._load_trace_schema", return_value={}), \
@@ -199,7 +199,7 @@ class TestCheckTrace:
     def test_check_all_properties_called_with_cycles(self, tmp_path):
         trace = _write_trace(
             tmp_path, {"trace": {"cycles": [{"step": 0}, {"step": 1}]}}
-        )
+)
         spec_path = tmp_path / "spec.isir"
         spec_path.write_text("dummy", encoding="utf-8")
         args = _make_args(trace, spec_path)

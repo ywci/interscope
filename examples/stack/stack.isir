@@ -32,7 +32,10 @@ module:
   state:
     - name: mem
       kind: memory
-      type: { type: "memory", elem: "bits<32>", depth: 8 }
+      type:
+        type: memory
+        elem: "bits<32>"
+        depth: 8
     - name: sp
       kind: register
       type: "bits<4>"
@@ -66,25 +69,55 @@ module:
         - (write full (eq (read sp) 8))
         - (write empty (eq (read sp) 0))
   properties:
-    - name: sp_in_range
+    - name: full_iff_sp_eq_depth
       kind: safety
       expression:
         kind: always
-        operand: (and (ge (read sp) 0) (le (read sp) 8))
-    - name: full_is_bool
-      kind: safety
+        operand: (eq full (eq (read sp) 8))
+    - name: push_increments
+      kind: transition
       expression:
-        kind: always
-        operand: (or (eq (read full) true) (eq (read full) false))
-    - name: empty_is_bool
-      kind: safety
+        kind: transition
+        rule: push
+        operand: (eq (read sp) (add (prev sp) 1))
+    - name: pop_decrements
+      kind: transition
       expression:
-        kind: always
-        operand: (or (eq (read empty) true) (eq (read empty) false))
+        kind: transition
+        rule: pop
+        operand: (eq (read sp) (sub (prev sp) 1))
+    - name: flags_track_sp
+      kind: transition
+      expression:
+        kind: transition
+        rule: update_flags
+        operand: (and (eq full (eq (prev sp) 8)) (eq empty (eq (prev sp) 0)))
+    - name: pop_returns_data
+      kind: transition
+      expression:
+        kind: transition
+        rule: pop
+        operand: (eq (read data_out) (mem_read mem (slice (sub (prev sp) 1) 2 0)))
   proof_obligations:
-    - property: sp_in_range
+    - property: push_increments
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: sp_in_range
+      backend: koika_acl2
+    - property: full_iff_sp_eq_depth
       engine: model_checking
+    - property: pop_decrements
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: flags_track_sp
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: full_iff_sp_eq_depth
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: pop_returns_data
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

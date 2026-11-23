@@ -40,14 +40,14 @@ def make_property(name="p", kind="safety", temporal_kind="always",
         left=left,
         right=right,
         bound=bound
-    )
+)
     return Property(
         name=name,
         kind=kind,
         expression=expr,
         assumes=assumes or [],
         guarantees=guarantees or []
-    )
+)
 
 
 class TestAlways:
@@ -56,7 +56,7 @@ class TestAlways:
             {"state": {"a": 1}},
             {"state": {"a": 1}},
             {"state": {"a": 1}}
-        )
+)
         prop = make_property(operand="(eq (read a) 1)")
         result = check_property(prop, trace)
         assert result.holds is True
@@ -66,7 +66,7 @@ class TestAlways:
         trace = make_trace(
             {"state": {"a": 1}},
             {"state": {"a": 2}}
-        )
+)
         prop = make_property(operand="(eq (read a) 1)")
         result = check_property(prop, trace)
         assert result.holds is False
@@ -80,7 +80,7 @@ class TestEventually:
             {"state": {"a": 0}},
             {"state": {"a": 0}},
             {"state": {"a": 1}}
-        )
+)
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)")
         result = check_property(prop, trace)
@@ -90,7 +90,7 @@ class TestEventually:
         trace = make_trace(
             {"state": {"a": 0}},
             {"state": {"a": 0}}
-        )
+)
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)")
         result = check_property(prop, trace)
@@ -102,7 +102,7 @@ class TestEventually:
             {"state": {"a": 0}},
             {"state": {"a": 1}},
             {"state": {"a": 0}}
-        )
+)
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)", bound=2)
         result = check_property(prop, trace)
@@ -113,7 +113,7 @@ class TestEventually:
             {"state": {"a": 0}},
             {"state": {"a": 0}},
             {"state": {"a": 1}}
-        )
+)
         prop = make_property(kind="liveness", temporal_kind="eventually",
                              operand="(eq (read a) 1)", bound=1)
         result = check_property(prop, trace)
@@ -127,7 +127,7 @@ class TestUntil:
             {"state": {"a": 1}},
             {"state": {"a": 1}},
             {"state": {"a": 0}}
-        )
+)
         prop = make_property(temporal_kind="until",
                              left="(eq (read a) 1)",
                              right="(eq (read a) 0)")
@@ -139,7 +139,7 @@ class TestUntil:
           {"state": {"a": 1}},
           {"state": {"a": 2}},
           {"state": {"a": 3}}
-      )
+)
       prop = make_property(temporal_kind="until",
                           left="(eq (read a) 1)",
                           right="(eq (read a) 0)")
@@ -151,7 +151,7 @@ class TestUntil:
         trace = make_trace(
             {"state": {"a": 1}},
             {"state": {"a": 1}}
-        )
+)
         prop = make_property(temporal_kind="until",
                              left="(eq (read a) 1)",
                              right="(eq (read a) 0)")
@@ -166,7 +166,7 @@ class TestAssumptions:
         prop = make_property(
             operand="(eq (read rst) 0)",
             assumes=["(eq (read rst) 0)"]
-        )
+)
         result = check_property(prop, trace)
         assert result.holds is True
         assert not result.vacuous
@@ -176,7 +176,7 @@ class TestAssumptions:
         prop = make_property(
             operand="(eq (read rst) 0)",
             assumes=["(eq (read rst) 0)"]
-        )
+)
         result = check_property(prop, trace)
         assert result.holds is True
         assert result.vacuous is True
@@ -189,7 +189,7 @@ class TestAssumptions:
             kind="safety",
             expression=TemporalExpr(kind="always", operand="(eq (read a) 1)"),
             assumes=["(eq (read a) 0)"]
-        )
+)
         result = check_property(prop, trace)
         assert result.holds is True
         assert result.vacuous is True
@@ -201,12 +201,12 @@ class TestTemporalSubOperators:
             {"state": {"sig": 0}},
             {"state": {"sig": 1}},
             {"state": {"sig": 1}}
-        )
+)
         prop = make_property(
             kind="liveness",
             temporal_kind="eventually",
             operand="(rose (read sig))"
-        )
+)
         result = check_property(prop, trace)
         assert result.holds is True
 
@@ -214,11 +214,11 @@ class TestTemporalSubOperators:
         trace = make_trace(
             {"state": {"sig": 1}},
             {"state": {"sig": 0}}
-        )
+)
         prop = make_property(
             temporal_kind="always",
             operand="(not (fell (read sig)))"
-        )
+)
         result = check_property(prop, trace)
         assert result.holds is False
 
@@ -226,13 +226,13 @@ class TestTemporalSubOperators:
         trace = make_trace(
             {"state": {"a": 1}},
             {"state": {"a": 2}}
-        )
+)
         prop = make_property(
             kind="liveness",
             temporal_kind="eventually",
             operand="(eq (next (read a)) 2)",
             bound=0
-        )
+)
         result = check_property(prop, trace)
         assert result.holds is True
 
@@ -241,11 +241,11 @@ class TestTemporalSubOperators:
             {"state": {"a": 1}},
             {"state": {"a": 1}},
             {"state": {"a": 2}}
-        )
+)
         prop = make_property(
             temporal_kind="always",
             operand="(implies (not (eq (read a) 2)) (stable (read a)))"
-        )
+)
         result = check_property(prop, trace)
         assert result.holds is False
         assert result.failing_cycle == 0

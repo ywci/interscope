@@ -1,5 +1,4 @@
 # tests/sat_gate/test_solver_oneshot.py
-"""One-shot solver: SAT / UNSAT / model extraction."""
 
 from isir.verification.sat_gate.bitblast import CNF
 from isir.verification.sat_gate.solver_oneshot import solve_cnf

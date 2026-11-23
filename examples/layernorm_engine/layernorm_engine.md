@@ -22,5 +22,5 @@
 
 ## Properties
 
-- **out_bounded** (safety): always, `out` ≤ 255.
-- **out_nonneg** (safety): always, `out` ≥ 0.
+- **out_equals_normalized** (safety): always, `out` equals min(x − mean × inv_std + beta, 255).
+- **out_normalizes_value** (transition): after each step, `out` equals min(x − mean × inv_std + beta, 255).

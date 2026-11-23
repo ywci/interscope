@@ -29,4 +29,6 @@
 
 ## Properties
 
-- **acc_bounded** (safety): always, `acc` ≥ 0 and `acc` ≤ 65535.
+- **acc_equals_weighted_sum** (safety): always, `acc` equals `shift0` × `coeff0` + `shift1` × `coeff1` + `shift2` × `coeff2` + `shift3` × `coeff3`.
+- **fir_shifts_and_accumulates** (transition): after each step, `shift3` equals prev(shift2) and `shift2` equals prev(shift1) and `shift1` equals prev(shift0) and `shift0` equals data_in and `acc` equals prev(shift0) × prev(coeff0) + prev(shift1) × prev(coeff1) + prev(shift2) × prev(coeff2) + prev(shift3) × prev(coeff3) and `valid_pipe` equals true.
+- **pipe_bypasses_when_idle** (transition): after each step, `valid_pipe` equals false.

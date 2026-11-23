@@ -36,6 +36,9 @@
 - **start_condition** (safety): always, if `fsm_state` equals 1, then `scl_reg` and not (`sda_reg`).
 - **stop_condition** (safety): always, if `fsm_state` equals 4, then `scl_reg` and `sda_reg`.
 - **busy_when_not_idle** (safety): always, if `fsm_state` does not equal 0, then `busy_reg`.
-- **done_after_stop** (safety): always, if `fsm_state` equals 0, then not (`done_reg`) or `start` equals 0.
-- **state_in_range** (safety): always, `fsm_state` ≥ 0 and `fsm_state` ≤ 4.
-- **bit_idx_in_range** (safety): always, `bit_idx` ≥ 0 and `bit_idx` ≤ 7.
+- **done_after_stop** (safety): always, if `fsm_state` equals 0, then not (`done_reg`) or start equals 0.
+- **controller_idles** (transition): after each step, `busy_reg` equals false and `done_reg` equals false and `error_reg` equals false and `scl_reg` equals true and `sda_reg` equals true and `clk_div` equals 0 and `bit_idx` equals 0 and `fsm_state` equals if prev(start), then 1, otherwise 0.
+- **start_condition_driven** (transition): after each step, `sda_reg` equals false and `scl_reg` equals true and `busy_reg` equals true and `shift_reg` equals prev(data_in) and `bit_idx` equals 0 and `fsm_state` equals 2.
+- **byte_clocked_out** (transition): after each step, `clk_div` equals prev(clk_div) + 1 and `scl_reg` equals if prev(clk_div) equals 0, then false, otherwise if prev(clk_div) equals 2, then true, otherwise prev(scl_reg) and `sda_reg` equals if prev(clk_div) equals 1, then prev(shift_reg)[7:7] equals 1, otherwise prev(sda_reg) and `shift_reg` equals if prev(clk_div) equals 3, then prev(shift_reg) + prev(shift_reg), otherwise prev(shift_reg) and `bit_idx` equals if prev(clk_div) equals 3, then prev(bit_idx) + 1, otherwise prev(bit_idx) and `fsm_state` equals if prev(bit_idx) equals 7, then 3, otherwise 2.
+- **ack_sampled** (transition): after each step, `scl_reg` equals false and `sda_reg` equals true and `clk_div` equals prev(clk_div) + 1 and `error_reg` equals if prev(clk_div) equals 1 and not (prev(sda_in)), then false, otherwise if prev(clk_div) equals 1 and prev(sda_in), then true, otherwise prev(error_reg) and `fsm_state` equals if prev(clk_div) equals 3 and not (prev(error_reg)), then 4, otherwise if prev(clk_div) equals 3 and prev(error_reg), then 4, otherwise 3.
+- **stop_condition_driven** (transition): after each step, `scl_reg` equals true and `sda_reg` equals true and `done_reg` equals true and `busy_reg` equals false and `fsm_state` equals 0.

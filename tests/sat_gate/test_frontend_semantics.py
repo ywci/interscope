@@ -1,11 +1,8 @@
 # tests/sat_gate/test_frontend_semantics.py
-"""Frontend semantics (§7.5): write conflict, read-during-write, init."""
 
 import textwrap
-
 from isir.parser.parser import parse_isir
 from isir.lowering.ast_to_isir import convert_ast_to_isir_module
-
 from isir.verification.sat_gate.isir_bridge import (
     initial_values, transitions_of, widths_of,
 )

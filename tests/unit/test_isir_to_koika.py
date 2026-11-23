@@ -15,14 +15,14 @@ def create_basic_spec_module():
 
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="count", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.state_ops.append(
         isir.SpecStateOp(
             state_name="mem",
             kind="memory",
             data_type={"type": "memory", "elem": "bits<8>", "depth": 16}
-        )
-    )
+)
+)
 
     spec_mod.inputs = [isir.Interface(name="data_in", direction="input", data_type="bits<8>")]
 
@@ -30,14 +30,14 @@ def create_basic_spec_module():
         rule_name="inc",
         condition="(lt (read count) 255)",
         actions=["(write count (add (read count) 1))"]
-    )
+)
     spec_mod.rule_ops.append(rule1)
 
     rule2 = isir.SpecRuleOp(
         rule_name="write_mem",
         condition="true",
         actions=["(mem_write mem count data_in)"]
-    )
+)
     spec_mod.rule_ops.append(rule2)
 
     spec_mod.property_ops.append(
@@ -45,8 +45,8 @@ def create_basic_spec_module():
             prop_name="count_bound",
             kind="safety",
             expression={"kind": "always", "operand": "(le (read count) 255)"}
-        )
-    )
+)
+)
 
     spec_mod.proof_obligations.append({
         "property": "count_bound",
@@ -64,7 +64,7 @@ def create_spec_with_false_operand():
 
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="full", kind="register", data_type="bool", initial=False)
-    )
+)
 
     spec_mod.inputs = [
         isir.Interface(name="write_en", direction="input", data_type="bool")
@@ -78,8 +78,8 @@ def create_spec_with_false_operand():
                 "kind": "always",
                 "operand": "(implies (and write_en (read full)) false)"
             }
-        )
-    )
+)
+)
 
     spec_mod.proof_obligations.append({
         "property": "no_overflow",
@@ -97,7 +97,7 @@ def create_spec_with_mixed_backends():
 
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="flag", kind="register", data_type="bool", initial=False)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="en", direction="input", data_type="bool")
     ]
@@ -107,15 +107,15 @@ def create_spec_with_mixed_backends():
             prop_name="prop_a",
             kind="safety",
             expression={"kind": "always", "operand": "(not (read flag))"}
-        )
-    )
+)
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="prop_b",
             kind="safety",
             expression={"kind": "always", "operand": "(eq (read flag) false)"}
-        )
-    )
+)
+)
 
     spec_mod.proof_obligations.append({
         "property": "prop_a",
@@ -229,7 +229,7 @@ def test_macron_koika_backend_accepted():
     spec_mod = isir.SpecModule(name="macron_test")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="x", kind="register", data_type="bool", initial=False)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bool")
     ]
@@ -238,8 +238,8 @@ def test_macron_koika_backend_accepted():
             prop_name="test_prop",
             kind="safety",
             expression={"kind": "always", "operand": "(not (read x))"}
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "test_prop",
         "status": "unproved",
@@ -258,7 +258,7 @@ def create_spec_with_combinational():
 
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<8>"),
         isir.Interface(name="b", direction="input", data_type="bits<8>"),
@@ -273,8 +273,8 @@ def create_spec_with_combinational():
                 "operand": "(add a b)",
                 "reference": "(add b a)",
             }
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "add_commutative",
         "status": "unproved",
@@ -307,7 +307,7 @@ def create_spec_with_transition():
 
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<8>"),
         isir.Interface(name="b", direction="input", data_type="bits<8>"),
@@ -317,8 +317,8 @@ def create_spec_with_transition():
             rule_name="add",
             condition="true",
             actions=["(write acc (add (read a) (read b)))"]
-        )
-    )
+)
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="acc_updates_to_sum",
@@ -327,8 +327,8 @@ def create_spec_with_transition():
                 "kind": "transition",
                 "operand": "(eq (read acc) (add a b))",
             }
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "acc_updates_to_sum",
         "status": "unproved",
@@ -363,7 +363,7 @@ def create_spec_with_independence():
 
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<32>"),
         isir.Interface(name="mask", direction="input", data_type="bits<4>"),
@@ -377,8 +377,8 @@ def create_spec_with_independence():
                 "operand": "(add (slice a 7 0) (slice a 15 8))",
                 "independent_of": ["mask"],
             }
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "reduction_independent_of_mask",
         "status": "unproved",
@@ -413,7 +413,7 @@ def test_xor_lowering_nat_and_bool():
     spec_mod = isir.SpecModule(name="xor_test")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<8>"),
         isir.Interface(name="b", direction="input", data_type="bits<8>"),
@@ -425,15 +425,15 @@ def test_xor_lowering_nat_and_bool():
             prop_name="nat_xor_self_zero",
             kind="combinational",
             expression={"kind": "combinational", "operand": "(xor a a)", "reference": 0},
-        )
-    )
+)
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="bool_xor_commutative",
             kind="combinational",
             expression={"kind": "combinational", "operand": "(xor x y)", "reference": "(xor y x)"},
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "nat_xor_self_zero", "status": "unproved",
         "engine": "theorem_proving", "backend": "koika",
@@ -454,7 +454,7 @@ def test_shift_lowering():
     spec_mod = isir.SpecModule(name="shift_test")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<8>"),
         isir.Interface(name="b", direction="input", data_type="bits<8>"),
@@ -464,15 +464,15 @@ def test_shift_lowering():
             prop_name="shl_shiftl",
             kind="combinational",
             expression={"kind": "combinational", "operand": "(shl a (slice b 2 0))", "reference": "(shl a (slice b 2 0))"},
-        )
-    )
+)
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="shr_shiftr",
             kind="combinational",
             expression={"kind": "combinational", "operand": "(shr a (slice b 2 0))", "reference": "(shr a (slice b 2 0))"},
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "shl_shiftl", "status": "unproved",
         "engine": "theorem_proving", "backend": "koika",
@@ -493,7 +493,7 @@ def test_combinational_boolean_reference():
     spec_mod = isir.SpecModule(name="comb_bool")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="f", kind="register", data_type="bool", initial=False)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="en", direction="input", data_type="bool")
     ]
@@ -506,8 +506,8 @@ def test_combinational_boolean_reference():
                 "operand": "(or en (not en))",
                 "reference": True,
             }
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "excluded_middle",
         "status": "unproved",
@@ -527,7 +527,7 @@ def test_functions_and_axioms_lowering():
     spec_mod = isir.SpecModule(name="fpu")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<16>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<16>"),
         isir.Interface(name="b", direction="input", data_type="bits<16>"),
@@ -544,14 +544,14 @@ def test_functions_and_axioms_lowering():
     })
     spec_mod.rule_ops.append(
         isir.SpecRuleOp(rule_name="upd", condition="true", actions=["(write acc (abstract_finite_add a b))"])
-    )
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="add_commutes",
             kind="combinational",
             expression={"kind": "combinational", "operand": "(abstract_finite_add a b)", "reference": "(abstract_finite_add b a)"},
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "add_commutes", "status": "unproved",
         "engine": "theorem_proving", "backend": "koika",
@@ -570,7 +570,7 @@ def test_concat_and_bitset_lowering():
     spec_mod = isir.SpecModule(name="concat_test")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="r", kind="register", data_type="bits<16>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="sign", direction="input", data_type="bits<1>"),
     ]
@@ -579,15 +579,15 @@ def test_concat_and_bitset_lowering():
             prop_name="concat_def",
             kind="combinational",
             expression={"kind": "combinational", "operand": "(concat sign 32640 15)", "reference": "(add (mul sign 32768) 32640)"},
-        )
-    )
+)
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="bitset_def",
             kind="combinational",
             expression={"kind": "combinational", "operand": "(bitset 32640 6 6 1)", "reference": 32704},
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "concat_def", "status": "unproved",
         "engine": "theorem_proving", "backend": "koika",
@@ -610,7 +610,7 @@ def test_defined_function_lowering():
     spec_mod = isir.SpecModule(name="deffn")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="r", kind="register", data_type="bool", initial=False)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<16>"),
     ]
@@ -637,26 +637,26 @@ def test_per_rule_transition_scoping():
     spec_mod = isir.SpecModule(name="scoped")
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="x", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="y", kind="register", data_type="bits<8>", initial=0)
-    )
+)
     spec_mod.inputs = [
         isir.Interface(name="a", direction="input", data_type="bits<8>"),
     ]
     spec_mod.rule_ops.append(
         isir.SpecRuleOp(rule_name="load", condition="true", actions=["(write x (read a))"])
-    )
+)
     spec_mod.rule_ops.append(
         isir.SpecRuleOp(rule_name="mac", condition="true", actions=["(write y (add (read y) (read x)))"])
-    )
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="load_correct",
             kind="transition",
             expression={"kind": "transition", "rule": "load", "operand": "(eq (read x) a)"},
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "load_correct", "status": "unproved",
         "engine": "theorem_proving", "backend": "koika",
@@ -690,8 +690,8 @@ def test_combinational_assumes_lowering():
             kind="combinational",
             expression={"kind": "combinational", "operand": "(le (mul_exact a b) (mul 255 255))", "reference": "true"},
             assumes=["(and (le a 255) (le b 255))"],
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "unsigned_max_bound", "status": "unproved",
         "engine": "theorem_proving", "backend": "koika",
@@ -752,17 +752,17 @@ def test_after_k_steps_lowering():
     ]
     spec_mod.state_ops.append(
         isir.SpecStateOp(state_name="count", kind="register", data_type="bits<4>", initial=0)
-    )
+)
     spec_mod.rule_ops.append(
         isir.SpecRuleOp(rule_name="inc", condition="true", actions=["(write count (add (read count) 1))"])
-    )
+)
     spec_mod.property_ops.append(
         isir.SpecPropertyOp(
             prop_name="count_nonneg_after_3",
             kind="bounded",
             expression={"kind": "after", "bound": 3, "operand": "(ge (read count) 0)"},
-        )
-    )
+)
+)
     spec_mod.proof_obligations.append({
         "property": "count_nonneg_after_3", "status": "unproved",
         "engine": "theorem_proving", "backend": "koika",
@@ -849,7 +849,7 @@ def test_malformed_rule_condition_raises():
         rule_name="bad",
         condition="(and a b c)",   # 3-arg and is invalid
         actions=["(write x (add (read x) 1))"],
-    ))
+))
     with pytest.raises(ExprError, match="invalid condition"):
         isir_to_koika.convert(spec_mod)
 
@@ -864,13 +864,13 @@ def test_bool_function_call_in_prop_context():
     out = isir_to_koika._expr_to_coq(
         parse_sexpr("(implies (is_zero a) (eq (read x) 0))"),
         st, it, [], as_prop=True, function_types=ftypes,
-    )
+)
     assert "(is_zero (a inputs)) = true" in out
     # In a value context (as_prop=False) the bool stays as-is.
     out2 = isir_to_koika._expr_to_coq(
         parse_sexpr("(is_zero a)"),
         st, it, [], as_prop=False, function_types=ftypes,
-    )
+)
     assert out2.strip() == "(is_zero (a inputs))"
 
 

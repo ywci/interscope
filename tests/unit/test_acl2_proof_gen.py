@@ -49,7 +49,7 @@ def test_get_skeleton_hint():
 def test_build_proof_prompt_basic():
     prompt = build_acl2_proof_prompt(
         "no-overflow", "(implies (full st) (not (enqueue st)))"
-    )
+)
     assert "(defthm no-overflow" in prompt
     assert "(implies (full st) (not (enqueue st)))" in prompt
     assert "Suggested hint classes: rewrite, linear, induct" in prompt
@@ -60,7 +60,7 @@ def test_build_proof_prompt_basic():
 def test_build_proof_prompt_with_context():
     prompt = build_acl2_proof_prompt(
         "t", "stmt", context="(defun full (st) ...)"
-    )
+)
     assert "Available definitions / lemmas:" in prompt
     assert "(defun full (st) ...)" in prompt
 
@@ -68,7 +68,7 @@ def test_build_proof_prompt_with_context():
 def test_build_proof_prompt_with_assumptions():
     prompt = build_acl2_proof_prompt(
         "t", "stmt", assumptions=["a1", "a2"]
-    )
+)
     assert "Assumptions:" in prompt
     assert "Assumption: a1" in prompt
     assert "Assumption: a2" in prompt
@@ -77,14 +77,14 @@ def test_build_proof_prompt_with_assumptions():
 def test_build_proof_prompt_with_strategy_hint():
     prompt = build_acl2_proof_prompt(
         "t", "stmt", strategy_hint="use induction"
-    )
+)
     assert "**Proof strategy to use:** use induction" in prompt
 
 
 def test_build_proof_prompt_with_custom_hint_classes():
     prompt = build_acl2_proof_prompt(
         "t", "stmt", hint_classes=["rewrite", "linear"]
-    )
+)
     assert "Suggested hint classes: rewrite, linear" in prompt
 
 
@@ -112,7 +112,7 @@ def test_build_proof_prompt_previous_attempts_limited_to_three():
 def test_build_hint_prompt_basic():
     prompt = build_acl2_hint_prompt(
         "(implies (full st) (not (enqueue st)))", "some ACL2 error"
-    )
+)
     assert "(implies (full st) (not (enqueue st)))" in prompt
     assert "some ACL2 error" in prompt
     assert "Previous hints: none" in prompt
@@ -122,7 +122,7 @@ def test_build_hint_prompt_basic():
 def test_build_hint_prompt_with_old_hints_and_context():
     prompt = build_acl2_hint_prompt(
         "stmt", "err", old_hints=['("Goal" :induct t)'], context="ctx"
-    )
+)
     assert 'Previous hints: ("Goal" :induct t)' in prompt
     assert "ctx" in prompt
 
@@ -130,7 +130,7 @@ def test_build_hint_prompt_with_old_hints_and_context():
 def test_build_reflection_prompt_basic():
     prompt = build_acl2_reflection_prompt(
         "my-thm", "stmt", ['("Goal" :induct t)'], "last error"
-    )
+)
     assert "my-thm" in prompt
     assert "stmt" in prompt
     assert '("Goal" :induct t)' in prompt
@@ -142,7 +142,7 @@ def test_build_reflection_prompt_with_previous_attempts():
     attempts = [{"script": "h1", "error": "e1"}]
     prompt = build_acl2_reflection_prompt(
         "my-thm", "stmt", ["h"], "err", previous_attempts=attempts
-    )
+)
     assert "Previous attempts:" in prompt
     assert "h1" in prompt
     assert "e1" in prompt
@@ -225,7 +225,7 @@ def test_generate_variants_returns_requested_count():
     variants = generate_acl2_proof_variants(
         llm, "my-thm", "(implies (full st) (not (enqueue st)))",
         num_variants=3,
-    )
+)
     assert len(variants) == 3
     assert all(v.startswith("(defthm my-thm") for v in variants)
     assert llm.temperature == 0.2
@@ -234,10 +234,10 @@ def test_generate_variants_returns_requested_count():
 def test_generate_variants_falls_back_to_skeleton_on_garbage():
     llm = FakeLLMClient(
         responses=["garbage", "(defthm my-thm\n  stmt\n  :hints ((\"Goal\" :induct t)))"]
-    )
+)
     variants = generate_acl2_proof_variants(
         llm, "my-thm", "stmt", num_variants=1
-    )
+)
     assert len(variants) == 1
     assert variants[0].startswith("(defthm my-thm")
     assert len(llm.calls) == 2
@@ -247,7 +247,7 @@ def test_generate_variants_skeleton_when_all_garbage():
     llm = FakeLLMClient(response="garbage")
     variants = generate_acl2_proof_variants(
         llm, "my-thm", "(equal 1 1)", num_variants=2
-    )
+)
     assert len(variants) == 2
     assert all(':hints (("Goal" :induct t))' in v for v in variants)
     assert all("(equal 1 1)" in v for v in variants)
@@ -258,7 +258,7 @@ def test_generate_variants_injects_diversity_tag():
     generate_acl2_proof_variants(
         llm, "my-thm", "stmt", num_variants=1,
         diversity_tags=["prefer case splitting"],
-    )
+)
     assert "prefer case splitting" in llm.calls[0][0]
 
 
@@ -269,12 +269,12 @@ def test_generate_variants_repair_mode_returns_repair_first():
         "\n"
         "### VARIANT 1\n"
         "(defthm my-thm\n  stmt\n  :hints ((\"Goal\" :expand ((foo st)))))\n"
-    )
+)
     llm = FakeLLMClient(response=response)
     variants = generate_acl2_proof_variants(
         llm, "my-thm", "stmt", num_variants=2, repair_mode=True,
         previous_attempts=[{"script": "bad", "error": "err"}],
-    )
+)
     assert len(variants) == 2
     assert ":induct t" in variants[0]
     assert ":expand" in variants[1]
@@ -285,7 +285,7 @@ def test_generate_variants_repair_mode_ignored_without_previous_attempts():
     variants = generate_acl2_proof_variants(
         llm, "my-thm", "stmt", num_variants=2, repair_mode=True,
         previous_attempts=None,
-    )
+)
     assert len(variants) == 2
     assert len(llm.calls) == 2
 
@@ -297,7 +297,7 @@ def test_parse_repair_variants_response_full():
         "\n"
         "### VARIANT 1\n"
         "(defthm t\n  stmt\n  :hints ((\"Goal\" :expand ((foo st)))))\n"
-    )
+)
     scripts = _parse_acl2_repair_variants_response(response, "t", "stmt", 2)
     assert len(scripts) == 2
     assert ":induct t" in scripts[0]
@@ -308,7 +308,7 @@ def test_parse_repair_variants_response_missing_repair_is_filled():
     response = (
         "### VARIANT 1\n"
         "(defthm t\n  stmt\n  :hints ((\"Goal\" :expand ((foo st)))))\n"
-    )
+)
     scripts = _parse_acl2_repair_variants_response(response, "t", "stmt", 2)
     assert len(scripts) == 2
     assert scripts[0].startswith("(defthm t")
@@ -320,7 +320,7 @@ def test_parse_repair_variants_response_missing_variant_is_filled():
     response = (
         "### REPAIR\n"
         "(defthm t\n  stmt\n  :hints ((\"Goal\" :induct t)))\n"
-    )
+)
     scripts = _parse_acl2_repair_variants_response(response, "t", "stmt", 2)
     assert len(scripts) == 2
     assert ":induct t" in scripts[0]

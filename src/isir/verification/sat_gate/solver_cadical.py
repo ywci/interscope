@@ -1,12 +1,11 @@
 # src/isir/verification/sat_gate/solver_cadical.py
 #
-# Resident (incremental) solver wrapper (§12.1, §12.2): persistent clauses,
+# Resident (incremental) solver wrapper: persistent clauses,
 # assumption-based solving, model + failed-assumption extraction.
 #
 # pysat's bundled CaDiCaL is one-shot only (its wrapper rejects incr=True), so
-# the incremental capability uses Glucose (a §12.1 secondary solver).  The
+# the incremental capability uses Glucose (a secondary solver). The
 # one-shot CaDiCaL path with DRAT tracing lives in solver_oneshot.py.
-"""Incremental solver wrapper (Glucose: assumptions + failed core)."""
 
 from typing import List, Optional
 

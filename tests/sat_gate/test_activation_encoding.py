@@ -1,6 +1,4 @@
 # tests/sat_gate/test_activation_encoding.py
-"""Activation encoding shape tests (§11.2): one clause per group, never the
-unit conjunction."""
 
 from isir.verification.sat_gate.assumptions import gate_clause, gate_clause_set
 

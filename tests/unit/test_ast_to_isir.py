@@ -107,7 +107,7 @@ def create_minimal_ast_module():
         proof_obligations=proof_obligations,
         metadata=metadata,
         evidence=top_evidence,
-    )
+)
     return module
 
 

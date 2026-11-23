@@ -106,7 +106,7 @@ class ACL2Prover:
         statement: Optional[str] = None,
         hints: Optional[List[str]] = None,
         initial_script: Optional[str] = None,
-    ) -> ProofResult:
+) -> ProofResult:
         """
         Prove an ACL2 theorem using the current session. Returns a ProofResult
         with structured metadata.
@@ -130,7 +130,7 @@ class ACL2Prover:
         if initial_script:
             logger.info(
                 "Trying PERF-provided initial script for '%s'.", theorem_name
-            )
+)
             try:
                 result = acl2.send(initial_script)
                 if (not acl2._contains_error(result)
@@ -138,19 +138,19 @@ class ACL2Prover:
                     duration = time.time() - start_time
                     logger.info(
                         "PERF initial script succeeded for '%s'.", theorem_name
-                    )
+)
                     return ProofResult(
                         success=True,
                         proof_script=initial_script,
                         duration=duration,
                         backend="acl2",
                         metadata={"automation": "perf_initial_script"},
-                    )
+)
                 logger.info(
                     "PERF initial script did not prove '%s'; "
                     "continuing with the normal repair loop.",
                     theorem_name,
-                )
+)
                 try:
                     acl2.undo()
                 except Exception:
@@ -179,7 +179,7 @@ class ACL2Prover:
                 if result["success"]:
                     proof_script = self._build_defthm_string(
                         theorem_name, statement, skeleton_hint
-                    )
+)
                     duration = time.time() - start_time
                     logger.info("Skeleton proof succeeded for '%s'.", theorem_name)
                     return ProofResult(
@@ -188,13 +188,13 @@ class ACL2Prover:
                         duration=duration,
                         backend="acl2",
                         metadata={"automation": "skeleton"},
-                    )
+)
                 else:
                     logger.info(
                         "Skeleton proof failed for '%s' (hint %s): %s",
                         theorem_name, skeleton_hint,
                         result.get("output", "")[:200],
-                    )
+)
                     acl2.undo()
 
         checkpoint_name = f"pre_{theorem_name}"
@@ -210,7 +210,7 @@ class ACL2Prover:
             "Starting main proof attempt loop for '%s' (max %d attempts).",
             theorem_name,
             self.max_repair,
-        )
+)
 
         while attempt < self.max_repair:
             logger.info("Proof attempt %d/%d", attempt + 1, self.max_repair)
@@ -222,7 +222,7 @@ class ACL2Prover:
             if result["success"]:
                 proof_script = self._build_defthm_string(
                     theorem_name, statement, current_hints
-                )
+)
                 duration = time.time() - start_time
                 logger.info("ACL2 proof succeeded for '%s'.", theorem_name)
                 return ProofResult(
@@ -232,7 +232,7 @@ class ACL2Prover:
                     backend="acl2",
                     iterations=attempt + 1,
                     metadata={"automation": "llm_repair"},
-                )
+)
 
             last_error = result.get("output", "ACL2 proof failed")
             logger.warning(
@@ -240,7 +240,7 @@ class ACL2Prover:
                 attempt + 1,
                 theorem_name,
                 last_error[:200],
-            )
+)
 
             prev_hints_list.append(current_hints[:])
             if len(prev_hints_list) >= 2 and prev_hints_list[-1] == prev_hints_list[-2]:
@@ -254,7 +254,7 @@ class ACL2Prover:
                     logger.warning(
                         "The same error has occurred %d times; stopping repair.",
                         same_error_count,
-                    )
+)
                     break
 
             # Strategy reflection at the midpoint of the repair budget.
@@ -262,17 +262,17 @@ class ACL2Prover:
                 logger.info(
                     "Triggering strategy reflection after %d failed attempts.",
                     attempt + 1,
-                )
+)
                 new_approach = self._request_strategy_reflection(
                     theorem_name, statement, current_hints, last_error
-                )
+)
                 if new_approach:
                     current_hints = new_approach
                     prev_hints_list.clear()
                     same_error_count = 0
                     logger.info(
                         "Reflection yielded new hints; resetting failure history."
-                    )
+)
                     attempt += 1
                     continue
 
@@ -281,7 +281,7 @@ class ACL2Prover:
             if new_hints:
                 logger.info(
                     "LLM returned %d new hint(s): %s", len(new_hints), new_hints
-                )
+)
                 current_hints = new_hints
             else:
                 logger.warning("LLM did not return usable hints; stopping repair.")
@@ -295,16 +295,16 @@ class ACL2Prover:
             success=False,
             error_message=(
                 f"ACL2 proof failed after {attempt} attempts: {last_error}"
-            ),
+),
             duration=duration,
             backend="acl2",
             iterations=attempt,
             metadata={"automation": "llm_repair_exhausted"},
-        )
+)
 
     def _prove_existing_by_name(
         self, acl2: ACL2Client, theorem_name: str, start_time: float
-    ) -> ProofResult:
+) -> ProofResult:
         """Attempt to re‑verify an existing theorem by name."""
         logger.info("Attempting to verify existing theorem '%s'", theorem_name)
         for name_variant in (theorem_name, f"acl2::{theorem_name}"):
@@ -319,11 +319,11 @@ class ACL2Prover:
                         duration=duration,
                         backend="acl2",
                         metadata={"automation": "pre-proven"},
-                    )
+)
             except Exception as e:
                 logger.debug(
                     "Verification attempt with '%s' raised: %s", name_variant, e
-                )
+)
                 continue
 
         last_result = acl2.send(f"(verify ({theorem_name}))")
@@ -334,21 +334,21 @@ class ACL2Prover:
             duration=duration,
             backend="acl2",
             metadata={"automation": "none"},
-        )
+)
 
     def _repair_hints(
         self,
         statement: str,
         old_hints: Optional[List[str]],
         error: str,
-    ) -> Optional[List[str]]:
+) -> Optional[List[str]]:
         """Ask the LLM for a new set of hints given the failure."""
         prompt = build_acl2_hint_prompt(
             theorem_statement=statement,
             error_message=error,
             old_hints=old_hints,
             context=None,
-        )
+)
         logger.debug("Hint repair prompt:\n%s", prompt)
         response = self.llm.generate(prompt)
         logger.debug("LLM hint response: %s", response[:200])
@@ -365,7 +365,7 @@ class ACL2Prover:
         statement: str,
         current_hints: List[str],
         last_error: str,
-    ) -> Optional[List[str]]:
+) -> Optional[List[str]]:
         """
         Ask the LLM for a completely new proof approach after repeated failures.
         """
@@ -381,7 +381,7 @@ class ACL2Prover:
             "rewrite rules).  The hints must be a proper ACL2 hint list, for example:\n"
             '  (("Goal" :induct t) ("Subgoal *1/2" :expand ((foo x))))\n\n'
             "Return ONLY the hint list as a single s-expression, without any extra text."
-        )
+)
         logger.debug("Reflection prompt: %s", prompt)
         response = self.llm.generate(prompt)
         logger.debug("Reflection response: %s", response[:200])
@@ -392,7 +392,7 @@ class ACL2Prover:
         theorem_name: str,
         statement: str,
         hints: List[str],
-    ) -> str:
+) -> str:
         """Create a human‑readable defthm form (for registration)."""
         hints_str = " ".join(hints) if hints else ""
         if hints_str:
@@ -405,7 +405,7 @@ class ACL2Prover:
         theorem_name: str,
         statement: str,
         proof_script: str,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         """
         Evaluate a candidate proof script (defthm form) for PERF.
         """
@@ -468,7 +468,7 @@ class ACL2Prover:
         statement: str,
         scripts: List[str],
         max_workers: int = 4,
-    ) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
         """
         Evaluate multiple proof scripts in parallel for PERF.
         """

@@ -1,6 +1,6 @@
 # src/isir/lowering/verify_candidate.py
 #
-# RTL Conformance (Section 3, Mode B) end-to-end: simulate an externally
+# RTL Conformance end-to-end: simulate an externally
 # provided Candidate RTL (`.v`) against the Confirmed specification's interface
 # and check its safety/invariant properties, yielding RawEvidenceRecords.
 

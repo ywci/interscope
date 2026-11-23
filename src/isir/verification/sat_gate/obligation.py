@@ -1,9 +1,8 @@
 # src/isir/verification/sat_gate/obligation.py
 #
-# Obligation IR for SAT-gating.  Backend-agnostic: the model encoding (Path A /
-# Path B) is a separate concern, and this module MUST NOT import solver or
-# encoder modules (architectural invariant §27.5).
-"""Typed obligation IR and the F_exact allowlist."""
+# Obligation IR for SAT-gating. Backend-agnostic: the model encoding
+# is a separate concern, and this module MUST NOT import solver or
+# encoder modules (architectural invariant).
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -11,7 +10,7 @@ from typing import List, Optional
 
 
 class QueryKind(Enum):
-    """Typed tag declaring the logical form and anchor of a gate query (§6.1)."""
+    """Typed tag declaring the logical form and anchor of a gate query ."""
     VACUITY = "vacuity"
     FALSIFY_INIT = "falsify_init"
     IND_STEP = "ind_step"
@@ -36,10 +35,10 @@ class ModelApprox(Enum):
 
 @dataclass(frozen=True)
 class Obligation:
-    """A typed gate obligation (§10.2).
+    """A typed gate obligation.
 
-    ``hypotheses`` and ``target`` are predicates (S-expression strings in this
-    Phase-1 slice).  ``group_ids`` are stable semantic group identifiers used
+    ``hypotheses`` and ``target`` are predicates (S-expression strings in the
+    current slice).  ``group_ids`` are stable semantic group identifiers used
     for activation literals and core feedback.
     """
     kind: QueryKind
@@ -73,7 +72,7 @@ FUNDAMENTAL_EXCLUSIONS = frozenset({
 })
 
 # Operators the dynamic compiler (compile_dyn.lower_term / lower_pred) actually
-# implements.  classify_predicate must flag anything else so the coverage number
+# implements. classify_predicate must flag anything else so the coverage number
 # is honest (a token outside this set yields UNKNOWN, never SAT/UNSAT).
 SUPPORTED_OPS = frozenset({
     "read", "const", "add", "sub", "ite",
@@ -99,10 +98,10 @@ class RejectReason(Enum):
 def classify_predicate(pred: str) -> Optional[str]:
     """Return the name of a blocking construct in ``pred``, else None.
 
-    This is the conservative Phase-1 probe: it flags any token that names an
-    excluded operator.  It intentionally over-approximates (a ``mul`` token is
-    flagged even if its operands are narrow), because over-flagging yields
-    UNKNOWN, never a wrong SAT/UNSAT (§10.2 rejected ⇒ UNKNOWN).
+    This is the conservative probe: it flags any token that names an excluded
+    operator.  It intentionally over-approximates (a ``mul`` token is flagged
+    even if its operands are narrow), because over-flagging yields UNKNOWN,
+    never a wrong SAT/UNSAT (rejected ⇒ UNKNOWN).
     """
     import re
     tokens = set(re.findall(r"\(([a-zA-Z_][a-zA-Z0-9_]*)\b", pred))

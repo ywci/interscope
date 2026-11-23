@@ -1,9 +1,7 @@
 # tests/sat_gate/test_isir_end_to_end.py
-"""End-to-end: parse a real ISIR and run the inductive pair through the gate."""
 
 from isir.parser.parser import parse_isir
 from isir.lowering.ast_to_isir import convert_ast_to_isir_module
-
 from isir.verification.sat_gate.isir_bridge import (
     always_operand, initial_values, transitions_of, widths_of,
 )
@@ -14,7 +12,7 @@ from isir.verification.sat_gate.solver_oneshot import solve_cnf
 def _load(name):
     return convert_ast_to_isir_module(
         parse_isir(f"examples/{name}/{name}.isir").module
-    )
+)
 
 
 def test_saturating_counter_is_inductive():

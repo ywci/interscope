@@ -59,11 +59,11 @@ def setup_logging(
     console_formatter = logging.Formatter(
         fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
-    )
+)
     file_formatter = logging.Formatter(
         fmt="%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
-    )
+)
 
     if console_enabled:
         console_handler = logging.StreamHandler(sys.stderr)
@@ -83,7 +83,7 @@ def setup_logging(
             maxBytes=max_bytes,
             backupCount=backup_count,
             encoding="utf-8",
-        )
+)
         file_handler.setLevel(numeric_level)
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)

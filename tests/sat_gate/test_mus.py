@@ -1,5 +1,4 @@
 # tests/sat_gate/test_mus.py
-"""Group-MUS on certification intent (§14.5)."""
 
 from isir.verification.sat_gate.bitblast import CNF
 from isir.verification.sat_gate.assumptions import AssumptionRegistry

@@ -35,13 +35,13 @@ class TestValidateStructure:
         issues = validate_structure("Proof. { intros H. Qed.")
         assert any(
             "Unbalanced braces" in i and "missing 1 closing '}'" in i for i in issues
-        )
+)
 
     def test_unbalanced_braces_unexpected_close(self):
         issues = validate_structure("Proof. } intros. Qed.")
         assert any(
             "Unbalanced braces" in i and "unexpected '}'" in i for i in issues
-        )
+)
 
     def test_unbalanced_parentheses(self):
         issues = validate_structure("Proof. intros (H. Qed.")
@@ -111,16 +111,16 @@ class TestValidateStructure:
     def test_missing_import_lia(self):
         issues = validate_structure(
             "Proof. lia. Qed.", context="Require Import Bool."
-        )
+)
         assert any("Missing import 'Require Import Lia.'" in i for i in issues)
 
     def test_missing_import_nat_eqb_eq(self):
         issues = validate_structure(
             "Proof. rewrite Nat.eqb_eq. Qed.", context="Require Import Lia."
-        )
+)
         assert any(
             "Missing import 'Require Import Arith.PeanoNat.'" in i for i in issues
-        )
+)
 
     def test_missing_import_satisfied(self):
         issues = validate_structure("Proof. lia. Qed.", context="Require Import Lia.")

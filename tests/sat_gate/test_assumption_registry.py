@@ -1,8 +1,6 @@
 # tests/sat_gate/test_assumption_registry.py
-"""Assumption registry invariants (§11.3)."""
 
 import pytest
-
 from isir.verification.sat_gate.assumptions import (
     AssumptionCapExceeded, AssumptionRegistry,
 )

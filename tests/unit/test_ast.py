@@ -76,7 +76,7 @@ def test_component_instance():
         module="fifo",
         parameters={"WIDTH": 32},
         port_map={"data_in": "parent_data_in"}
-    )
+)
     assert comp.name == "fifo_inst"
     assert comp.module == "fifo"
     assert comp.parameters == {"WIDTH": 32}
@@ -99,7 +99,7 @@ def test_rule():
         action=["(mem_write mem head data_in)", "(write head 1)"],
         priority=1,
         attributes=["atomic"]
-    )
+)
     assert rule.name == "enqueue"
     assert rule.condition == "(not (read full))"
     assert len(rule.action) == 2
@@ -114,7 +114,7 @@ def test_directive():
         expression="(not (and enqueue dequeue))",
         clock="clk",
         severity=None
-    )
+)
     assert directive.type == "assume"
     assert directive.name == "no_simultaneous"
     assert directive.expression == "(not (and enqueue dequeue))"
@@ -148,7 +148,7 @@ def test_property_evidence_list():
         kind="safety",
         expression=texpr,
         evidence=[ev_ref1, ev_ref2]
-    )
+)
     assert len(prop.evidence) == 2
     assert prop.evidence[0] == ev_ref1
     assert prop.evidence[1] == ev_ref2
@@ -159,7 +159,7 @@ def test_schedule():
         kind="conflict_free",
         rule_order=[],
         conflict_sets=[["enqueue", "dequeue"]]
-    )
+)
     assert sched.kind == "conflict_free"
     assert sched.conflict_sets == [["enqueue", "dequeue"]]
 
@@ -185,7 +185,7 @@ def test_proof_obligation():
         engine="theorem_proving",
         backend="koika",
         metadata={"coq_tactic": "induction"}
-    )
+)
     assert po.property == "no_overflow"
     assert po.status == "unproved"
     assert po.engine == "theorem_proving"
@@ -207,7 +207,7 @@ def test_module():
         resets=[Reset(name="rst", polarity="active_high", async_reset=False, affects="all")],
         state=[State(name="head", kind="register", type="bits<3>")],
         rules=[Rule(name="enqueue", condition="(read enqueue)", action=[])],
-    )
+)
     assert module.name == "fifo"
     assert len(module.clocks) == 1
     assert len(module.resets) == 1
@@ -230,7 +230,7 @@ def test_isir_top_level_metadata():
         type="simulation_trace",
         ref=EvidenceRef(type="uri", value="file://trace.vcd"),
         engine="verilator"
-    )
+)
     spec = ISIR(isir_version="0.1", module=module, metadata=md, evidence=[ev])
     assert spec.metadata.engine == "bmc"
     assert len(spec.evidence) == 1

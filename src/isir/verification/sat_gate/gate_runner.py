@@ -1,15 +1,13 @@
 # src/isir/verification/sat_gate/gate_runner.py
 #
 # End-to-end gate runner: obligation -> policy -> compile -> solve -> certify
-# -> disposition.  This is the integration point the PERF path would call.
-"""Run the SAT gate over the `always` invariants of a SpecModule."""
+# -> disposition. This is the integration point the PERF path would call.
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-
+from typing import List, Optional, Tuple
 from isir.verification.sat_gate.isir_bridge import (
     always_operand, initial_values, memories_of, memory_transitions_of,
-    transitions_of, widths_of,
+    transitions_of, widths_of
 )
 from isir.verification.sat_gate.function_inliner import (
     functions_of, inline_functions, sexpr_to_string,
@@ -21,7 +19,7 @@ from isir.verification.sat_gate.obligation import classify_predicate
 from isir.verification.sat_gate.observe import GateMetrics
 from isir.verification.sat_gate.policy import (
     CertState, CertTier, EvidenceAction, ModelApprox, QueryKind, Status,
-    TargetScope, evidence_action,
+    TargetScope, evidence_action
 )
 
 
@@ -78,7 +76,7 @@ def run_gate(spec_module, metrics: Optional[GateMetrics] = None,
                 property=getattr(prop, "prop_name", "?"),
                 base_status="unknown", step_status="unknown",
                 evidence_action=None, reject_reason=reject,
-            ))
+))
             continue
 
         metrics.gateable += 1
@@ -88,14 +86,14 @@ def run_gate(spec_module, metrics: Optional[GateMetrics] = None,
             try:
                 step_status = solve_smt_ind_step_with_memory(
                     inv, transitions, mem_transitions, widths, memories
-                )
+)
             except (ValueError, AssertionError) as e:
                 metrics.record_unknown("compile")
                 results.append(GateResult(
                     property=getattr(prop, "prop_name", "?"),
                     base_status="unknown", step_status="unknown",
                     evidence_action=None, reject_reason=str(e),
-                ))
+))
                 continue
             metrics.record_call(step_status)
             action = (EvidenceAction.PROVE_STEP if step_status == "unsat"
@@ -107,7 +105,7 @@ def run_gate(spec_module, metrics: Optional[GateMetrics] = None,
                 property=getattr(prop, "prop_name", "?"),
                 base_status="unknown", step_status=step_status,
                 evidence_action=action,
-            ))
+))
             continue
 
         try:
@@ -124,7 +122,7 @@ def run_gate(spec_module, metrics: Optional[GateMetrics] = None,
                     property=getattr(prop, "prop_name", "?"),
                     base_status="unknown", step_status="unknown",
                     evidence_action=None, reject_reason=str(e2),
-                ))
+))
                 continue
             metrics.record_call(step_status)
             action = (EvidenceAction.PROVE_STEP if step_status == "unsat"
@@ -136,7 +134,7 @@ def run_gate(spec_module, metrics: Optional[GateMetrics] = None,
                 property=getattr(prop, "prop_name", "?"),
                 base_status="unknown", step_status=step_status,
                 evidence_action=action,
-            ))
+))
             continue
 
         base_r = solve_cnf(base.cnf)
@@ -153,7 +151,7 @@ def run_gate(spec_module, metrics: Optional[GateMetrics] = None,
             property=getattr(prop, "prop_name", "?"),
             base_status=base_r.status, step_status=step_r.status,
             evidence_action=action,
-        ))
+))
     return results, metrics
 
 

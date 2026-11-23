@@ -1,13 +1,12 @@
 # src/isir/verification/sat_gate/smt_array_backend.py
 #
-# SMT array backend (§17): the QF_ABV encoding route with array memories.  This
+# SMT array backend: the QF_ABV encoding route with array memories. This
 # is the memory-capable route that avoids Path A's array instantiation; the
-# Phase 2 slice is IND_STEP only at T1 certification (completeness-critical).
-"""SMT array backend: capability matrix + memory SMT helpers."""
+# narrow memory slice supports IND_STEP only at T1 certification
+# (completeness-critical).
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
-
 from isir.verification.sat_gate.obligation import QueryKind
 from isir.verification.sat_gate.policy import CertTier
 
@@ -22,7 +21,7 @@ class SmtArrayCapability:
 def probe_capability(kind: QueryKind, has_memory: bool) -> Optional[SmtArrayCapability]:
     """Return the capability if the SMT array backend supports the obligation.
 
-    Phase 2: IND_STEP only; memory via SMT arrays; T1 certification.
+    The narrow slice: IND_STEP only; memory via SMT arrays; T1 certification.
     """
     cap = SmtArrayCapability()
     if kind not in cap.query_kinds:

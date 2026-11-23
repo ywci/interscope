@@ -124,7 +124,7 @@ def _item_hash(design: str, rule_name: str, cond: Any, dest: str, rhs: Any,
         },
         sort_keys=True,
         default=str,
-    )
+)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -176,7 +176,7 @@ def _write_evidence(registry, design: str, item_id: str,
             status=status.value,
             property_name=item_id,
             design_name=design,
-        )
+)
     except Exception as e:
         logger.warning("Could not write evidence for %s: %s", item_id, e)
         return None
@@ -193,7 +193,7 @@ def run_lowering_refinement(spec: Any, cycles: int = 3, seed: int = 0,
     and iverilog; the pipeline cross-check is an explicit opt-in."""
     from isir.lowering.koika_to_rtl import (
         _coq_bits_expr, _capitalize, _internalize_inputs, _has_unsupported_ops,
-    )
+)
     from isir.lowering.isir_to_rtl_direct import _width_of
     from isir.lowering.smt_refine import refine_isir_vs_koika
     from isir.utils.expr import parse_sexpr, unfold_user_functions
@@ -224,7 +224,7 @@ def run_lowering_refinement(spec: Any, cycles: int = 3, seed: int = 0,
                     mode="lowering_refinement",
                     detail="unsupported operator (slice/mul/div/mod/mem_*)",
                     category="koika_modeling_gap",
-                ))
+))
                 continue
 
             key = _item_hash(spec.name, rule.rule_name, cond, dest, rhs, widths)
@@ -245,7 +245,7 @@ def run_lowering_refinement(spec: Any, cycles: int = 3, seed: int = 0,
                         mode="lowering_refinement",
                         detail=f"koika DSL cannot lower: {str(e)[:200]}",
                         category="koika_modeling_gap",
-                    ))
+))
                     continue
 
                 if r["status"] == "unsat":
@@ -281,7 +281,7 @@ def run_lowering_refinement(spec: Any, cycles: int = 3, seed: int = 0,
                 evidence_id=ev_id,
                 counterexample=counterexample,
                 category=category,
-            ))
+))
 
     _save_cache(cache_dir, cache)
 

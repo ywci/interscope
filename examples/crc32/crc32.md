@@ -22,8 +22,9 @@
 
 ## Properties
 
-- **done_after_4_bytes** (safety): always, if `done`, then `count` equals 3.
+- **done_after_4_bytes** (safety): always, if done, then `count` equals 3.
 - **crc_reset_value** (safety): always, if not (rst_n), then `crc` equals 0.
-- **done_initial_false** (safety): always, if not (rst_n), then not (`done`).
-- **count_in_range** (safety): always, `count` ≥ 0 and `count` ≤ 3.
+- **done_initial_false** (safety): always, if not (rst_n), then not (done).
+- **done_iff_count_eq_4** (safety): always, done equals `count` equals 4.
 - **crc_32_bit** (safety): always, `crc` ≥ 0 and `crc` ≤ 4294967295.
+- **crc_accumulates_byte** (transition): after each step, `count` equals prev(count) + 1 and done equals prev(count) equals 3.

@@ -1,11 +1,6 @@
 # tests/sat_gate/sat_helper.py
-"""Tiny DPLL SAT checker for the truth-table / netlist-equivalence tests.
 
-This is an independent, brute-force-correct reference, deliberately separate
-from any production solver so the tests do not share a buggy solver path.
-"""
-
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 
 def dpll_sat(clauses: Sequence[Sequence[int]], nvars: int) -> Optional[Dict[int, bool]]:

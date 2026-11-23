@@ -1,8 +1,6 @@
 # tests/sat_gate/test_netlist_cnf_equivalence.py
-"""Netlist <-> CNF equivalence (§20.3): random assignment, reference vs CNF."""
 
 from sat_helper import dpll_sat, vars_of
-
 from isir.verification.sat_gate.bitblast import BitBlaster
 
 

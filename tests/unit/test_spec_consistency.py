@@ -1,6 +1,6 @@
 # tests/unit/test_spec_consistency.py
 #
-# Self-Consistency verification (Section 3): property satisfiability + rule
+# Self-Consistency verification: property satisfiability + rule
 # fireability via z3.
 
 import shutil
@@ -18,7 +18,7 @@ def _spec(name, rules, props, states=None, inputs=()):
         state_ops=states or [SpecStateOp(state_name="x", kind="register", data_type="bits<4>")],
         rule_ops=rules, property_ops=props, proof_obligations=[],
         inputs=list(inputs), outputs=[],
-    )
+)
 
 
 class TestSelfConsistency:

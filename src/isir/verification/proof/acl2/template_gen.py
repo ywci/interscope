@@ -63,17 +63,17 @@ def generate_acl2_proof_variants_template(
                 f"(defthm {theorem_name}\n"
                 f"  {theorem_statement}\n"
                 f"  {expand_hint})"
-            )
+)
             variants.append(script)
 
             expand_induct_hint = (
                 f':hints (("Goal" :induct t :expand ({" ".join(f"({n} st)" for n in names)})))'
-            )
+)
             script2 = (
                 f"(defthm {theorem_name}\n"
                 f"  {theorem_statement}\n"
                 f"  {expand_induct_hint})"
-            )
+)
             variants.append(script2)
 
         if analysis.has_nested_ite and analysis.max_ite_depth >= 3:
@@ -82,7 +82,7 @@ def generate_acl2_proof_variants_template(
                 f"(defthm {theorem_name}\n"
                 f"  {theorem_statement}\n"
                 f"  {step_expand_hint})"
-            )
+)
             variants.append(script)
 
             step_expand_induct_hint = ':hints (("Goal" :induct (step st inputs) :expand ((step st inputs))))'
@@ -90,7 +90,7 @@ def generate_acl2_proof_variants_template(
                 f"(defthm {theorem_name}\n"
                 f"  {theorem_statement}\n"
                 f"  {step_expand_induct_hint})"
-            )
+)
             variants.append(script2)
 
     hint_templates = [

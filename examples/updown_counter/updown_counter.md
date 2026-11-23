@@ -24,7 +24,7 @@
 
 ## Properties
 
-- **count_le_max** (safety): always, `count` ≤ `max_value`.
-- **count_nonneg** (safety): always, `count` ≥ 0.
-- **inc_increments** (transition): after each step, `count` equals prev(count) + 1.
-- **dec_decrements** (transition): after each step, `count` equals prev(count) − 1.
+- **count_le_max** (safety): always, count ≤ `max_value`.
+- **count_leq_max** (safety): always, count ≤ `max_value`.
+- **inc_increments** (transition): after each step, count equals prev(count) + 1.
+- **dec_decrements** (transition): after each step, count equals prev(count) − 1.

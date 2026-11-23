@@ -123,7 +123,7 @@ def convert(
         r"(reg\s*(?:\[[^\]]+\])?\s*\w+\s*(/\*.*?\*/)?)\s*=\s*[^;]+;",
         r"\1;",
         modified_verilog
-    )
+)
     
     # Post-process to inject the expected Inp_ top-level ports into the Verilog module
     port_declarations = []
@@ -143,17 +143,17 @@ def convert(
             rf"reg(\[[^\]]+\])?\s*{cap_name}\b(\s*/\*[^*]*\*/)?",
             rf"wire\1 {cap_name}\2",
             modified_verilog, count=1
-        )
+)
         # Drop the reset, the self-hold, and the latch to the (now wire) input.
         modified_verilog = re.sub(
             rf"{cap_name}\b\s*<=\s*\d+'[bdh][0-9a-fA-F_xXzZ?]+\s*;", "", modified_verilog
-        )
+)
         modified_verilog = re.sub(
             rf"{cap_name}\b\s*<=\s*{cap_name}\b\s*;", "", modified_verilog
-        )
+)
         modified_verilog = re.sub(
             rf"{cap_name}\b\s*<=\s*Inp_{inp.name}\s*;", "", modified_verilog
-        )
+)
         input_assigns.append(f"  assign {cap_name} = Inp_{inp.name};")
 
     if port_declarations:
@@ -169,7 +169,7 @@ def convert(
             r"(module\s+\w+\s*\([^)]*\)\s*;)\n",
             r"\1\n" + "\n".join(input_assigns) + "\n",
             modified_verilog, count=1
-        )
+)
 
     # Add suppression for initialization layouts and format limits
     lint_suppression = "/* verilator lint_off PROCASSINIT */\n"
@@ -188,7 +188,7 @@ def convert(
             f"output reg [{rw - 1}:0] out);\n"
             f"  always @(posedge clk) out <= {rw}'d0;\n"
             f"endmodule\n"
-        )
+)
 
     verilog_path.write_text(modified_verilog, encoding="utf-8")
 
@@ -202,7 +202,7 @@ def convert(
             isir_ref=f"module.inputs[name={inp.name}]",
             kind="input_internalized",
             width=w
-        )
+)
         mapping_entries.append(entry)
 
     mapping = rtl.RTLMapping(design_name=design_name, entries=mapping_entries)
@@ -221,7 +221,7 @@ def _internalize_inputs(spec_module: isir.SpecModule) -> isir.SpecModule:
         init = False if inp.data_type == "bool" else 0
         mod.state_ops.append(isir.SpecStateOp(
             state_name=inp.name, kind="register", data_type=inp.data_type, initial=init
-        ))
+))
     # Also internalize outputs that a rule writes (they become registers, since
     # the Kōika reg_t is register-only and cannot express combinational outputs).
     output_types = {o.name: o.data_type for o in mod.outputs}
@@ -237,7 +237,7 @@ def _internalize_inputs(spec_module: isir.SpecModule) -> isir.SpecModule:
                 if name in output_types and name not in state_names:
                     mod.state_ops.append(isir.SpecStateOp(
                         state_name=name, kind="register", data_type=output_types[name], initial=0
-                    ))
+))
                     state_names.add(name)
     mod.inputs = []
     return mod
@@ -257,7 +257,7 @@ def _find_or_build_koika_coq_path(koika_dir: str) -> Tuple[str, str]:
     _run_in_opam_env(
         f"cd {koika_dir} && make configure && dune build @install && dune install",
         timeout=600
-    )
+)
 
     path, flag = _try_find_koika_coq_path(koika_dir)
     if path is not None:
@@ -266,7 +266,7 @@ def _find_or_build_koika_coq_path(koika_dir: str) -> Tuple[str, str]:
     raise KoikaToRTLError(
         "Cannot locate Kōika Coq libraries even after building and installing. "
         "Check the Koika installation."
-    )
+)
 
 
 def _try_find_koika_coq_path(koika_dir: str) -> Tuple[Optional[str], Optional[str]]:
@@ -294,7 +294,7 @@ def _test_coq_import(path: Path, logical: str, flag: str) -> bool:
             cmd = (
                 f"eval $(opam env) && "
                 f"coqc {flag} {path} {logical} {test_file}"
-            )
+)
             subprocess.run(["bash", "-c", cmd], capture_output=True, timeout=15, check=True)
             return True
     except subprocess.CalledProcessError:

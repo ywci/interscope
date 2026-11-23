@@ -24,5 +24,5 @@
 
 ## Properties
 
-- **out_bounded** (safety): always, `out` ≤ 255.
-- **out_nonneg** (safety): always, `out` ≥ 0.
+- **out_equals_clamped_op** (safety): always, `out` equals clamp8(if op equals 0, then a + b, otherwise `mac_acc_out`).
+- **lane_op_computed** (transition): after each step, `out` equals clamp8(if op equals 0, then a + b, otherwise prev(mac_acc_out)).

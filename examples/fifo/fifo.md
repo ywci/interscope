@@ -28,13 +28,10 @@
 
 ## Properties
 
-- **no_overflow** (safety): always, if write_en and `full`, then false.
-- **no_underflow** (safety): always, if read_en and `empty`, then false.
+- **no_overflow** (safety): always, if write_en and full, then false.
+- **no_underflow** (safety): always, if read_en and empty, then false.
 - **count_bound** (safety): always, `count` ≥ 0 and `count` ≤ 8.
-- **fifo_bound** (safety): always, `count` ≥ 0 and `count` ≤ 8.
-- **write_ptr_self** (safety): always, `write_ptr` equals `write_ptr`.
-- **read_ptr_self** (safety): always, `read_ptr` equals `read_ptr`.
-- **full_is_bool** (safety): always, `full` equals true or `full` equals false.
-- **empty_is_bool** (safety): always, `empty` equals true or `empty` equals false.
-- **write_ptr_nonneg** (safety): always, `write_ptr` ≥ 0.
-- **read_ptr_nonneg** (safety): always, `read_ptr` ≥ 0.
+- **write_increments** (transition): after each step, `write_ptr` equals prev(write_ptr) + 1 and `count` equals prev(count) + 1.
+- **read_decrements** (transition): after each step, `read_ptr` equals prev(read_ptr) + 1 and `count` equals prev(count) − 1.
+- **flags_track_count** (transition): after each step, full equals prev(count) equals 8 and empty equals prev(count) equals 0.
+- **read_returns_stored_data** (transition): after each step, `data_out` equals mem_read(mem, prev(read_ptr)).

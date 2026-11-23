@@ -10,18 +10,16 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: start
       direction: input
       type: "bool"
     - name: all_idle
       direction: input
-      type: "bool"     # scoreboard: true when every engine is free (barrier)
+      type: "bool"
     - name: ucode_opcode
       direction: input
-      type: "bits<3>"  # decoded opcode of the instruction at the current PC
-
+      type: "bits<3>"
   state:
     - name: pc
       kind: register
@@ -35,49 +33,72 @@ module:
       kind: register
       type: "bits<3>"
       initial: 0
-
   rules:
-    # Begin execution of the microcode program.
     - name: start_fetch
       condition: (and start (not (read running)))
       action:
         - (write running true)
         - (write pc 0)
-    # Decode the current instruction into the dispatch opcode.
     - name: decode
       condition: (read running)
       action:
         - (write opcode_out ucode_opcode)
-    # Advance the PC only while all engines are idle (barrier synchronization:
-    # dependent instructions wait for every prior engine to complete).
     - name: advance
       condition: (and (read running) all_idle)
       action:
         - (write pc (min (add (read pc) 1) 15))
-    # End of program.
     - name: finish
       condition: (and (read running) (eq (read pc) 15))
       action:
         - (write running false)
-
   properties:
-    - name: pc_bounded
+    - name: running_iff_program_active
       kind: safety
       expression:
         kind: always
-        operand: (le (read pc) 15)
-    - name: pc_nonneg
-      kind: safety
+        operand: (eq (read running) (lt (read pc) 15))
+    - name: fetch_starts
+      kind: transition
       expression:
-        kind: always
-        operand: (ge (read pc) 0)
-
+        kind: transition
+        rule: start_fetch
+        operand: (and (eq (read running) True) (eq (read pc) 0))
+    - name: opcode_decoded
+      kind: transition
+      expression:
+        kind: transition
+        rule: decode
+        operand: (eq (read opcode_out) ucode_opcode)
+    - name: pc_increments
+      kind: transition
+      expression:
+        kind: transition
+        rule: advance
+        operand: (eq (read pc) (min (add (prev pc) 1) 15))
+    - name: program_finishes
+      kind: transition
+      expression:
+        kind: transition
+        rule: finish
+        operand: (eq (read running) False)
   proof_obligations:
-    - property: pc_bounded
+    - property: fetch_starts
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: pc_nonneg
+      backend: koika_acl2
+    - property: opcode_decoded
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
+    - property: pc_increments
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: program_finishes
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: running_iff_program_active
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

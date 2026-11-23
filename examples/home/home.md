@@ -34,3 +34,9 @@
 - **single_writer** (safety): always, not (is_modified(`c0_state`) and is_modified(`c1_state`) and `c0_addr` equals `c1_addr`).
 - **m_exclusive** (safety): always, not (is_modified(`c0_state`) and has_line(`c1_state`, `c1_addr`, `c0_addr`)) and not (is_modified(`c1_state`) and has_line(`c0_state`, `c0_addr`, `c1_addr`)).
 - **e_exclusive** (safety): always, not (is_exclusive(`c0_state`) and has_line(`c1_state`, `c1_addr`, `c0_addr`)) and not (is_exclusive(`c1_state`) and has_line(`c0_state`, `c0_addr`, `c1_addr`)).
+- **core0_write_fills_modified** (transition): after each step, `c1_state` equals if has_line(prev(c1_state), prev(c1_addr), req_addr) and 1 does not equal 0, then 0, otherwise prev(c1_state) and `c0_state` equals 3 and `c0_addr` equals req_addr and `c0_data` equals req_data.
+- **core1_write_fills_modified** (transition): after each step, `c0_state` equals if has_line(prev(c0_state), prev(c0_addr), req_addr) and 0 does not equal 1, then 0, otherwise prev(c0_state) and `c1_state` equals 3 and `c1_addr` equals req_addr and `c1_data` equals req_data.
+- **core0_read_hit_keeps_state** (transition): after each step, `c0_state` equals prev(c0_state).
+- **core1_read_hit_keeps_state** (transition): after each step, `c1_state` equals prev(c1_state).
+- **core0_read_miss_fills_shared** (transition): after each step, `c1_state` equals if has_line(prev(c1_state), prev(c1_addr), req_addr) and 1 does not equal 0, then 1, otherwise prev(c1_state) and `c0_state` equals 1 and `c0_addr` equals req_addr.
+- **core1_read_miss_fills_shared** (transition): after each step, `c0_state` equals if has_line(prev(c0_state), prev(c0_addr), req_addr) and 0 does not equal 1, then 1, otherwise prev(c0_state) and `c1_state` equals 1 and `c1_addr` equals req_addr.

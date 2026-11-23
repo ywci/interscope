@@ -23,5 +23,5 @@
 
 ## Properties
 
-- **maj_implies_x_or_y** (safety): always, if `maj`, then `x` or `y`.
-- **maj_correct** (transition): after each step, `maj` equals majority(a, b, c).
+- **maj_implies_x_or_y** (safety): always, if maj, then `x` or `y`.
+- **maj_correct** (transition): after each step, maj equals majority(a, b, c).

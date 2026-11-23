@@ -72,20 +72,20 @@ def compile_ocaml_to_verilog(
             text=True,
             timeout=300,
             cwd=str(output_dir)
-        )
+)
     except subprocess.TimeoutExpired:
         raise KoikaCompilationError("Kōika compilation timed out.")
     except FileNotFoundError:
         raise KoikaCompilationError(
             f"Kōika compiler not found at '{compiler}'. "
             "Please install the Kōika toolchain and ensure 'koika' is on your PATH."
-        )
+)
 
     if result.returncode != 0:
         logger.error("Kōika compiler stderr:\n%s", result.stderr)
         raise KoikaCompilationError(
             f"Kōika compilation failed with code {result.returncode}:\n{result.stderr[:1000]}"
-        )
+)
 
     logger.info("Kōika compilation succeeded.")
 
@@ -102,7 +102,7 @@ def compile_ocaml_to_verilog(
     if not verilog_path.exists():
         raise KoikaCompilationError(
             f"Kōika compiler did not produce a Verilog file in {output_dir}"
-        )
+)
 
     logger.info("Verilog output: %s", verilog_path)
 
@@ -116,12 +116,12 @@ def compile_ocaml_to_verilog(
         name=design_name,
         raw_verilog=verilog_path.read_text(),
         file_path=verilog_path
-    )
+)
     container = rtl.RTLModuleContainer(
         modules={design_name: rtl_module},
         mapping=mapping,
         design_name=design_name
-    )
+)
     return container
 
 
@@ -155,4 +155,4 @@ def _find_compiler(koika_path: Optional[str]) -> Path:
     raise KoikaCompilationError(
         "Kōika compiler not found. Install the Kōika toolchain and ensure 'koika' is on your PATH, "
         "or set 'koika_path' in conf/config.yaml."
-    )
+)

@@ -41,7 +41,7 @@ class ModelCheckProver:
         depth: Optional[int] = None,
         timeout: Optional[int] = None,
         harness_path: Optional[Path] = None
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         try:
             result = run_model_check(
                 rtl_path=rtl_path,
@@ -51,7 +51,7 @@ class ModelCheckProver:
                 depth=depth,
                 timeout=timeout,
                 harness_path=harness_path
-            )
+)
             return result
         except ModelCheckError as e:
             return {
@@ -96,6 +96,11 @@ class LLMProofSkill(ProofSkill):
         self._analysis: Optional[ObligationAnalysis] = None
         self._analyzer = PERFAnalyzer()
 
+        # SAT-gate live-hook state (lazily initialized to keep startup light).
+        self._sat_gate_whitelist = None
+        self._sat_gate_live_gate = None
+        self._hint_router = None
+
         # In‑memory cache of successful proofs (fast path).
         self._successful_proofs: Dict[str, str] = {}
 
@@ -114,7 +119,7 @@ class LLMProofSkill(ProofSkill):
         logger.info(
             "LLMProofSkill initialized: PERF enabled=%s",
             self.perf_global_config.enabled,
-        )
+)
 
     def _store_successful_proof(self, design_name: str, prop_name: str, script: str) -> None:
         """Store a successful proof in both in‑memory and persistent caches."""
@@ -155,7 +160,7 @@ class LLMProofSkill(ProofSkill):
         self,
         proof_obligation: Dict[str, Any],
         context: Dict[str, Any]
-    ) -> ProofResult:
+) -> ProofResult:
         engine = (proof_obligation.get("engine") or "").lower()
 
         if (engine != "model_checking"
@@ -172,7 +177,7 @@ class LLMProofSkill(ProofSkill):
         perf_config = PERFConfig.from_obligation_metadata(
             self.perf_global_config,
             proof_obligation.get("metadata", {}),
-        )
+)
 
         self._analysis = None
         if backend.startswith("koi"):
@@ -184,25 +189,25 @@ class LLMProofSkill(ProofSkill):
                     logger.warning(
                         "Obligation analysis suggests rule splitting would help. "
                         "Consider adding the 'split' attribute to monolithic rules."
-                    )
+)
 
         strategy = (
             proof_obligation.get("search_strategy")
             or self.config.get("proof", {}).get("search_strategy", "perf")
-        )
+)
         if strategy == "mcts":
             logger.info(
                 "MCTS search selected for obligation '%s' (backend=%s)",
                 proof_obligation.get("property", "unknown"),
                 backend,
-            )
+)
             return self._prove_with_mcts(proof_obligation, context, perf_config)
         if strategy == "linear":
             logger.info(
                 "Linear (greedy) search selected for obligation '%s' (backend=%s)",
                 proof_obligation.get("property", "unknown"),
                 backend,
-            )
+)
             return self._prove_linear(proof_obligation, context, backend)
 
         if perf_config.is_enabled_for_obligation(proof_obligation):
@@ -210,7 +215,7 @@ class LLMProofSkill(ProofSkill):
                 "PERF enabled for obligation '%s' (backend=%s)",
                 proof_obligation.get("property", "unknown"),
                 backend,
-            )
+)
             return self._prove_with_perf(proof_obligation, context, perf_config)
 
         return self._prove_linear(proof_obligation, context, backend)
@@ -238,7 +243,7 @@ class LLMProofSkill(ProofSkill):
         if not rtl_path:
             logger.warning(
                 "Cannot run model checking pre‑pass: missing RTL path."
-            )
+)
             return
 
         logger.info(
@@ -246,7 +251,7 @@ class LLMProofSkill(ProofSkill):
             "populate MC lemmas.",
             len(mc_obligations),
             design_name,
-        )
+)
 
         for po in mc_obligations:
             try:
@@ -256,18 +261,89 @@ class LLMProofSkill(ProofSkill):
                         "Model‑checking pre‑run for '%s' failed: %s",
                         po.get("property") if isinstance(po, dict) else getattr(po, "property", "?"),
                         result.error_message,
-                    )
+)
             except Exception as e:
                 logger.error("Model‑checking pre‑run exception: %s", e)
 
         self._mc_prepared[design_name] = True
+
+    def _sat_gate_live(self):
+        """Lazily initialize the persistent SAT-gate live hook."""
+        if self._sat_gate_live_gate is None:
+            from isir.verification.sat_gate.live_gate import LiveGate, Whitelist
+            self._sat_gate_whitelist = Whitelist()
+            self._sat_gate_live_gate = LiveGate(whitelist=self._sat_gate_whitelist)
+        return self._sat_gate_live_gate
+
+    def _get_hint_router(self):
+        """Lazily initialize the persistent hint router."""
+        if self._hint_router is None:
+            from isir.verification.sat_gate.hint_routing import HintRouter
+            self._hint_router = HintRouter()
+        return self._hint_router
+
+    def _try_sat_gate(self, spec_module, prop_name: str):
+        """SAT-gate pre-filter hook: return the disposition, or None if disabled.
+
+        Enabled via the ``sat_gating_enabled`` config flag.  The gate runs before
+        the expensive beam-search prover call and short-circuits inductive
+        (BASE_ENTAIL + IND_STEP UNSAT) obligations.
+        """
+        if not self.config.get("sat_gating_enabled", False):
+            return None
+        if not spec_module or not prop_name:
+            return None
+        try:
+            return self._sat_gate_live().gate_obligation(spec_module, prop_name)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("SAT-gate hook failed; falling through: %s", e)
+            return None
+
+    def record_downstream_failure(self, prop_name: str) -> bool:
+        """Record that a SAT-gated obligation failed downstream.
+
+        Returns True when the whitelist escalation threshold is reached (the
+        obligation is promoted to bounded model checking on the next attempt).
+        """
+        if not self.config.get("sat_gating_enabled", False):
+            return False
+        self._sat_gate_live()
+        return self._sat_gate_whitelist.record_downstream_failure(prop_name)
+
+    def offer_hints(self, clauses, source_obligation_id, provenance,
+                    current_step: int = 0, suggested_strategy=None):
+        """Harvest already-proved/mined clauses + offer them as soft hints."""
+        return self._get_hint_router().harvest_and_offer(
+            clauses, source_obligation_id, provenance, current_step,
+            suggested_strategy=suggested_strategy,
+        )
+
+    def accept_hint(self, hint_id: str, evidence) -> bool:
+        """The ITP integrator accepts a hint and admits it under full evidence."""
+        router = self._get_hint_router()
+        if not router.accept(hint_id):
+            return False
+        return router.admit(hint_id, evidence)
+
+    def reject_hint(self, hint_id: str) -> bool:
+        return self._get_hint_router().reject(hint_id)
+
+    def mark_hint_used(self, hint_id: str) -> bool:
+        return self._get_hint_router().mark_used(hint_id)
+
+    def resolve_cti_for(self, spec_module, prop_name: str, cti_probe_k: int = 10):
+        """Run the CTI probe for a non-inductive obligation."""
+        if not self.config.get("sat_gating_enabled", False):
+            return None, False
+        return self._sat_gate_live().resolve_cti_for(spec_module, prop_name,
+                                                     cti_probe_k)
 
     def _prove_with_mcts(
         self,
         obligation: Dict[str, Any],
         context: Dict[str, Any],
         perf_config: PERFConfig,
-    ) -> ProofResult:
+) -> ProofResult:
         """Run MCTS (UCB1 + backpropagation) — de-coupled from PERF.
 
         Does NOT run the PERF skeleton-first shortcut, the deterministic proof
@@ -282,6 +358,17 @@ class LLMProofSkill(ProofSkill):
         if not design_name and context.get("spec_module"):
             design_name = getattr(context["spec_module"], "name", None)
 
+        # SAT-gate pre-filter hook: short-circuit the inductive pair before the
+        # expensive beam search.
+        disposition = self._try_sat_gate(context.get("spec_module"), prop_name)
+        if disposition is not None and disposition.action.value == "sat_gated":
+            logger.info("SAT-gated '%s' (inductive pair): skipping the beam search", prop_name)
+            return ProofResult(
+                success=True,
+                backend="sat_gate",
+                metadata={"sat_gated": True, "property": prop_name},
+            )
+
         # Build the initial script from the proof library only — no cache /
         # similar-proof warm-start, keeping MCTS symmetric with the linear path
         # (which also lacks cache/similar reuse). The library is gated by
@@ -289,7 +376,7 @@ class LLMProofSkill(ProofSkill):
         initial_script = None
         use_library_allowed = self.config.get("provers", {}).get("koika", {}).get(
             "use_proof_library", False
-        )
+)
         if use_library_allowed and backend.startswith("koi"):
             from lib.koika.assist import PROOF_LIBRARY
             lib_key = context.get("theorem_name", "")
@@ -304,10 +391,10 @@ class LLMProofSkill(ProofSkill):
             c=1.4142135623730951,
             iterations=max(perf_config.depth_limit * perf_config.beam_size, 1),
             branches_per_node=perf_config.branches_per_node,
-        )
+)
         traversal = MCTSTraversal(
             config=perf_config, llm_client=self.llm, context=perf_context, mcts=mcts_cfg
-        )
+)
         proof_script, stats = traversal.traverse()
         self._last_perf_stats = stats
 
@@ -322,14 +409,14 @@ class LLMProofSkill(ProofSkill):
                     "search": "mcts",
                     "mcts_stats": stats.to_dict(),
                 },
-            )
+)
 
         logger.warning("MCTS did not find a proof for '%s'.", prop_name)
         return ProofResult(
             success=False,
             error_message="MCTS search exhausted without finding a proof",
             metadata={"backend": obligation.get("backend", "unknown"), "search": "mcts"},
-        )
+)
 
     def _prove_linear(
         self,
@@ -337,7 +424,7 @@ class LLMProofSkill(ProofSkill):
         context: Dict[str, Any],
         backend: str,
         initial_script: Optional[str] = None,
-    ) -> ProofResult:
+) -> ProofResult:
         if initial_script is not None:
             initial_script = self._prepare_initial_script(initial_script)
 
@@ -349,7 +436,7 @@ class LLMProofSkill(ProofSkill):
             result = ProofResult(
                 success=False,
                 error_message=f"Unsupported backend: {backend}"
-            )
+)
 
         if result.success and result.proof_script:
             prop_name = obligation.get("property", "")
@@ -372,7 +459,7 @@ class LLMProofSkill(ProofSkill):
             logger.warning(
                 "Structural issues in initial script:\n  %s",
                 "\n  ".join(issues),
-            )
+)
 
         return modernized
 
@@ -381,7 +468,7 @@ class LLMProofSkill(ProofSkill):
         obligation: Dict[str, Any],
         context: Dict[str, Any],
         initial_script: Optional[str] = None,
-    ) -> ProofResult:
+) -> ProofResult:
         coq_path = context.get("coq_file_path")
         if not coq_path:
             return ProofResult(success=False, error_message="Missing 'coq_file_path'")
@@ -394,7 +481,7 @@ class LLMProofSkill(ProofSkill):
         has_overrides = any(
             metadata.get(k) is not None
             for k in ("max_consecutive_failures", "max_steps", "pre_simplify", "invariant_mining")
-        )
+)
 
         if has_overrides:
             custom_cfg = self.config.copy()
@@ -428,14 +515,14 @@ class LLMProofSkill(ProofSkill):
                 tactic_hints=tactic_hints if tactic_hints else None,
                 initial_script=initial_script,
                 shared_lemmas=context.get("shared_lemmas"),
-            )
+)
         except Exception as e:
             logger.exception("Koika prover raised an exception")
             return ProofResult(
                 success=False,
                 error_message=f"Koika prover error: {e}",
                 metadata={"backend": "koika"}
-            )
+)
         finally:
             if has_overrides and prover is not self._koika_prover:
                 prover.close()
@@ -447,21 +534,21 @@ class LLMProofSkill(ProofSkill):
                 success=True,
                 proof_script=result.proof_script or "",
                 metadata=meta
-            )
+)
         meta = dict(result.metadata) if isinstance(result.metadata, dict) else {}
         meta["backend"] = "koika"
         return ProofResult(
             success=False,
             error_message=result.error_message or "Unknown Koika proof failure",
             metadata=meta
-        )
+)
 
     def _prove_acl2(
         self,
         obligation: Dict[str, Any],
         context: Dict[str, Any],
         initial_script: Optional[str] = None,
-    ) -> ProofResult:
+) -> ProofResult:
         acl2_file = context.get("acl2_file_path")
         if not acl2_file:
             return ProofResult(success=False, error_message="Missing 'acl2_file_path'")
@@ -477,7 +564,7 @@ class LLMProofSkill(ProofSkill):
             obligation.get("metadata", {}).get("acl2_hints", [])
             if isinstance(obligation, dict)
             else []
-        )
+)
 
         try:
             result: ProofResult = self._acl2_prover.prove_theorem(
@@ -485,14 +572,14 @@ class LLMProofSkill(ProofSkill):
                 statement=statement,
                 hints=hints if hints else None,
                 initial_script=initial_script,
-            )
+)
         except Exception as e:
             logger.exception("ACL2 prover raised an exception")
             return ProofResult(
                 success=False,
                 error_message=f"ACL2 prover error: {e}",
                 metadata={"backend": "acl2"}
-            )
+)
 
         if result.success:
             meta = dict(result.metadata) if isinstance(result.metadata, dict) else {}
@@ -501,14 +588,14 @@ class LLMProofSkill(ProofSkill):
                 success=True,
                 proof_script=result.proof_script or "",
                 metadata=meta
-            )
+)
         meta = dict(result.metadata) if isinstance(result.metadata, dict) else {}
         meta["backend"] = "acl2"
         return ProofResult(
             success=False,
             error_message=result.error_message or "Unknown ACL2 proof failure",
             metadata=meta
-        )
+)
 
     def _prove_model_check(self, obligation: Dict[str, Any], context: Dict[str, Any]) -> ProofResult:
         rtl_path = context.get("rtl_file_path")
@@ -517,15 +604,15 @@ class LLMProofSkill(ProofSkill):
             return ProofResult(
                 success=False,
                 error_message="Missing 'rtl_file_path' in context"
-            )
+)
         top_module = context.get("top_module") or (
             context.get("spec_module").name if context.get("spec_module") else "top"
-        )
+)
         metadata = obligation.get("metadata", {}) if isinstance(obligation, dict) else {}
         engine = (
             metadata.get("mc_engine")
             or self.config.get("verification", {}).get("mc_engine", "bmc")
-        )
+)
         depth = metadata.get("depth")
         timeout = metadata.get("timeout")
 
@@ -540,13 +627,13 @@ class LLMProofSkill(ProofSkill):
             depth=depth,
             timeout=timeout,
             harness_path=Path(context["harness_file_path"]) if context.get("harness_file_path") else None
-        )
+)
 
         prop_name = obligation.get("property") if isinstance(obligation, dict) else getattr(obligation, "property", "?")
         design_name = (
             context.get("spec_module").name
             if context.get("spec_module") else None
-        )
+)
         try:
             from isir.evidence.annotator import create_evidence_ref, add_evidence_to_registry
             if result.get("success"):
@@ -557,7 +644,7 @@ class LLMProofSkill(ProofSkill):
                     engine="BMC" if engine == "bmc" else "IC3",
                     status="proved",
                     property_name=prop_name,
-                )
+)
                 add_evidence_to_registry(evidence, property_name=prop_name, design_name=design_name)
                 logger.info("Registered model‑checking evidence for '%s'.", prop_name)
             else:
@@ -570,7 +657,7 @@ class LLMProofSkill(ProofSkill):
                     engine="BMC" if engine == "bmc" else "IC3",
                     status="counterexample",
                     property_name=prop_name,
-                )
+)
                 add_evidence_to_registry(evidence, property_name=prop_name, design_name=design_name)
                 logger.info("Registered counterexample evidence for '%s'.", prop_name)
         except Exception as e:
@@ -581,12 +668,12 @@ class LLMProofSkill(ProofSkill):
                 success=True,
                 proof_script="Model checking succeeded",
                 metadata={"backend": "model_checking", "engine": engine}
-            )
+)
         return ProofResult(
             success=False,
             error_message=result.get("error") or "Model checking failed",
             metadata={"backend": "model_checking", "engine": engine}
-        )
+)
 
     def _is_bound_property(self, spec_module, prop_name: str) -> bool:
         """True if the property operand is a conjunction/disjunction of
@@ -632,16 +719,27 @@ class LLMProofSkill(ProofSkill):
         context: Dict[str, Any],
         perf_config: PERFConfig,
         traversal_cls=PERFTraversal,
-    ) -> ProofResult:
+) -> ProofResult:
         logger.info(
             "Starting PERF traversal for '%s' (beam=%d, depth=%d, branches=%d)",
             obligation.get("property", "unknown"),
             perf_config.beam_size,
             perf_config.depth_limit,
             perf_config.branches_per_node
-        )
+)
 
         backend = obligation.get("backend", "koika").lower().replace("ō", "o")
+
+        # SAT-gate pre-filter hook: short-circuit the inductive pair before PERF.
+        prop_name = obligation.get("property", "")
+        disposition = self._try_sat_gate(context.get("spec_module"), prop_name)
+        if disposition is not None and disposition.action.value == "sat_gated":
+            logger.info("SAT-gated '%s' (inductive pair): skipping PERF", prop_name)
+            return ProofResult(
+                success=True,
+                backend="sat_gate",
+                metadata={"sat_gated": True, "property": prop_name},
+            )
 
         # Fast skeleton proof attempt (optional, before PERF)
         if perf_config.try_skeleton_first and backend.startswith("koi"):
@@ -669,15 +767,15 @@ class LLMProofSkill(ProofSkill):
                 skeleton_script = temp_prover._recursive_skeleton_proof(
                     Path(coq_file), theorem_name,
                     max_depth=temp_prover.skeleton_max_depth,
-                )
+)
                 prop = obligation.get("property", "")
                 if skeleton_script is None and self._is_bound_property(
                     context.get("spec_module"), prop
-                ):
+):
                     logger.info("Bound property: retrying deeper skeleton (depth 12)...")
                     skeleton_script = temp_prover._recursive_skeleton_proof(
                         Path(coq_file), theorem_name, max_depth=12
-                    )
+)
                 temp_prover.close()
 
                 if skeleton_script is not None:
@@ -693,7 +791,7 @@ class LLMProofSkill(ProofSkill):
                         success=True,
                         proof_script=skeleton_script,
                         metadata={"backend": "koika", "skeleton": True}
-                    )
+)
 
         # Deterministic proof strategies (domain extensions, no LLM) — tried
         # before the LLM invariant proposal.
@@ -720,7 +818,7 @@ class LLMProofSkill(ProofSkill):
                         success=True,
                         proof_script=script,
                         metadata={"backend": "koika", "automation": "proof_strategy"}
-                    )
+)
 
         # LLM invariant-proposal stage: ask the LLM for helper invariants, then
         # re-try the deterministic skeleton with them (before the PERF beam search).
@@ -756,7 +854,7 @@ class LLMProofSkill(ProofSkill):
                             success=True,
                             proof_script=r,
                             metadata={"backend": "koika", "automation": "perf_invariant"}
-                        )
+)
                 temp_prover.close()
 
         # Proof‑pattern reuse from cache / successful proofs
@@ -769,7 +867,7 @@ class LLMProofSkill(ProofSkill):
         # 1) Try proof library (if allowed)
         use_library_allowed = self.config.get("provers", {}).get("koika", {}).get(
             "use_proof_library", False
-        )
+)
         if use_library_allowed and backend.startswith("koi"):
             from lib.koika.assist import PROOF_LIBRARY
             lib_key = context.get("theorem_name", "")
@@ -791,7 +889,7 @@ class LLMProofSkill(ProofSkill):
             if similar_proof:
                 logger.info(
                     "Using adapted proof from a previously proven obligation as PERF initial script."
-                )
+)
                 initial_script = self._prepare_initial_script(similar_proof)
 
         if initial_script:
@@ -822,7 +920,7 @@ class LLMProofSkill(ProofSkill):
                 config=perf_config,
                 llm_client=self.llm,
                 context=perf_context
-            )
+)
             proof_script, stats = traversal.traverse()
             self._last_perf_stats = stats
 
@@ -831,7 +929,7 @@ class LLMProofSkill(ProofSkill):
                     "PERF found a proof for '%s' at depth %d",
                     prop_name,
                     stats.successful_depth
-                )
+)
                 if prop_name and design_name:
                     self._store_successful_proof(design_name, prop_name, proof_script)
                 return ProofResult(
@@ -842,7 +940,7 @@ class LLMProofSkill(ProofSkill):
                         "perf_stats": stats.to_dict(),
                         "perf_successful_depth": stats.successful_depth
                     }
-                )
+)
 
             if initial_script and stats.total_nodes == 0:
                 logger.info("Library/adapted proof verified by PERF; returning success.")
@@ -856,7 +954,7 @@ class LLMProofSkill(ProofSkill):
                         "perf_stats": stats.to_dict(),
                         "library": True
                     }
-                )
+)
 
             # PERF did not find a proof. Try to salvage the best candidate.
             best_candidate = self._get_best_candidate_from_perf(traversal)
@@ -866,13 +964,13 @@ class LLMProofSkill(ProofSkill):
                     "PERF exhausted for '%s', but a best candidate was found. "
                     "Passing it to linear prover as initial_script for focused repair.",
                     prop_name
-                )
+)
                 result = self._prove_linear(
                     obligation,
                     context,
                     backend,
                     initial_script=best_candidate,
-                )
+)
                 if result.success:
                     logger.info("Linear prover succeeded using PERF's best candidate.")
                     result.metadata["perf_stats"] = stats.to_dict()
@@ -884,7 +982,7 @@ class LLMProofSkill(ProofSkill):
                     logger.info(
                         "Linear prover could not prove using PERF best candidate; "
                         "falling back to normal linear prover from scratch."
-                    )
+)
 
             # Fallback to normal linear prover (without initial script).
             logger.warning(
@@ -893,7 +991,7 @@ class LLMProofSkill(ProofSkill):
                 prop_name,
                 stats.max_depth,
                 stats.total_nodes
-            )
+)
             result = self._prove_linear(obligation, context, backend)
 
             # Stronger LLM fallback after linear prover fails
@@ -901,7 +999,7 @@ class LLMProofSkill(ProofSkill):
                 logger.info(
                     "Linear prover failed for '%s'. Attempting stronger LLM fallback.",
                     prop_name
-                )
+)
                 stronger_result = self._prove_with_stronger_llm(obligation, context, backend)
                 if stronger_result.success:
                     stronger_result.metadata["perf_stats"] = stats.to_dict()
@@ -937,7 +1035,7 @@ class LLMProofSkill(ProofSkill):
                 last_frontier,
                 key=lambda n: n.score.get(self.perf_global_config.primary_dimension, 0.0)
                 if n.score else 0.0
-            )
+)
             return best_node.script
         return None
 
@@ -946,7 +1044,7 @@ class LLMProofSkill(ProofSkill):
         current_prop: str,
         obligation: Dict[str, Any],
         context: Dict[str, Any]
-    ) -> Optional[str]:
+) -> Optional[str]:
         """Look for a previously proven property with a similar name and try to adapt its proof."""
         if not current_prop:
             return None
@@ -988,7 +1086,7 @@ class LLMProofSkill(ProofSkill):
                     proof, theorem_name, theorem_stmt,
                     condition_subst=condition_subst,
                     operation_subst=operation_subst,
-                )
+)
                 if adapted:
                     return adapted
 
@@ -998,7 +1096,7 @@ class LLMProofSkill(ProofSkill):
         self,
         obligation: Dict[str, Any],
         context: Dict[str, Any]
-    ) -> Optional[str]:
+) -> Optional[str]:
         """Extract a concise string describing the model‑checking counterexample."""
         mc_trace = context.get("mc_trace")
         if mc_trace is None:
@@ -1041,7 +1139,7 @@ class LLMProofSkill(ProofSkill):
         obligation: Dict[str, Any],
         context: Dict[str, Any],
         backend: str,
-    ) -> ProofResult:
+) -> ProofResult:
         if not backend.startswith("koi"):
             return ProofResult(success=False, error_message="Stronger LLM only supported for Koika")
 
@@ -1077,9 +1175,9 @@ class LLMProofSkill(ProofSkill):
                 tactic_hints=(
                     obligation.get("metadata", {}).get("coq_tactic_hints", [])
                     if isinstance(obligation, dict) else []
-                ),
+),
                 initial_script=None,
-            )
+)
             return result
         except Exception as e:
             logger.exception("Stronger LLM proof attempt raised an exception")
@@ -1113,11 +1211,11 @@ class LLMProofSkill(ProofSkill):
                 .get("koika", {})
                 .get("prove", {})
                 .get("rocq_mcp_path", "rocq-mcp")
-            )
+)
             if not context.get("theorem_statement") and context.get("coq_file_path"):
                 perf_ctx["theorem_statement"] = self._extract_coq_statement(
                     Path(context["coq_file_path"]), context.get("theorem_name", "")
-                )
+)
         elif backend == "acl2":
             perf_ctx["acl2_file_path"] = context.get("acl2_file_path")
             perf_ctx["theorem_name"] = context.get("theorem_name")
@@ -1127,7 +1225,7 @@ class LLMProofSkill(ProofSkill):
                 self.config.get("provers", {})
                 .get("acl2", {})
                 .get("mcp_path", "acl2-mcp")
-            )
+)
         if context.get("mc_trace"):
             perf_ctx["mc_trace"] = context["mc_trace"]
         if context.get("initial_script"):
@@ -1143,7 +1241,7 @@ class LLMProofSkill(ProofSkill):
             if theorem_name:
                 pattern = re.compile(
                     rf"Theorem\s+{re.escape(theorem_name)}\s*:\s*([^.]*)\.", re.DOTALL
-                )
+)
                 match = pattern.search(content)
                 if match:
                     return match.group(1).strip()
@@ -1166,7 +1264,7 @@ class LLMProofSkill(ProofSkill):
                 "The step constructor contains a deeply nested if-then-else chain "
                 f"(depth {self._analysis.max_ite_depth}). "
                 "Consider using 'destruct' on the condition variables to split into cases."
-            )
+)
         if self._analysis.num_step_constructors == 1 and self._analysis.max_ite_depth >= 1:
             hints.append(
                 "The step relation contains an if-then-else whose condition is a "
@@ -1177,13 +1275,13 @@ class LLMProofSkill(ProofSkill):
                 "then rewrite the boolean hypothesis to arithmetic with "
                 "`apply Nat.ltb_lt in Hc` / `Nat.ltb_ge` / `Nat.leb_le` / `Nat.leb_gt`, "
                 "and close each branch with `simpl; lia`."
-            )
+)
         if self._analysis.suggests_lemma_introduction and self._analysis.duplicated_subexpressions:
             hints.append(
                 "Duplicated subexpressions detected: "
                 + "; ".join(self._analysis.duplicated_subexpressions)
                 + ". A helper lemma could simplify the proof."
-            )
+)
 
         if self._analysis.num_step_constructors == 2 and self._analysis.step_constructor_names:
             names = self._analysis.step_constructor_names
@@ -1195,14 +1293,14 @@ class LLMProofSkill(ProofSkill):
                 f"- For `{names[0]}`, the induction hypothesis (IH) can be applied directly.\n"
                 f"- For `{names[1]}`, the goal simplifies trivially with `simpl` "
                 "and can be closed by `reflexivity` (the property is definitionally true)."
-            )
+)
         elif self._analysis.num_step_constructors == 2:
             hints.append(
                 "The step relation has exactly two constructors. "
                 "After induction on reachability, use `inversion Hstep; subst; clear Hstep` "
                 "to split into two sub‑goals.  The first sub‑goal can be handled by the "
                 "induction hypothesis; the second likely simplifies to reflexivity."
-            )
+)
 
         return "\n".join(hints) if hints else None
 

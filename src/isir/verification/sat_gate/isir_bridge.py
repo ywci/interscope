@@ -2,8 +2,7 @@
 #
 # Thin ISIR -> SAT-gating bridge: extract signal widths, the combined
 # next-state transition, and the `always` invariant operand from a parsed
-# SpecModule.  No solver/encoder imports beyond the backend-agnostic core.
-"""ISIR frontend: SpecModule -> widths / transitions / invariants."""
+# SpecModule. No solver/encoder imports beyond the backend-agnostic core.
 
 import re
 from typing import Dict, List, Optional, Tuple

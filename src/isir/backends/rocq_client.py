@@ -45,7 +45,7 @@ class RocqClient:
         load_paths: Optional[List[Tuple[str, str, str]]] = None,
         coqc_path: Optional[str] = None,
         on_notification: Optional[Callable[[str, Dict[str, Any]], None]] = None
-    ):
+):
         """
         Args:
             rocq_mcp_path: Path or command to the rocq‑mcp executable.
@@ -134,14 +134,14 @@ class RocqClient:
                 text=True,
                 bufsize=1,
                 cwd=str(self.cwd) if self.cwd else None
-            )
+)
             self._reader_thread = threading.Thread(
                 target=self._read_responses, daemon=True
-            )
+)
             self._reader_thread.start()
             self._stderr_thread = threading.Thread(
                 target=self._drain_stderr, daemon=True
-            )
+)
             self._stderr_thread.start()
             self._send_request("initialize", {
                 "protocolVersion": "0.0.1",
@@ -194,7 +194,7 @@ class RocqClient:
                 text=True,
                 timeout=self.timeout,
                 cwd=str(workspace),
-            )
+)
             if result.returncode == 0:
                 logger.info("coqc fallback succeeded.")
                 return True
@@ -230,7 +230,7 @@ class RocqClient:
         logger.info(
             "Compiled artefacts for '%s' are missing; running coqc.",
             file_path.name,
-        )
+)
         return self._coqc_fallback(file_path, workspace)
 
     def load_file(self, file_path: Path, workspace: Optional[Path] = None) -> bool:
@@ -266,7 +266,7 @@ class RocqClient:
         file_path: Path,
         theorem_name: str,
         workspace: Optional[Path] = None,
-    ) -> bool:
+) -> bool:
         """
         Return True if rocq‑mcp can successfully start a proof session for
         *file_path* in *workspace*.  This is intended to be called before
@@ -305,7 +305,7 @@ class RocqClient:
         workspace: Optional[Path] = None,
         keep_vo: bool = True,
         retry_with_coqc: bool = True,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         file_path = file_path.resolve()
         if workspace is not None:
             workspace = workspace.resolve()
@@ -333,7 +333,7 @@ class RocqClient:
         theorem_name: str,
         workspace: Optional[Path] = None,
         retry_with_coqc: bool = True,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         file_path = file_path.resolve()
         if workspace is not None:
             workspace = workspace.resolve()
@@ -360,7 +360,7 @@ class RocqClient:
         file_path: Path,
         theorem_name: str,
         workspace: Optional[Path] = None
-    ) -> Tuple[str, List[str]]:
+) -> Tuple[str, List[str]]:
         """
         Start a proof session for *file_path* and *theorem_name*.
 
@@ -380,7 +380,7 @@ class RocqClient:
             if not self.ensure_compiled(file_path, workspace):
                 raise RocqEnvironmentError(
                     "Could not create compiled artefacts for the Coq file."
-                )
+)
 
         params = {"file": str(file_path), "theorem": theorem_name}
         # Include workspace if provided (the server may use it for context,
@@ -399,7 +399,7 @@ class RocqClient:
             if self._looks_like_environment_error(error):
                 raise RocqEnvironmentError(
                     f"rocq_start environment error: {error}"
-                )
+)
             raise RocqClientError(f"rocq_start error: {error}")
 
         content = resp.get("content", [])
@@ -558,7 +558,7 @@ class RocqClient:
         pattern = re.compile(
             r'File\s+"(.*?)",\s*line\s+(\d+),\s*characters\s+(\d+)-(\d+):\s*\n?(.*?)(?=\nFile\s+"|$)',
             re.DOTALL,
-        )
+)
         matches = list(pattern.finditer(error_str))
         if matches:
             for match in matches:

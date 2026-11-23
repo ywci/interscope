@@ -264,6 +264,8 @@ A **first‑class** link between a property and its verification artifacts, supp
 
 When `backend: kōika`, the lowering pass (`isir → kōika`) generates a Coq theorem and a proof skeleton. When `backend: acl2`, it generates an ACL2 `defthm` and supporting `defun-sk` or `defchoose` forms.
 
+A `theorem_proving` obligation over an `always` property may be pre‑filtered by the **SAT‑gate** (`src/isir/verification/sat_gate/`, see `docs/ARCH.md` §SAT‑gating): it bit‑blasts `BASE_ENTAIL` + `IND_STEP` and, when the pair is UNSAT (certified induction), short‑circuits the obligation with status `SAT_GATED` before the LLM/prover runs.  The gate is enabled with `--sat-gate` (CLI) or `sat_gating_enabled: true` (config).
+
 **PERF (Proof tree Exploration with Reflective Feedback)** can be enabled globally or per‑obligation.  
 When PERF is active, the proof search is guided by a tree‑based beam search with multi‑dimensional scoring.  
 Per‑obligation overrides are placed in `metadata.perf`:

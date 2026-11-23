@@ -27,15 +27,15 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir validate-config",
         description="Validate the InterScope configuration file (conf/config.yaml)."
-    )
+)
     parser.add_argument(
         "--config", "-c", type=str, default=None,
         help="Path to config.yaml (default: <project_root>/conf/config.yaml)"
-    )
+)
     parser.add_argument(
         "--debug", action="store_true",
         help="Enable debug logging"
-    )
+)
     return parser
 
 
@@ -85,7 +85,7 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
             "To fix, choose one of the following:\n"
             "  1. Run PERF: Set 'use_proof_library: false' in the koika prover config.\n"
             "  2. Use cached proofs: Set 'perf.enabled: false' in the proof config."
-        )
+)
 
     if perf_enabled:
         llm_cfg = config.get("llm", {})
@@ -97,20 +97,20 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
                 "PERF is enabled but 'llm.provider' is not set.\n"
                 "PERF requires an LLM for generation and reflection.\n"
                 "Please set 'llm.provider' (e.g., 'ollama', 'openai', 'anthropic')."
-            )
+)
 
         if not model:
             warnings.append(
                 "PERF is enabled but 'llm.model' is not set.\n"
                 "Please set 'llm.model' (e.g., 'qwen3.5:27b', 'gpt-4')."
-            )
+)
 
         supported = {"ollama", "openai", "anthropic", "deepseek"}
         if provider and provider not in supported:
             warnings.append(
                 f"Unsupported LLM provider '{provider}'. "
                 f"Supported providers: {', '.join(sorted(supported))}"
-            )
+)
 
         if provider in ("openai", "anthropic", "deepseek"):
             from isir.backends.llm_client import resolve_api_key
@@ -124,7 +124,7 @@ def validate_config(config_path: Path, verbose: bool = True) -> bool:
                     f"LLM provider '{provider}' requires an API key, but neither "
                     f"'llm.api_key' nor the '{env_name}' environment variable is set.\n"
                     f"Set {env_name} or llm.api_key in config.yaml."
-                )
+)
 
     if perf_enabled:
         perf_cfg = config.get("proof", {}).get("perf", {})

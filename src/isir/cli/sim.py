@@ -27,7 +27,7 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir sim",
         description="Compile a ISIR design to RTL and run Verilator simulation."
-    )
+)
     parser.add_argument("input", type=str, help="Path to the .isir file")
     parser.add_argument("--out-dir", "-o", type=str, default=None,
                         help="Output directory for generated files (default: build/<design>/sim)")
@@ -103,7 +103,7 @@ def sim_spec(args: argparse.Namespace) -> int:
             config=config,
             verilator_path=args.verilator_path,
             koika_path=args.koika_path
-        )
+)
         logger.info(f"Simulation finished. VCD: {report.vcd_path}")
 
         if args.output_format == "json":
@@ -119,7 +119,7 @@ def sim_spec(args: argparse.Namespace) -> int:
             design_name=design_name,
             success=False,
             error_message=str(e),
-        )
+)
         if args.output_format == "json":
             print(json.dumps(report.to_dict(), indent=2))
         else:
@@ -131,7 +131,7 @@ def sim_spec(args: argparse.Namespace) -> int:
             design_name=design_name,
             success=False,
             error_message=str(e),
-        )
+)
         if args.output_format == "json":
             print(json.dumps(report.to_dict(), indent=2))
         else:

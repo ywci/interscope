@@ -32,24 +32,36 @@ module:
     - name: mshr0
       module: "examples/mshr/mshr.isir"
       lift_properties: false
-      port_map: {alloc_valid: alloc_valid, id: id, addr: addr, data: data, release: release0}
+      port_map:
+        alloc_valid: alloc_valid
+        id: id
+        addr: addr
+        data: data
+        release: release0
     - name: mshr1
       module: "examples/mshr/mshr.isir"
       lift_properties: false
-      port_map: {alloc_valid: alloc_valid, id: id, addr: addr, data: data, release: release1}
+      port_map:
+        alloc_valid: alloc_valid
+        id: id
+        addr: addr
+        data: data
+        release: release1
     - name: arb
       module: "examples/arbiter/arbiter.isir"
       lift_properties: false
-      port_map: {req0_valid: alloc_valid, req1_valid: alloc_valid}
+      port_map:
+        req0_valid: alloc_valid
+        req1_valid: alloc_valid
   properties:
     - name: arb_grants_on_alloc
       kind: transition
       expression:
         kind: transition
         rule: arb_arbitrate
-        operand: (implies alloc_valid (eq (read arb_grant_valid) true))
+        operand: (implies alloc_valid (eq (read arb_grant_valid) True))
   proof_obligations:
     - property: arb_grants_on_alloc
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

@@ -22,10 +22,10 @@ module:
       type: "bool"
     - name: req_addr
       direction: input
-      type: "bits<4>"   # physical address (tag)
+      type: "bits<4>"
     - name: req_vpn
       direction: input
-      type: "bits<2>"   # virtual index
+      type: "bits<2>"
     - name: req_data
       direction: input
       type: "bits<8>"
@@ -36,12 +36,16 @@ module:
       direction: input
       type: "bool"
   components:
-    # MSHR (miss-status holding register): allocated internally on a miss,
-    # released by the fill response.
     - name: mshr
       module: "examples/mshr_comp/mshr_comp.isir"
       lift_properties: false
-      port_map: {alloc_valid: miss_valid, id: 0, addr: req_addr, data: req_data, release0: mshr_release0, release1: mshr_release1}
+      port_map:
+        alloc_valid: miss_valid
+        id: 0
+        addr: req_addr
+        data: req_data
+        release0: mshr_release0
+        release1: mshr_release1
   state:
     - name: s0
       kind: register
@@ -65,7 +69,10 @@ module:
       initial: false
     - name: mem
       kind: memory
-      type: { type: "memory", elem: "bits<8>", depth: 16 }
+      type:
+        type: memory
+        elem: "bits<8>"
+        depth: 16
     - name: miss_valid
       kind: register
       type: "bool"
@@ -76,24 +83,34 @@ module:
       initial: 0
   functions:
     - name: has_line
-      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      params:
+        - name: s
+          type: "bits<2>"
+        - name: a
+          type: "bits<4>"
+        - name: ra
+          type: "bits<4>"
       return: "bool"
       body: (and (neq s 0) (eq a ra))
   rules:
     - name: write_hit0
-      condition: (and (and (eq req_core $me) req_write) (has_line (read s0) (read a0) req_addr))
+      condition: (and (and (eq req_core $me) req_write) (has_line (read s0) (read
+        a0) req_addr))
       action:
         - (write s0 3)
         - (write lru true)
         - (mem_write mem req_addr req_data)
     - name: write_hit1
-      condition: (and (and (and (eq req_core $me) req_write) (not (has_line (read s0) (read a0) req_addr))) (has_line (read s1) (read a1) req_addr))
+      condition: (and (and (and (eq req_core $me) req_write) (not (has_line (read
+        s0) (read a0) req_addr))) (has_line (read s1) (read a1) req_addr))
       action:
         - (write s1 3)
         - (write lru false)
         - (mem_write mem req_addr req_data)
     - name: write_miss0
-      condition: (and (and (and (and (eq req_core $me) req_write) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (not (read lru)))
+      condition: (and (and (and (and (eq req_core $me) req_write) (not (has_line (read
+        s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (not
+        (read lru)))
       action:
         - (write s0 3)
         - (write a0 req_addr)
@@ -102,7 +119,9 @@ module:
         - (write miss_valid true)
         - (write miss_addr req_addr)
     - name: write_miss1
-      condition: (and (and (and (and (eq req_core $me) req_write) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (read lru))
+      condition: (and (and (and (and (eq req_core $me) req_write) (not (has_line (read
+        s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (read
+        lru))
       action:
         - (write s1 3)
         - (write a1 req_addr)
@@ -111,33 +130,41 @@ module:
         - (write miss_valid true)
         - (write miss_addr req_addr)
     - name: read_miss0
-      condition: (and (and (and (and (eq req_core $me) (not req_write)) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (not (read lru)))
+      condition: (and (and (and (and (eq req_core $me) (not req_write)) (not (has_line
+        (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr)))
+        (not (read lru)))
       action:
         - (write s0 1)
         - (write a0 req_addr)
         - (write miss_valid true)
         - (write miss_addr req_addr)
     - name: read_miss1
-      condition: (and (and (and (and (eq req_core $me) (not req_write)) (not (has_line (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr))) (read lru))
+      condition: (and (and (and (and (eq req_core $me) (not req_write)) (not (has_line
+        (read s0) (read a0) req_addr))) (not (has_line (read s1) (read a1) req_addr)))
+        (read lru))
       action:
         - (write s1 1)
         - (write a1 req_addr)
         - (write miss_valid true)
         - (write miss_addr req_addr)
     - name: snoop_inv0
-      condition: (and (and (neq req_core $me) req_write) (has_line (read s0) (read a0) req_addr))
+      condition: (and (and (neq req_core $me) req_write) (has_line (read s0) (read
+        a0) req_addr))
       action:
         - (write s0 0)
     - name: snoop_inv1
-      condition: (and (and (neq req_core $me) req_write) (has_line (read s1) (read a1) req_addr))
+      condition: (and (and (neq req_core $me) req_write) (has_line (read s1) (read
+        a1) req_addr))
       action:
         - (write s1 0)
     - name: snoop_dg0
-      condition: (and (and (neq req_core $me) (not req_write)) (has_line (read s0) (read a0) req_addr))
+      condition: (and (and (neq req_core $me) (not req_write)) (has_line (read s0)
+        (read a0) req_addr))
       action:
         - (write s0 1)
     - name: snoop_dg1
-      condition: (and (and (neq req_core $me) (not req_write)) (has_line (read s1) (read a1) req_addr))
+      condition: (and (and (neq req_core $me) (not req_write)) (has_line (read s1)
+        (read a1) req_addr))
       action:
         - (write s1 1)
   properties:
@@ -145,10 +172,114 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (and (and (ge (read s0) 0) (le (read s0) 3))
-                      (and (ge (read s1) 0) (le (read s1) 3)))
+        operand: (and (and (ge (read s0) 0) (le (read s0) 3)) (and (ge (read s1) 0)
+          (le (read s1) 3)))
+    - name: way0_write_hit_updates_line
+      kind: transition
+      expression:
+        kind: transition
+        rule: write_hit0
+        operand: (and (eq (read s0) 3) (eq (read lru) True))
+    - name: way1_write_hit_updates_line
+      kind: transition
+      expression:
+        kind: transition
+        rule: write_hit1
+        operand: (and (eq (read s1) 3) (eq (read lru) False))
+    - name: way0_write_miss_allocates_line
+      kind: transition
+      expression:
+        kind: transition
+        rule: write_miss0
+        operand: (and (eq (read s0) 3) (and (eq (read a0) req_addr) (and (eq (read
+          lru) True) (and (eq (read miss_valid) True) (eq (read miss_addr) req_addr)))))
+    - name: way1_write_miss_allocates_line
+      kind: transition
+      expression:
+        kind: transition
+        rule: write_miss1
+        operand: (and (eq (read s1) 3) (and (eq (read a1) req_addr) (and (eq (read
+          lru) False) (and (eq (read miss_valid) True) (eq (read miss_addr) req_addr)))))
+    - name: way0_read_miss_allocates_line
+      kind: transition
+      expression:
+        kind: transition
+        rule: read_miss0
+        operand: (and (eq (read s0) 1) (and (eq (read a0) req_addr) (and (eq (read
+          miss_valid) True) (eq (read miss_addr) req_addr))))
+    - name: way1_read_miss_allocates_line
+      kind: transition
+      expression:
+        kind: transition
+        rule: read_miss1
+        operand: (and (eq (read s1) 1) (and (eq (read a1) req_addr) (and (eq (read
+          miss_valid) True) (eq (read miss_addr) req_addr))))
+    - name: way0_snoop_invalidates
+      kind: transition
+      expression:
+        kind: transition
+        rule: snoop_inv0
+        operand: (eq (read s0) 0)
+    - name: way1_snoop_invalidates
+      kind: transition
+      expression:
+        kind: transition
+        rule: snoop_inv1
+        operand: (eq (read s1) 0)
+    - name: way0_snoop_downgrades
+      kind: transition
+      expression:
+        kind: transition
+        rule: snoop_dg0
+        operand: (eq (read s0) 1)
+    - name: way1_snoop_downgrades
+      kind: transition
+      expression:
+        kind: transition
+        rule: snoop_dg1
+        operand: (eq (read s1) 1)
   proof_obligations:
+    - property: way0_write_hit_updates_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way1_write_hit_updates_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way0_write_miss_allocates_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way1_write_miss_allocates_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way0_read_miss_allocates_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way1_read_miss_allocates_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way0_snoop_invalidates
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way1_snoop_invalidates
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way0_snoop_downgrades
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: way1_snoop_downgrades
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: states_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

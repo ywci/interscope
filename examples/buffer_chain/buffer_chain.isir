@@ -48,8 +48,8 @@ module:
     - property: bufA_passes_d0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: bufB_passes_wire0
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

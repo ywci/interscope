@@ -200,7 +200,7 @@ class KoikaProver:
         self.base_case_hint = prove_cfg.get(
             "base_case_hint",
             "simpl; auto with *; try lia; try nia."
-        )
+)
         self.step_case_hint = prove_cfg.get(
             "step_case_hint",
             (
@@ -213,8 +213,8 @@ class KoikaProver:
                 "4.  In each sub-goal, `simpl` and then apply the induction\n"
                 "    hypothesis `IH` (or use `auto`).\n"
                 "5.  Finish with `auto; try lia; try nia`."
-            )
-        )
+)
+)
 
         self.skeleton_step_tactics: List[str] = prove_cfg.get("skeleton_step_tactics", [])
 
@@ -225,10 +225,10 @@ class KoikaProver:
         self.coqc_path = shutil.which("coqc") or "coqc"
         self.use_proof_library = config.get("provers", {}).get("koika", {}).get(
             "use_proof_library", True
-        )
+)
         self.use_mc_lemmas = config.get("provers", {}).get("koika", {}).get(
             "use_mc_lemmas", False
-        )
+)
 
         self.spec_module = None
         self.structural_hints: Optional[str] = None
@@ -292,7 +292,7 @@ class KoikaProver:
             logger.warning(
                 "Deterministic script preparation introduced structural issues: %s",
                 "; ".join(critical_issues),
-            )
+)
 
         return script
 
@@ -321,7 +321,7 @@ class KoikaProver:
                 capture_output=True,
                 text=True,
                 timeout=30,
-            )
+)
             if result.returncode == 0:
                 logger.debug("Prelude validation succeeded.")
                 self._prelude_validated = True
@@ -330,7 +330,7 @@ class KoikaProver:
                 logger.warning(
                     "Prelude validation failed: %s",
                     result.stderr[:500],
-                )
+)
                 return False
         except Exception as e:
             logger.warning("Prelude validation raised exception: %s", e)
@@ -360,7 +360,7 @@ class KoikaProver:
                 logger.warning(
                     "Skipping prelude injection because the prelude failed validation. "
                     "The existing Coq file will be used as-is."
-                )
+)
                 return
 
             logger.info("Injecting standard prelude into %s", coq_file.name)
@@ -389,7 +389,7 @@ class KoikaProver:
             logger.info(
                 "Missing compiled artefacts for imports: %s. Recompiling.",
                 ", ".join(missing_imports)
-            )
+)
             if self._compile_with_coqc(coq_file, workspace):
                 imports = self._extract_imports(coq_file)
                 missing = [imp for imp in imports
@@ -398,14 +398,14 @@ class KoikaProver:
                     logger.warning(
                         "Some imported modules still lack compiled artefacts: %s",
                         ", ".join(missing)
-                    )
+)
                 return True
             return False
 
         logger.info(
             "Compiled artefacts for '%s' are missing; compiling with coqc.",
             coq_file.name
-        )
+)
         if self._compile_with_coqc(coq_file, workspace):
             for imp in self._extract_imports(coq_file):
                 if not (workspace / f"{imp}.vo").exists():
@@ -430,7 +430,7 @@ class KoikaProver:
         pattern = re.compile(
             r"^\s*Require\s+(?:Import|Export)\s+(.*?)\.",
             re.MULTILINE | re.DOTALL
-        )
+)
         for match in pattern.finditer(content):
             for name in match.group(1).strip().split():
                 if name and name not in imports:
@@ -449,14 +449,14 @@ class KoikaProver:
                 cwd=abs_workspace,
                 server_args=["--workspace", str(abs_workspace)],
                 load_paths=[(str(abs_workspace), "Test", "R")],
-            )
+)
             try:
                 self._rocq.start()
             except RocqClientError as e:
                 logger.warning(
                     "Failed to start rocq-mcp: %s. Disabling rocq-mcp for this session.",
                     e
-                )
+)
                 self._rocq_broken = True
                 self._rocq = None
                 return None
@@ -473,7 +473,7 @@ class KoikaProver:
         coq_file: Path,
         theorem_name: str,
         workspace: Path
-    ) -> Tuple[str, List[str]]:
+) -> Tuple[str, List[str]]:
         try:
             return rocq.start_session(coq_file, theorem_name, workspace=workspace)
         except RocqClientError as e:
@@ -482,7 +482,7 @@ class KoikaProver:
                 logger.warning(
                     "rocq-mcp failed to start session: %s. Recompiling with coqc and retrying.",
                     e
-                )
+)
                 if self._compile_with_coqc(coq_file, workspace):
                     logger.info("Recompiled successfully; retrying session.")
                     try:
@@ -491,7 +491,7 @@ class KoikaProver:
                         logger.error(
                             "Second rocq_start attempt still failed: %s. Disabling rocq-mcp.",
                             e2
-                        )
+)
                         self._rocq_broken = True
                         raise
                 else:
@@ -521,13 +521,13 @@ class KoikaProver:
             m = re.search(
                 rf'^(?:Theorem|Lemma) {re.escape(name)}\b.*?(?:Qed\.|Admitted\.)',
                 content, re.MULTILINE | re.DOTALL,
-            )
+)
             if m:
                 content = (
                     content[:m.end()]
                     + f"\nHint Resolve {name} : core.\n"
                     + content[m.end():]
-                )
+)
                 injected += 1
         if injected:
             logger.info("Injecting %d shared lemma hint(s) into %s", injected, coq_file.name)
@@ -537,12 +537,24 @@ class KoikaProver:
         if not self.use_mc_lemmas or self.spec_module is None:
             return
 
+        # The IC3 invariants injected here become `Admitted` lemmas justified
+        # only by external IC3 evidence — an unproved axiom beyond the declared
+        # spec axioms.  This is a legacy ablation; the compliant route is to
+        # harvest these as soft `ic3_mined` hints through the SAT-gate hint
+        # routing, which requires an ITP proof plus T3 correspondence before any
+        # permanent admission.
+        logger.warning(
+            "use_mc_lemmas injects IC3 invariants as Admitted lemmas (unproved "
+            "axioms); this is a legacy path and should be routed through the "
+            "SAT-gate hint admission instead."
+        )
+
         try:
             from isir.evidence.registry import EvidenceRegistry
             from isir.lowering.isir_to_koika import (
                 _expr_to_coq,
                 _get_coq_type,
-            )
+)
         except ImportError as e:
             logger.warning("Could not import dependencies for MC lemma injection: %s", e)
             return
@@ -555,7 +567,7 @@ class KoikaProver:
             design_name=design_name,
             engine="IC3",
             limit=1000,
-        )
+)
         if not mc_entries:
             logger.info("No MC-proved lemmas to inject for design '%s'.", design_name)
             return
@@ -580,7 +592,7 @@ class KoikaProver:
 
         thm_pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+)", re.DOTALL
-        )
+)
         match = thm_pattern.search(content)
         if not match:
             logger.warning("Could not locate theorem '%s' in file for lemma injection.", theorem_name)
@@ -594,7 +606,7 @@ class KoikaProver:
             prop_op = next(
                 (p for p in self.spec_module.property_ops if p.prop_name == prop_name),
                 None,
-            )
+)
             if not prop_op:
                 continue
 
@@ -604,7 +616,7 @@ class KoikaProver:
                 operand_parsed = parse_sexpr(operand) if isinstance(operand, str) else operand
                 coq_stmt = _expr_to_coq(
                     operand_parsed, state_types, input_types, memory_names, as_prop=True
-                )
+)
             except Exception as e:
                 logger.warning("Could not convert property '%s' to Coq: %s", prop_name, e)
                 continue
@@ -623,7 +635,7 @@ class KoikaProver:
                 f"Lemma {lemma_name} : forall (s : state) (inputs : inputs), "
                 f"reachable s -> ({coq_stmt}).\n"
                 f"Proof. Admitted.  (* proved by model checking *)\n"
-            )
+)
 
             content = content[:insert_pos] + lemma_text + "\n" + content[insert_pos:]
             insert_pos += len(lemma_text) + 1
@@ -636,7 +648,7 @@ class KoikaProver:
                 lemmas_added,
                 theorem_name,
                 len(mc_entries),
-            )
+)
         else:
             logger.info("No MC-proved lemmas could be injected for '%s'.", theorem_name)
 
@@ -650,7 +662,7 @@ class KoikaProver:
             pattern = re.compile(
                 rf"Theorem\s+{re.escape(theorem_name)}\s*:\s*(.*?)\.",
                 re.DOTALL,
-            )
+)
             match = pattern.search(content)
             if not match:
                 return set()
@@ -678,7 +690,7 @@ class KoikaProver:
         structural_hints: Optional[str] = None,
         initial_script: Optional[str] = None,
         shared_lemmas: Optional[List[str]] = None,
-    ) -> ProofResult:
+) -> ProofResult:
         start_time = time.time()
         logger.info("Attempting proof for '%s' (file: %s)", theorem_name, coq_file)
 
@@ -708,7 +720,7 @@ class KoikaProver:
                 duration=duration,
                 backend="koika",
                 metadata={"automation": "pre-proven"}
-            )
+)
 
         # 1. Initial script (if provided)
         if initial_script is not None:
@@ -723,7 +735,7 @@ class KoikaProver:
                     duration=duration,
                     backend="koika",
                     metadata={"automation": "initial_script"}
-                )
+)
 
         # 2. Proof library
         if self.use_proof_library:
@@ -737,13 +749,13 @@ class KoikaProver:
                     duration=duration,
                     backend="koika",
                     metadata={"automation": "library"}
-                )
+)
 
         # 3. Interactive proof (skeleton, reflection, LLM loop) – only if enabled
         if self.use_rocq_mcp and not self._rocq_broken:
             result, _, _ = self._try_interactive_proof(
                 coq_file, theorem_name, tactic_hints, structural_hints=hints
-            )
+)
             if result is not None and result.get("success"):
                 duration = time.time() - start_time
                 automation = result.get("automation", "interactive")
@@ -754,7 +766,7 @@ class KoikaProver:
                     backend="koika",
                     iterations=result.get("iterations"),
                     metadata={"automation": automation}
-                )
+)
         else:
             logger.info("rocq-mcp disabled or broken; skipping interactive proof.")
 
@@ -771,7 +783,7 @@ class KoikaProver:
                 duration=duration,
                 backend="koika",
                 metadata={"automation": "coqc_verify"}
-            )
+)
 
         # 4.5. Deterministic skeleton proof (reachable induction + `eauto` over
         # the shared `Hint Resolve` bound lemmas), tried BEFORE the LLM invariant.
@@ -790,7 +802,7 @@ class KoikaProver:
                 duration=duration,
                 backend="koika",
                 metadata={"automation": "recursive_skeleton"}
-            )
+)
 
         # 5. LLM full-proof generation (with structural hints, coqc validation)
         #    First, try LLM-proposed loop invariants to unblock the skeleton.
@@ -807,11 +819,11 @@ class KoikaProver:
                     duration=duration,
                     backend="koika",
                     metadata={"automation": "llm_invariant"}
-                )
+)
 
         llm_result = self._attempt_llm_proof_generation(
             coq_file, theorem_name, structural_hints=hints, initial_script=initial_script
-        )
+)
         if llm_result is not None:
             proof_script, attempts_used = llm_result
             duration = time.time() - start_time
@@ -825,7 +837,7 @@ class KoikaProver:
                     "llm_attempts": attempts_used,
                     "max_attempts": self.max_repair,
                 }
-            )
+)
 
         duration = time.time() - start_time
         logger.error("All proof attempts exhausted for '%s'.", theorem_name)
@@ -839,14 +851,14 @@ class KoikaProver:
                 "llm_attempts": self.max_repair,
                 "max_attempts": self.max_repair,
             }
-        )
+)
 
     def _try_initial_script(
         self,
         coq_file: Path,
         theorem_name: str,
         initial_script: str,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         try:
             original_content = coq_file.read_text()
         except Exception as e:
@@ -854,7 +866,7 @@ class KoikaProver:
 
         thm_pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
-        )
+)
         match = thm_pattern.search(original_content)
         if not match:
             return {"success": False, "error": "Theorem not found in Coq file"}
@@ -878,7 +890,7 @@ class KoikaProver:
         theorem_name: str,
         tactic_hints: Optional[List[str]],
         structural_hints: Optional[str] = None,
-    ) -> Tuple[Optional[Dict[str, Any]], Optional[List[str]], Optional[List[str]]]:
+) -> Tuple[Optional[Dict[str, Any]], Optional[List[str]], Optional[List[str]]]:
         coq_file = coq_file.resolve()
         workspace = self._workspace_for(coq_file)
         self._ensure_project_file(workspace)
@@ -903,7 +915,7 @@ class KoikaProver:
         # 2. Skeleton reflection
         reflected = self._request_skeleton_reflection(
             coq_file, theorem_name, structural_hints=structural_hints
-        )
+)
         if reflected:
             logger.info("Skeleton reflection proved '%s'.", theorem_name)
             return reflected, None, None
@@ -913,7 +925,7 @@ class KoikaProver:
         try:
             state_id, goals = self._start_session_with_fallback(
                 rocq, coq_file, theorem_name, workspace
-            )
+)
         except RocqClientError as e:
             if "invalid path" in str(e).lower() or "scanning" in str(e).lower():
                 logger.warning("Workspace error; falling back to rocq_verify.")
@@ -994,7 +1006,7 @@ class KoikaProver:
                     step_case_hint=self.step_case_hint,
                     available_lemmas=available_lemmas if available_lemmas else None,
                     structural_hints=structural_hints,
-                )
+)
                 logger.debug("Step %d LLM prompt:\n%s", step + 1, prompt)
                 candidate_tactics = extract_tactics_from_response(self.llm.generate(prompt))
 
@@ -1082,7 +1094,7 @@ class KoikaProver:
                         logger.warning(
                             "Dead-end detected: tactic '%s' led to a loop (goal seen %d times).",
                             tactic[:80], count + 1
-                        )
+)
                         if prev_state_id is not None:
                             try:
                                 undo_res = rocq.check(state_id, "Undo.")
@@ -1095,7 +1107,7 @@ class KoikaProver:
                         applied_tactics.append(f"FAILED: {tactic} - dead-end loop")
                         recent_errors.append(
                             f"Tactic '{tactic[:80]}' caused a proof loop. Change approach."
-                        )
+)
                         failed_tactics.add(tactic_normalized)
                         continue
 
@@ -1139,7 +1151,7 @@ class KoikaProver:
                     logger.info("Triggering strategy reflection after %d consecutive failures.", consecutive_failures)
                     new_tactics = self._request_strategy_reflection(
                         theorem_name, goals, applied_tactics
-                    )
+)
                     if new_tactics:
                         failed_tactics.clear()
                         goal_hashes_seen.clear()
@@ -1173,7 +1185,7 @@ class KoikaProver:
         try:
             state_id, goals = self._start_session_with_fallback(
                 rocq, coq_file, theorem_name, workspace
-            )
+)
         except RocqClientError:
             return None
         if not goals:
@@ -1268,7 +1280,7 @@ class KoikaProver:
         coq_file: Path,
         theorem_name: str,
         structural_hints: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+) -> Optional[Dict[str, Any]]:
         if not self.skeleton_reflection:
             return None
 
@@ -1281,7 +1293,7 @@ class KoikaProver:
 
         thm_pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
-        )
+)
         match = thm_pattern.search(original_content)
         if not match:
             logger.error("Could not locate theorem '%s' (with Admitted) in file for reflection.")
@@ -1299,7 +1311,7 @@ class KoikaProver:
         try:
             state_id, goals = self._start_session_with_fallback(
                 rocq, coq_file, theorem_name, workspace
-            )
+)
         except RocqClientError as e:
             logger.warning("Could not start session for reflection: %s", e)
             return None
@@ -1315,7 +1327,7 @@ class KoikaProver:
             goals=goals,
             available_lemmas=available_lemmas,
             structural_hints=structural_hints
-        )
+)
         logger.debug("Skeleton reflection prompt: %s", prompt)
         try:
             response = self.llm.generate(prompt)
@@ -1369,7 +1381,7 @@ class KoikaProver:
         last_errors: Optional[List[str]] = None,
         structural_hints: Optional[str] = None,
         initial_script: Optional[str] = None,
-    ) -> Optional[Tuple[str, int]]:
+) -> Optional[Tuple[str, int]]:
         logger.info("LLM full-proof generation activated for '%s'.", theorem_name)
         try:
             original_content = coq_file.read_text()
@@ -1379,7 +1391,7 @@ class KoikaProver:
 
         thm_pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
-        )
+)
         match = thm_pattern.search(original_content)
         if not match:
             logger.error("Could not locate theorem '%s' (with Admitted) in file.", theorem_name)
@@ -1406,7 +1418,7 @@ class KoikaProver:
             assumptions=None,
             previous_attempts=previous_attempts,
             structural_hints=structural_hints
-        )
+)
 
         workspace = self._workspace_for(coq_file)
         error_feedback = ""
@@ -1475,7 +1487,7 @@ class KoikaProver:
                 text=True,
                 timeout=self.proof_timeout,
                 cwd=str(workspace)
-            )
+)
         except subprocess.TimeoutExpired:
             return [{"line": "?", "char": "?", "type": "timeout", "message": "coqc timed out"}]
         except Exception as e:
@@ -1489,7 +1501,7 @@ class KoikaProver:
         pattern = re.compile(
             r'File ".*?", line (\d+), characters (\d+)-(\d+):\n(.*?)(?=\nFile "|$)',
             re.DOTALL
-        )
+)
         for match in pattern.finditer(stderr):
             line = match.group(1)
             char_start = match.group(2)
@@ -1546,7 +1558,7 @@ class KoikaProver:
         theorem_name: str,
         proof_script: str,
         workspace: Optional[Path] = None
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         self._perf_stats["total_verifier_calls"] += 1
 
         if workspace is None:
@@ -1559,7 +1571,7 @@ class KoikaProver:
 
         thm_pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
-        )
+)
         match = thm_pattern.search(original_content)
         if not match:
             return {"success": False, "error": f"Theorem '{theorem_name}' not found in file", "proof_finished": False}
@@ -1591,7 +1603,7 @@ class KoikaProver:
                 timeout=self.proof_timeout,
                 cwd=workspace,
                 server_args=["--workspace", str(workspace)],
-            )
+)
             try:
                 rocq.start()
                 verify_result = rocq.verify(tmp_file, theorem_name, workspace=workspace)
@@ -1675,6 +1687,7 @@ class KoikaProver:
     def _compile_with_coqc(self, coq_file: Path, workspace: Path) -> bool:
         cmd = [self.coqc_path, "-R", str(workspace), "Test", str(coq_file)]
         logger.info("Compiling with coqc: %s", " ".join(cmd))
+        t0 = time.time()
         try:
             result = subprocess.run(
                 cmd,
@@ -1682,11 +1695,12 @@ class KoikaProver:
                 text=True,
                 timeout=self.proof_timeout,
                 cwd=str(workspace)
-            )
+)
+            dt = time.time() - t0
             if result.returncode != 0:
-                logger.error("coqc compilation failed:\n%s", result.stderr)
+                logger.error("coqc compilation failed (%.2fs):\n%s", dt, result.stderr)
                 return False
-            logger.info("coqc compilation succeeded.")
+            logger.info("coqc compilation succeeded (%.2fs).", dt)
             return True
         except FileNotFoundError:
             logger.error("coqc not found.")
@@ -1721,7 +1735,7 @@ class KoikaProver:
                 text=True,
                 timeout=self.proof_timeout,
                 cwd=str(workspace)
-            )
+)
             return result.stderr.strip() if result.returncode != 0 else ""
         except Exception as e:
             return str(e)
@@ -1729,7 +1743,7 @@ class KoikaProver:
     def _theorem_is_closed(self, content: str, theorem_name: str) -> bool:
         pattern = re.compile(
             rf"(?:Theorem|Lemma)\s+{re.escape(theorem_name)}\s+.*?Qed\.", re.DOTALL
-        )
+)
         match = pattern.search(content)
         if not match:
             return False
@@ -1748,14 +1762,14 @@ class KoikaProver:
         pattern = re.compile(
             rf"Theorem\s+{re.escape(theorem_name)}\s+.*?\n(Proof\..*?Qed\.)",
             re.DOTALL,
-        )
+)
         match = pattern.search(content)
         if match:
             return match.group(1).strip()
         fallback = re.compile(
             rf"Theorem\s+{re.escape(theorem_name)}.*?\n(Proof\..*?Qed\.)",
             re.DOTALL,
-        )
+)
         fallback_match = fallback.search(content)
         if fallback_match:
             return fallback_match.group(1).strip()
@@ -1772,7 +1786,7 @@ class KoikaProver:
             return None
         thm_pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
-        )
+)
         match = thm_pattern.search(original_content)
         if not match:
             logger.error("Could not locate theorem '%s' in file.", theorem_name)
@@ -1805,7 +1819,7 @@ class KoikaProver:
         pattern = re.compile(
             rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)(Admitted\.|Qed\.)",
             re.DOTALL,
-        )
+)
         new_content = pattern.sub(rf"\1{new_proof}", content, count=1)
         if new_content == content:
             logger.warning("Could not locate theorem '%s' in file; appending proof.", theorem_name)
@@ -1818,7 +1832,7 @@ class KoikaProver:
         tactics_summary = "\n".join(
             f"{'✓' if not t.startswith('FAILED') else '✗'} {t}"
             for t in applied_tactics[-20:]
-        )
+)
         prompt = (
             f"You are an expert in Coq and hardware verification.\n\n"
             f"We have been trying to prove theorem `{theorem_name}` but are stuck.\n\n"
@@ -1828,7 +1842,7 @@ class KoikaProver:
             "The tactics must be complete Coq commands ending with a dot. "
             "You can suggest a full proof script (one tactic per line) or several alternative tactics. "
             "Return only the Coq tactics, one per line, without any extra commentary."
-        )
+)
         logger.debug("Reflection prompt: %s", prompt)
         try:
             response = self.llm.generate(prompt)
@@ -1843,7 +1857,7 @@ class KoikaProver:
         theorem_name: str,
         scripts: List[str],
         max_workers: int = 4,
-    ) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
         if not scripts:
             return []
         if len(scripts) == 1:
@@ -1867,7 +1881,7 @@ class KoikaProver:
 
     def _recursive_skeleton_proof(
         self, coq_file: Path, theorem_name: str, max_depth: int = 50
-    ) -> Optional[str]:
+) -> Optional[str]:
         """Deterministic, recursive, subgoal-aware skeleton proof.
 
         This is a *batch* prover (validated by ``coqc``, not rocq-mcp): it
@@ -1885,12 +1899,12 @@ class KoikaProver:
 
         theorem_pattern = re.compile(
             rf"(?:Theorem|Lemma)\s+{re.escape(theorem_name)}\s+.*?Admitted\.", re.DOTALL
-        )
+)
         match = theorem_pattern.search(original)
         if not match:
             logger.info(
                 "Recursive skeleton skipped: no Admitted block for '%s'.", theorem_name
-            )
+)
             return None
 
         # Proof-body candidates, most specific first.  Constant-field invariants
@@ -1930,13 +1944,13 @@ class KoikaProver:
                 "  all: try reflexivity.\n"
                 "  all: try (exfalso; match goal with [ H : ?b <> ?b |- _ ] => apply H; reflexivity end).\n"
                 "Qed."
-            )
+)
             candidates.append(
                 "Proof.\n"
                 "  intros.\n"
                 f"  skel {max_depth}.\n"
                 "Qed."
-            )
+)
         else:
             # Generic always/safety induction: induction on `reachable`, invert
             # the step, destruct the conjunction premise, then `eauto` (which
@@ -1950,7 +1964,7 @@ class KoikaProver:
                 "    repeat (match goal with [ H : _ /\\ _ |- _ ] => destruct H end).\n"
                 "    eauto.\n"
                 "Qed."
-            )
+)
             if const_lemmas:
                 specs = "; ".join(f"specialize ({name} _ Hr)" for name in const_lemmas)
                 candidates.append(
@@ -1964,25 +1978,25 @@ class KoikaProver:
                     "    all: (repeat (match goal with [ H : ?x = ?c |- context[?x] ] => rewrite H end);\n"
                     "          try assumption; try (simpl; lia); try nia).\n"
                     "Qed."
-                )
+)
             candidates.append(
                 "Proof.\n"
                 "  intros.\n"
                 "  solve [eauto].\n"
                 "Qed."
-            )
+)
             candidates.append(
                 "Proof.\n"
                 "  intros.\n"
                 f"  match goal with [ H : reachable _ |- _ ] => induction H; skel {max_depth} end.\n"
                 "Qed."
-            )
+)
             candidates.append(
                 "Proof.\n"
                 "  intros.\n"
                 "  solve [eauto 12].\n"
                 "Qed."
-            )
+)
 
         workspace = self._workspace_for(coq_file)
         succeeded = False
@@ -1997,7 +2011,7 @@ class KoikaProver:
                         "Hint Constructors reachable step : core.",
                         "Hint Constructors reachable step : core.\n\n" + RECURSIVE_SKELETON_LTAC,
                         1,
-                    )
+)
                 try:
                     _atomic_write(coq_file, new_content)
                 except Exception as e:
@@ -2067,7 +2081,7 @@ class KoikaProver:
 
         thm = re.search(
             rf"(?:Theorem|Lemma)\s+{re.escape(theorem_name)}\s+.*?Admitted\.", content, re.DOTALL
-        )
+)
         if not thm:
             return []
         statement = thm.group(0)
@@ -2088,7 +2102,7 @@ class KoikaProver:
             f"```coq\n{context}\n```\n\n"
             "The stuck theorem is:\n\n"
             f"```coq\n{statement}\n```\n\n"
-        )
+)
         if seed is not None:
             fn, inits = seed
             init_args = " ".join(f"({r} s)" for r in inits)
@@ -2099,7 +2113,7 @@ class KoikaProver:
                 f"Lemma <name> : forall s, reachable s -> {fn} (w1 s) (w2 s) = {fn} {init_args}.\n\n"
                 f"where `w1`, `w2` are the *working* registers that the rules "
                 f"transform until `done` (find them from the step constructors).\n\n"
-            )
+)
         prompt += (
             "Hint: if a rule sets a boolean *flag* state `F` while writing a "
             "state `Y` to a 'cleared' (non-exclusive) value, and another rule "
@@ -2107,7 +2121,7 @@ class KoikaProver:
             "at an address, propose a *conditional* invariant that links the "
             "flag to the peer being cleared, e.g.:\n\n"
             "Lemma <name> : forall s, reachable s -> F s = true -> <selector> s = <c> -> ~ (<predicate> (Y s) = true /\\ <Y_addr> s = <addr> s).\n\n"
-        )
+)
         prompt += (
             "Propose loop invariants that would help prove this theorem.  Return "
             "ONLY the invariant lemmas, one per line, in this exact form:\n\n"
@@ -2115,7 +2129,7 @@ class KoikaProver:
             "Use the state projections as in the context (e.g. `(count s)`, "
             "`Nat.gcd (a s) (b s)`).  Do not include proofs, comments, or any "
             "other text."
-        )
+)
 
         workspace = self._workspace_for(coq_file)
         error_feedback = ""
@@ -2126,7 +2140,7 @@ class KoikaProver:
                     prompt
                     + f"\n\nYour previous proposal failed to type-check:\n{error_feedback}\n"
                     + "Fix the type/scope errors and re-propose ONLY the corrected lemmas."
-                )
+)
             try:
                 response = self.llm.generate(final_prompt)
             except Exception as e:
@@ -2140,7 +2154,7 @@ class KoikaProver:
                 m = re.match(
                     r"Lemma\s+(\w+)\s*:\s*forall\s+s\s*,\s*reachable\s+s\s*->\s*(.+)$",
                     line,
-                )
+)
                 if not m:
                     continue
                 name, operand = m.group(1), m.group(2).strip()
@@ -2187,7 +2201,7 @@ class KoikaProver:
         m = re.search(
             r"([A-Za-z_][\w.]*)\s*\(\s*(\w+)\s+s\s*\)\s*\(\s*(\w+)\s+s\s*\)",
             statement,
-        )
+)
         if m:
             return m.group(1), [m.group(2), m.group(3)]
         m = re.search(r"([A-Za-z_][\w.]*)\s*\(\s*(\w+)\s+s\s*\)", statement)
@@ -2206,7 +2220,7 @@ class KoikaProver:
         check = (
             f"\nLemma {name}__base : {p_initial}.\n"
             f"Proof. simpl. first [ reflexivity | lia ]. Qed.\n"
-        )
+)
         try:
             content = coq_file.read_text()
         except Exception:
@@ -2239,7 +2253,7 @@ class KoikaProver:
         ctor_pattern = re.compile(
             r"\| (step_\w+) : forall s inputs,\s*(.*?)\s*->\s*step s inputs \((.*?)\)\n",
             re.DOTALL,
-        )
+)
         failing = []
         for m in ctor_pattern.finditer(content):
             rule, cond, new_state = m.group(1), m.group(2).strip(), m.group(3).strip()
@@ -2247,7 +2261,7 @@ class KoikaProver:
                 r"\((\w+)\s+s\)",
                 lambda mm: f"({mm.group(1)} ({new_state}))",
                 operand,
-            )
+)
             check_name = f"{name}__step_{rule}"
             self._inject_check_lemma(coq_file, check_name, cond, p_next)
             ok = self._recursive_skeleton_proof(coq_file, check_name, max_depth=40) is not None
@@ -2272,7 +2286,7 @@ class KoikaProver:
         block = (
             f"\nLemma {check_name} : forall (s : state), stepn {depth} initial_state s -> {operand}.\n"
             f"Admitted.\n"
-        )
+)
         try:
             _atomic_write(coq_file, content + "\n" + block)
         except Exception:
@@ -2320,13 +2334,13 @@ class KoikaProver:
                     drop.append(name)
                     logger.warning(
                         "Dropped assumed invariant '%s': failed the bounded gate.", name
-                    )
+)
         if drop:
             dropped = set(drop)
             content = "\n".join(
                 line for line in content.split("\n")
                 if not re.match(r"Axiom\s+(\w+)\s+:", line) or re.match(r"Axiom\s+(\w+)\s+:", line).group(1) not in dropped
-            )
+)
             try:
                 _atomic_write(coq_file, content)
             except Exception:
@@ -2340,7 +2354,7 @@ class KoikaProver:
         block = (
             f"\nLemma {name} : forall (s : state) (inputs : inputs), {cond} -> {p_next}.\n"
             f"Admitted.\n"
-        )
+)
         try:
             _atomic_write(coq_file, content + "\n" + block)
         except Exception:
@@ -2356,7 +2370,7 @@ class KoikaProver:
             "",
             content,
             flags=re.DOTALL,
-        )
+)
         try:
             _atomic_write(coq_file, content)
         except Exception:
@@ -2371,7 +2385,7 @@ class KoikaProver:
             f"Lemma {name} : forall s, reachable s -> {operand}.\n"
             f"Admitted.\n"
             f"Hint Resolve {name} : core.\n"
-        )
+)
         marker = "Hint Constructors reachable step : core."
         if marker in content:
             content = content.replace(marker, marker + "\n\n" + block, 1)
@@ -2392,7 +2406,7 @@ class KoikaProver:
             "",
             content,
             flags=re.DOTALL,
-        )
+)
         try:
             _atomic_write(coq_file, content)
         except Exception:

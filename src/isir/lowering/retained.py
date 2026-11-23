@@ -1,6 +1,6 @@
 # src/isir/lowering/retained.py
 #
-# Retention machinery (Section 7.5 / 8 / 10): the retention-bounded view over
+# Retention machinery: the retention-bounded view over
 # the evidence registry — TTL expiry, tombstone records, pinning, and the
 # tombstone-hash fallback for cache invalidation.
 
@@ -14,7 +14,7 @@ from isir.lowering.filters import apply_pinning
 
 
 def cache_key(record: RawEvidenceRecord, spec_content_hash: str, filter_rule_version: str) -> tuple:
-    """The pipeline cache key (Section 7.5)."""
+    """The pipeline cache key."""
     return (record.primary_spec_item_id, tuple(record.related_spec_item_ids),
             spec_content_hash, record.evidence_hash, filter_rule_version)
 

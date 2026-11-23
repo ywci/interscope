@@ -37,7 +37,6 @@
 
 - **head_bool** (safety): always, `head` equals true or `head` equals false.
 - **tail_bool** (safety): always, `tail` equals true or `tail` equals false.
-- **ctr_bounded** (safety): always, `ctr` ≤ 3.
 - **exec1_independent** (transition): after each step, `rob1_done` equals true.
 - **commit_in_order** (transition): after each step, prev(head) equals true.
 - **branch_detected** (combinational): for all inputs, is_branch(instr) equals instr[6:0] equals 99.

@@ -1,11 +1,8 @@
 # src/isir/verification/sat_gate/evaluate.py
 #
-# Reference evaluator: compute named signal values from primary inputs
-# (§9.5 re-simulation).  This is a SEPARATE implementation from the lifter and
-# is used by the independent replay oracle (§20.2).
-"""Reference netlist evaluator (re-simulation from primary inputs)."""
-
-from typing import Dict, Sequence
+# Reference evaluator: compute named signal values from primary inputs.
+# This is a SEPARATE implementation from the lifter and
+# is used by the independent replay oracle.
 
 
 def evaluate_bitwise(op: str, a: int, b: int) -> int:

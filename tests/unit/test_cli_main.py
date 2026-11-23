@@ -27,7 +27,7 @@ def _global_namespace(remaining=None, output_format="text", config=None,
         config=config,
         debug=debug,
         remaining=remaining or []
-    )
+)
 
 
 class TestParseGlobalOptions:
@@ -83,7 +83,7 @@ class TestSetupConfig:
             _setup_config(args)
         mock_load.assert_called_once_with(
             force_reload=True, external_config_path=None
-        )
+)
 
 
 class TestRunSingle:
@@ -104,7 +104,7 @@ class TestRunSingle:
             ("query", "isir.cli.query"),
             ("validate-config", "isir.cli.validate_config")
         ]
-    )
+)
     def test_routes_to_subcommand(self, cmd, module):
         args = _global_namespace([cmd, "d.isir"])
         with patch(f"{module}.main", return_value=0) as mock_main:
@@ -138,7 +138,7 @@ class TestRunSingle:
 
         args = _global_namespace(
             ["compile", "d.isir", "--output-format", "json"], output_format="json"
-        )
+)
         with patch("isir.cli.compile.main", side_effect=fake_main):
             _run_single(args)
         assert captured["argv"].count("--output-format") == 1
@@ -165,7 +165,7 @@ class TestRunBatch:
             report_file=report_file,
             batch=str(tmp_path),
             debug=debug
-        )
+)
 
     def test_no_subcommand(self):
         args = _global_namespace(batch=".")
@@ -188,7 +188,7 @@ class TestRunBatch:
         report = CompilationReport(
             design_name="d", input_file="d.isir",
             results=[BackendResult(backend="koika", success=True)],
-        )
+)
         args = self._batch_args(tmp_path, cmd="compile")
         with patch("isir.cli.main.find_isir_files",
                    return_value=[tmp_path / "d.isir"]), \
@@ -201,7 +201,7 @@ class TestRunBatch:
         report = CompilationReport(
             design_name="d", input_file="d.isir",
             results=[BackendResult(backend="koika", success=False, error_message="x")],
-        )
+)
         args = self._batch_args(tmp_path, cmd="compile")
         with patch("isir.cli.main.find_isir_files",
                    return_value=[tmp_path / "d.isir"]), \

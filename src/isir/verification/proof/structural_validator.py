@@ -184,7 +184,7 @@ def _check_unclosed_proofs(script: str) -> List[str]:
         issues.append(
             f"Unclosed proof block(s): {proof_depth} 'Proof.' without matching "
             "'Qed.'/'Admitted.'"
-        )
+)
     return issues
 
 
@@ -201,7 +201,7 @@ def _check_deprecated_notations(script: str) -> List[str]:
         if re.search(rf"\b{re.escape(old)}\b", script):
             issues.append(
                 f"[HARD ERROR] Deprecated notation '{old}' found; use '{new}' instead."
-            )
+)
     return issues
 
 
@@ -225,12 +225,12 @@ def _check_boolean_discriminate(script: str) -> List[str]:
 
         boolean_hyp_pattern = re.compile(
             rf"{re.escape(hyp_name)}\s*:\s*\(?[^\)]*(?:=\?|Nat\.eqb)[^\)]*\)?\s*=\s*true"
-        )
+)
         if boolean_hyp_pattern.search(script):
             issues.append(
                 f"`discriminate {hyp_name}` used on a boolean equality; "
                 "use `inversion` or `rewrite Nat.eqb_eq` instead."
-            )
+)
             break
 
     return issues
@@ -248,7 +248,7 @@ def _check_orphan_bullets(script: str) -> List[str]:
         if orphan_pattern.match(line):
             issues.append(
                 f"Line {i}: orphan bullet '{line.strip()}' without a following tactic or comment."
-            )
+)
     return issues
 
 
@@ -277,7 +277,7 @@ def _check_mixed_bullets_braces(script: str) -> List[str]:
         issues.append(
             "[HARD ERROR] Mixed bullet and brace usage detected; "
             "use only `{ ... }` blocks for subgoal separation to avoid focus errors."
-        )
+)
 
     return issues
 
@@ -302,7 +302,7 @@ def _check_focus_patterns(script: str) -> List[str]:
         issues.append(
             "[HARD ERROR] Bullet followed by closing brace detected; "
             "this is a common cause of focus errors. Use explicit braces."
-        )
+)
 
     # Check for consecutive bullet lines of the same type that are not
     # separated by a closing brace (probably an unclosed subgoal).
@@ -319,7 +319,7 @@ def _check_focus_patterns(script: str) -> List[str]:
                 issues.append(
                     f"Line {i}: consecutive bullets of same type and indentation "
                     "without proper closure; this often causes `Wrong bullet`."
-                )
+)
             last_bullet = bullet_char
             last_indent = indent
         elif stripped and not stripped.startswith('(*'):
@@ -343,7 +343,7 @@ def _check_missing_imports(script: str, context: str) -> List[str]:
                 if imp not in context:
                     issues.append(
                         f"Missing import '{imp}' (required by '{pattern}')"
-                    )
+)
     return issues
 
 

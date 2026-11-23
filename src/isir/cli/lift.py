@@ -19,7 +19,7 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir lift",
         description="Lift a VCD simulation trace to an abstract ISIR trace (YAML)."
-    )
+)
     parser.add_argument("vcd", type=str, help="Path to the VCD file")
     parser.add_argument("--spec", "-s", type=str, required=True,
                         help="Path to the original .isir file (for state/rule/interface info)")

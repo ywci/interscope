@@ -84,13 +84,13 @@ def _summarize_beam_collapse(stats: PERFStats) -> List[str]:
             "  The beam size repeatedly fell below min_beam_size and could "
             "not be restored.  This often indicates a lack of diversity "
             "among candidates or an overly aggressive Pareto filter."
-        )
+)
     else:
         lines.append("Beam collapse events: 0")
         lines.append(
             "  The beam size remained above or equal to min_beam_size "
             "throughout the traversal."
-        )
+)
     lines.append("")
     return lines
 
@@ -121,7 +121,7 @@ def _summarize_backtracking(stats: PERFStats) -> List[str]:
                 f"delta={rec['delta']:.2f}, "
                 f"pre_best={rec['pre_best_primary']:.3f}, "
                 f"post_best={rec['post_best_primary']:.3f}"
-            )
+)
     else:
         lines.append("  No reflection quality recorded.")
     lines.append("")
@@ -142,29 +142,29 @@ def _generate_recommendations(stats: PERFStats) -> List[str]:
             "- Focus/bullet errors are prevalent. Ensure all proof templates "
             "use explicit braces `{ ... }` instead of bullets `-`, `+`, `*`. "
             "Enable the structural validator to reject mixed bullet/brace usage."
-        )
+)
     if "nat.mod_add" in joined or "deprecated" in joined:
         recs.append(
             "- Deprecated notation `Nat.mod_add` (or similar) is being used. "
             "Replace it with `Div0.mod_add` or avoid it entirely in generated "
             "code and templates."
-        )
+)
     if "not a discriminable equality" in joined or "discriminate" in joined:
         recs.append(
             "- `discriminate` is being used on boolean equalities. Use `inversion` "
             "or `destruct` on the boolean condition instead."
-        )
+)
     if "unable to unify" in joined:
         recs.append(
             "- Unification errors suggest applying the induction hypothesis too "
             "early or without destructing the opcode condition first. Ensure the "
             "prompt includes explicit destruct patterns."
-        )
+)
     if "found no subterm matching" in joined:
         recs.append(
             "- Rewrite failures indicate the expression does not match the goal. "
             "Add `simpl` before rewriting or verify the exact form of the lemma."
-        )
+)
 
     # Beam collapse recommendation.
     if stats.beam_collapse_count > 0:
@@ -172,7 +172,7 @@ def _generate_recommendations(stats: PERFStats) -> List[str]:
             "- Beam collapse occurred. Consider increasing `min_beam_size`, "
             "reducing `scoring_tournament_size` (to avoid too many ties), or "
             "increasing `branches_per_node` for hard obligations."
-        )
+)
 
     # Backtracking effectiveness.
     if stats.backtrack_count > 0 and not stats.reflection_quality_history:
@@ -180,7 +180,7 @@ def _generate_recommendations(stats: PERFStats) -> List[str]:
             "- Backtracking was used but no reflection quality was recorded. "
             "Ensure `backtracking.enabled` and `reflection_quality_window` are "
             "configured correctly so that backtrack effectiveness is evaluated."
-        )
+)
     elif stats.backtrack_count > 0 and stats.reflection_quality_history:
         low_quality = [
             rec for rec in stats.reflection_quality_history
@@ -192,7 +192,7 @@ def _generate_recommendations(stats: PERFStats) -> List[str]:
                 "adjusting `backtracking.max_backtrack_depth`, "
                 "`backtracking.diversity_weight`, or enabling "
                 "`backtracking.force_strategy_switch`."
-            )
+)
 
     if not recs[1:]:  # Only "Recommendations:" header?
         recs.append("- No specific recommendations. Review the traversal log for details.")

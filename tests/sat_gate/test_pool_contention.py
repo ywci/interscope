@@ -1,5 +1,4 @@
 # tests/sat_gate/test_pool_contention.py
-"""Sharded solver pool + contention measurement (§14.4)."""
 
 from isir.verification.sat_gate.pool import SolverPool
 
@@ -17,7 +16,7 @@ def test_contention_counted_when_shard_busy():
     pool = SolverPool(size=1)
     s1 = pool.acquire("g1")
     assert s1 is not None
-    s2 = pool.acquire("g2")   # same shard, busy
+    s2 = pool.acquire("g2")
     assert s2 is None
     assert pool.contention_count == 1
     pool.release("g1")

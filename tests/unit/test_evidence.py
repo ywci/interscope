@@ -48,7 +48,7 @@ class TestRegistry:
             engine="theorem_proving",
             status="proved",
             property_name="test_prop"
-        )
+)
         assert ev_id is not None
         entry = registry.get_evidence(ev_id)
         assert entry is not None
@@ -117,7 +117,7 @@ class TestAnnotator:
             engine="koika",
             status="proved",
             property_name="p"
-        )
+)
         assert ev.type == "coq_theorem"
         assert ev.ref.type == "uri"
         assert ev.ref.value == "file://x"
@@ -130,7 +130,7 @@ class TestAnnotator:
             type="simulation_trace",
             ref=EvidenceRef(type="uri", value="file://sim.vcd"),
             engine="sim",
-        )
+)
         with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_module(mod, ev, property_name="prop")
         assert len(mod.evidence) == 1
@@ -142,7 +142,7 @@ class TestAnnotator:
             type="inductive_invariant",
             ref=EvidenceRef(type="local_id", value="inv_x"),
             engine="IC3"
-        )
+)
         with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_state(st, ev)
         assert st.evidence is not None
@@ -154,7 +154,7 @@ class TestAnnotator:
             type="coq_theorem",
             ref=EvidenceRef(type="uri", value="file://proof.v"),
             engine="koika"
-        )
+)
         with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_rule(r, ev)
         assert r.evidence.value == "file://proof.v"
@@ -165,7 +165,7 @@ class TestAnnotator:
             type="counterexample_trace",
             ref=EvidenceRef(type="uri", value="file://ce.vcd"),
             engine="BMC"
-        )
+)
         with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_property(p, ev, property_name="prop1")
         assert len(p.evidence) == 1
@@ -177,7 +177,7 @@ class TestAnnotator:
             type="simulation_trace",
             ref=EvidenceRef(type="uri", value="file://trace.vcd"),
             engine="sim"
-        )
+)
         with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_component(comp, ev)
         assert comp.evidence.value == "file://trace.vcd"
@@ -188,7 +188,7 @@ class TestAnnotator:
             type="coq_theorem",
             ref=EvidenceRef(type="uri", value="file://proof.v"),
             engine="koika"
-        )
+)
         with patch("isir.evidence.annotator.add_evidence_to_registry"):
             annotate_proof_obligation(po, ev)
         assert po.artifact["type"] == "coq_theorem"

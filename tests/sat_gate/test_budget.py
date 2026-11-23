@@ -1,5 +1,4 @@
 # tests/sat_gate/test_budget.py
-"""Conflict-budget calibration (§14.2)."""
 
 from isir.verification.sat_gate.budget import calibrate_budget
 

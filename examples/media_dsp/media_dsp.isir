@@ -40,11 +40,19 @@ module:
       initial: 0
   functions:
     - name: sum16
-      params: [{name: a, type: "bits<8>"}, {name: b, type: "bits<8>"}]
+      params:
+        - name: a
+          type: "bits<8>"
+        - name: b
+          type: "bits<8>"
       return: "bits<16>"
       body: (add a b)
     - name: prod16
-      params: [{name: x, type: "bits<8>"}, {name: y, type: "bits<8>"}]
+      params:
+        - name: x
+          type: "bits<8>"
+        - name: y
+          type: "bits<8>"
       return: "bits<16>"
       body: (mul x y)
   rules:
@@ -54,22 +62,24 @@ module:
         - (write sum_reg (sum16 a b))
         - (write prod_reg (prod16 x y))
   properties:
-    # LINEAR bound: Koika's `lia` closes this in one step.
     - name: sum_bounded
       kind: combinational
       expression:
         kind: combinational
         operand: (le (sum16 a b) 510)
         reference: t
-      assumes: ["(le a 255)", "(le b 255)"]
-    # NON-LINEAR product bound: ACL2's arithmetic-5 closes this in one step.
+      assumes:
+        - (le a 255)
+        - (le b 255)
     - name: product_bounded
       kind: combinational
       expression:
         kind: combinational
         operand: (le (prod16 x y) 65025)
         reference: t
-      assumes: ["(le x 255)", "(le y 255)"]
+      assumes:
+        - (le x 255)
+        - (le y 255)
   proof_obligations:
     - property: sum_bounded
       status: unproved

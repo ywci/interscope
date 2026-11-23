@@ -28,7 +28,7 @@ def exec_rule(**kwargs):
         actions=["(ite (read op) (write out 1) (write out 2))"],
         priority=None,
         rule_attributes=["split"],
-    )
+)
     defaults.update(kwargs)
     return SpecRuleOp(**defaults)
 
@@ -62,7 +62,7 @@ def test_nested_ite_chain_splits_with_default():
                 "(ite (eq (read op) 1) (write out 2) (write out 3)))"
             ],
             rule_attributes=["split"],
-        )
+)
     ]
 
     new_mod = split_rules(mod)
@@ -92,7 +92,7 @@ def test_split_preserves_surrounding_actions():
                 "(write done 1)",
             ],
             rule_attributes=["split"],
-        )
+)
     ]
 
     new_mod = split_rules(mod)
@@ -159,7 +159,7 @@ def test_rule_with_split_attribute_but_no_ite_is_not_split():
             rule_name="plain",
             actions=["(write out 1)"],
             rule_attributes=["split"],
-        )
+)
     ]
 
     new_mod = split_rules(mod)
@@ -176,7 +176,7 @@ def test_custom_split_attribute():
             condition=None,
             actions=["(ite (read op) (write out 1) (write out 2))"],
             rule_attributes=["explode"],
-        )
+)
     ]
 
     new_mod = split_rules(mod, split_attribute="explode")
@@ -194,7 +194,7 @@ def test_multiple_ite_actions_raise_value_error():
                 "(ite (read b) (write y 1) (write y 2))",
             ],
             rule_attributes=["split"],
-        )
+)
     ]
 
     with pytest.raises(ValueError, match="multiple independent"):
@@ -209,7 +209,7 @@ def test_unparseable_action_is_not_split():
             rule_name="weird",
             actions=["(ite (read op) (write out 1)"],
             rule_attributes=["split"]
-        )
+)
     ]
 
     new_mod = split_rules(mod)
@@ -243,8 +243,8 @@ def test_existing_conflict_sets_are_preserved():
     mod = make_module(
         schedule_op=SpecScheduleOp(
             kind="conflict_free", conflict_sets=[["other_a", "other_b"]]
-        )
-    )
+)
+)
     mod.rule_ops = [exec_rule()]
 
     new_mod = split_rules(mod)
@@ -259,7 +259,7 @@ def test_sequential_schedule_switches_to_conflict_free(caplog):
 
     mod = make_module(
         schedule_op=SpecScheduleOp(kind="sequential", rule_order=["exec"])
-    )
+)
     mod.rule_ops = [exec_rule()]
 
     with caplog.at_level(logging.WARNING, logger="isir.lowering.split_rules"):
@@ -339,7 +339,7 @@ def test_flatten_ite_chain_non_ite_returns_none():
 def test_flatten_ite_chain_single_level():
     conditions, bodies, default = _flatten_ite_chain(
         ["ite", ["read", "op"], ["write", "out", 1], ["write", "out", 2]]
-    )
+)
     assert conditions == ["(read op)"]
     assert bodies == [["write", "out", 1]]
     assert default == ["write", "out", 2]

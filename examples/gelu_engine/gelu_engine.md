@@ -19,5 +19,5 @@
 
 ## Properties
 
-- **out_bounded** (safety): always, `out` ≤ 255.
-- **out_nonneg** (safety): always, `out` ≥ 0.
+- **out_equals_gelu_x** (safety): always, `out` equals gelu(x).
+- **out_applies_gelu** (transition): after each step, `out` equals gelu(x).

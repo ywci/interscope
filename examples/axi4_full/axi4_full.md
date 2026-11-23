@@ -27,7 +27,7 @@
 ## Behavior (rules)
 
 - **aw** — when awvalid and awready, set `awaddr` to awaddr_in; set `awlen` to awlen_in; set `waddr` to awaddr_in; set `wcount` to 0.
-- **w** — when wvalid and wready and `wcount` < `awlen`, mem_write(mem, `waddr`, wdata); set `waddr` to `waddr` + 4; set `wcount` to `wcount` + 1.
+- **w** — when wvalid and wready and `wcount` < `awlen`, mem_write(mem, `waddr`[5:2], wdata); set `waddr` to `waddr` + 4; set `wcount` to `wcount` + 1.
 - **b** — when `wcount` equals `awlen`, set `bvalid` to true.
 - **b_clear** — when `bvalid` and bready, set `bvalid` to false.
 

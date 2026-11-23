@@ -44,7 +44,7 @@ class TestDetectsDivergence:
                 prop_name="bad", kind="combinational",
                 expression={"kind": "combinational", "operand": "(mul x 0)", "reference": 1})],
             proof_obligations=[],
-        )
+)
         results = check_combinational_properties(spec, num_cases=20, seed=0)
         assert results[0].status == "divergent", results[0].to_dict()
 
@@ -59,7 +59,7 @@ class TestDetectsDivergence:
                 assumes=["(le x 255)"],
                 expression={"kind": "combinational", "operand": "(le x 255)", "reference": True})],
             proof_obligations=[],
-        )
+)
         results = check_combinational_properties(spec, num_cases=100, seed=0)
         assert results[0].status == "agree", results[0].to_dict()
 

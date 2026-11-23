@@ -1,5 +1,4 @@
 # tests/sat_gate/test_coverage_firing_pair.py
-"""Coverage and firing rate are always reported as a pair (§18)."""
 
 from isir.verification.sat_gate.observe import GateMetrics
 

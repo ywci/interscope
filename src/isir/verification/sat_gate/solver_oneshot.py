@@ -1,15 +1,13 @@
 # src/isir/verification/sat_gate/solver_oneshot.py
 #
-# One-shot solver (Phase 1): solve a compiled CNF via an external one-shot
-# solver over DIMACS.  No incrementality, no learned-clause reuse.
-"""One-shot CNF solving via an external DIMACS solver."""
+# One-shot solver: solve a compiled CNF via an external one-shot solver over
+# DIMACS. No incrementality, no learned-clause reuse.
 
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
-
+from typing import Dict, Optional
 from isir.verification.sat_gate.bitblast import CNF
 
 

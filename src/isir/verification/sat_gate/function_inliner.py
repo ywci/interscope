@@ -1,12 +1,10 @@
 # src/isir/verification/sat_gate/function_inliner.py
 #
-# Function inlining for the gate fragment.  User-defined ISIR functions and a
+# Function inlining for the gate fragment. User-defined ISIR functions and a
 # small set of built-in arithmetic functions are expanded before lowering, so
 # the bit-blaster/SMT encoder never sees a bare function call.
-"""Inline ISIR functions (user-defined + built-in min/max/clamp)."""
 
-from typing import Dict, List, Optional, Union
-
+from typing import Dict, List, Union
 from isir.utils.expr import parse_sexpr
 
 
@@ -18,7 +16,7 @@ def functions_of(spec_module) -> Dict[str, "dict"]:
         if not name or fn.get("recursive"):
             continue  # recursive functions are out of the gate fragment
         params = [p["name"] for p in fn.get("params", []) or []]
-        out[name] = {"params": params, "body": fn.get("body", "")}
+        out[name] = {"params": params, "body": fn.get("body") or ""}
     return out
 
 
@@ -68,10 +66,10 @@ def inline_functions(expr: Union[str, List], functions: Dict[str, dict]) -> Unio
         inlined_args = [inline_functions(a, functions) for a in args]
         return inline_functions(BUILTIN_BODIES[op](*inlined_args), functions)
 
-    # user-defined function call (non-recursive only)
+    # user-defined function call (non-recursive, with a body to inline)
     if op in functions:
         fn = functions[op]
-        if not fn.get("recursive") and len(args) == len(fn["params"]):
+        if fn.get("body") and not fn.get("recursive") and len(args) == len(fn["params"]):
             body = parse_sexpr(fn["body"])
             subs = dict(zip(fn["params"], args))
             return inline_functions(_substitute(body, subs), functions)

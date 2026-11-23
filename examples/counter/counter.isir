@@ -51,18 +51,18 @@ module:
       expression:
         kind: transition
         rule: increment
-        operand: (and (eq (read count) (add (prev count) 1))
-                      (eq (read overflow_flag) (eq (prev count) 15)))
+        operand: (and (eq (read count) (add (prev count) 1)) (eq (read overflow_flag)
+          (eq (prev count) 15)))
   proof_obligations:
+    - property: count_increments
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: counter_bound
       status: unproved
       engine: theorem_proving
       backend: koika_acl2
     - property: no_overflow_when_not_full
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: count_increments
       status: unproved
       engine: theorem_proving
       backend: koika_acl2

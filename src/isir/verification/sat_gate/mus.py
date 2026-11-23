@@ -1,11 +1,9 @@
 # src/isir/verification/sat_gate/mus.py
 #
-# Group-MUS on certification intent (§14.5): shrink the failed-assumption core
+# Group-MUS on certification intent: shrink the failed-assumption core
 # to a minimal set of group activation literals (deletion-based MUS).
-"""Deletion-based Group-MUS over activation literals."""
 
 from typing import List, Sequence
-
 from isir.verification.sat_gate.assumptions import AssumptionRegistry
 from isir.verification.sat_gate.solver_cadical import IncrementalSolver
 

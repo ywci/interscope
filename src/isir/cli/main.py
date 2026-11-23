@@ -48,23 +48,23 @@ def _parse_global_options(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--batch", nargs="?", const=".", default=None,
         help="Process all .isir files in the given directory (default: current directory)."
-    )
+)
     parser.add_argument(
         "--output-format", choices=["json", "text"], default="text",
         help="Output format (default: text)."
-    )
+)
     parser.add_argument(
         "--report-file", type=str, default=None,
         help="Save aggregated results to this file (JSON/CSV)."
-    )
+)
     parser.add_argument(
         "--config", type=str, default=None,
         help="Path to an external YAML configuration file to merge."
-    )
+)
     parser.add_argument(
         "--debug", action="store_true",
         help="Enable debug logging."
-    )
+)
 
     parser.add_argument("remaining", nargs=argparse.REMAINDER)
     args, _ = parser.parse_known_args(argv)
@@ -260,7 +260,7 @@ def _run_command_on_file(cmd: str, spec_file: Path, global_args: argparse.Namesp
             input_file=data["input_file"],
             timestamp=data.get("timestamp", ""),
             results=[BackendResult(**r) for r in data.get("results", [])],
-        )
+)
     elif cmd == "verify":
         obligations = []
         for o in data.get("obligations", []):
@@ -273,13 +273,13 @@ def _run_command_on_file(cmd: str, spec_file: Path, global_args: argparse.Namesp
                 error_message=o.get("error_message"),
                 duration=o.get("duration"),
                 details=o.get("details", {}),
-            ))
+))
         return VerificationReport(
             design_name=data["design_name"],
             backend=data["backend"],
             timestamp=data.get("timestamp", ""),
             obligations=obligations,
-        )
+)
     elif cmd == "sim":
         return SimulationReport(
             design_name=data["design_name"],
@@ -290,7 +290,7 @@ def _run_command_on_file(cmd: str, spec_file: Path, global_args: argparse.Namesp
             error_message=data.get("error_message"),
             duration=data.get("duration"),
             metadata=data.get("metadata", {}),
-        )
+)
     else:
         raise ValueError(f"Unsupported batch command: {cmd}")
 

@@ -10,7 +10,6 @@ module:
       async: false
       affects: all
   inputs:
-    # Write address channel (with burst length).
     - name: awaddr_in
       direction: input
       type: "bits<8>"
@@ -23,7 +22,6 @@ module:
     - name: awready
       direction: input
       type: "bool"
-    # Write data channel.
     - name: wdata
       direction: input
       type: "bits<32>"
@@ -33,7 +31,6 @@ module:
     - name: wready
       direction: input
       type: "bool"
-    # Write response channel.
     - name: bready
       direction: input
       type: "bool"
@@ -42,7 +39,6 @@ module:
       direction: output
       type: "bool"
   state:
-    # Latched write-address channel state.
     - name: awaddr
       kind: register
       type: "bits<8>"
@@ -51,7 +47,6 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    # Current burst address and beat counter.
     - name: waddr
       kind: register
       type: "bits<8>"
@@ -60,18 +55,17 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    # Write response valid.
     - name: bvalid
       kind: register
       type: "bool"
       initial: false
-    # Slave memory (16 words of 32 bits).
     - name: mem
       kind: memory
-      type: { type: "memory", elem: "bits<32>", depth: 16 }
-
+      type:
+        type: memory
+        elem: "bits<32>"
+        depth: 16
   rules:
-    # AW handshake: latch the burst address and length, restart the burst.
     - name: aw
       condition: (and awvalid awready)
       action:
@@ -79,24 +73,20 @@ module:
         - (write awlen awlen_in)
         - (write waddr awaddr_in)
         - (write wcount 0)
-    # W beat: write the data word and advance the INCR burst.
     - name: w
       condition: (and (and wvalid wready) (lt (read wcount) (read awlen)))
       action:
         - (mem_write mem (slice (read waddr) 5 2) wdata)
         - (write waddr (add (read waddr) 4))
         - (write wcount (add (read wcount) 1))
-    # B response: after the burst completes, set the response.
     - name: b
       condition: (eq (read wcount) (read awlen))
       action:
         - (write bvalid true)
-    # B handshake clears the response.
     - name: b_clear
       condition: (and (read bvalid) bready)
       action:
         - (write bvalid false)
-
   properties:
     - name: waddr_increments_on_beat
       kind: transition
@@ -121,21 +111,20 @@ module:
       expression:
         kind: always
         operand: (le (read wcount) (read awlen))
-
   proof_obligations:
     - property: waddr_increments_on_beat
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: wcount_increments_on_beat
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: response_after_burst
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: wcount_bounded_by_len
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

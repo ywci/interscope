@@ -69,7 +69,7 @@ def patch_discriminate_on_bool(script: str, error_msg: str = "") -> str:
     This patch is triggered when:
       - The provided ``error_msg`` contains ``"Not a discriminable equality"``, or
       - The script itself contains a hypothesis of the form
-        ``<name> : ( ... =? ... ) = true`` and a corresponding
+        ``<name> : (... =? ...) = true`` and a corresponding
         ``discriminate <name>.`` command.
 
     Args:
@@ -98,7 +98,7 @@ def patch_discriminate_on_bool(script: str, error_msg: str = "") -> str:
         # Check whether this hypothesis is a boolean equality.
         boolean_hyp_pattern = re.compile(
             rf"{re.escape(hyp_name)}\s*:\s*\(?[^\)]*(?:=\?|Nat\.eqb)[^\)]*\)?\s*=\s*true"
-        )
+)
         is_bool_hyp = bool(boolean_hyp_pattern.search(patched))
 
         if is_bool_hyp or (apply_global and not is_bool_hyp):
@@ -108,7 +108,7 @@ def patch_discriminate_on_bool(script: str, error_msg: str = "") -> str:
             logger.debug(
                 "Patched `discriminate %s` to `inversion %s`.",
                 hyp_name, hyp_name
-            )
+)
 
     return patched
 
@@ -176,7 +176,7 @@ def _is_focus_error(error_msg: str) -> bool:
         "focused, but cannot be unfocused" in lower
         or "wrong bullet" in lower
         or "focus" in lower
-    )
+)
 
 
 def _has_bullets(script: str) -> bool:
@@ -304,7 +304,7 @@ def patch_focus_errors(script: str, error_msg: str = "") -> str:
         logger.warning(
             "Bullet-to-brace conversion introduced structural issues (%s). Reverting.",
             "; ".join(critical_issues[:3])
-        )
+)
         return script
 
     logger.debug("Bullet-to-brace conversion applied successfully.")
@@ -361,7 +361,7 @@ def auto_patch(script: str, error_msg: str = "") -> str:
         logger.warning(
             "Auto‑patcher produced a script with structural issues: %s",
             "; ".join(critical_issues),
-        )
+)
     else:
         logger.debug("Auto‑patcher output passed structural validation.")
 

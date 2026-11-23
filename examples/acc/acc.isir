@@ -10,19 +10,16 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: data_in
       direction: input
       type: "bits<32>"
       protocol: fixed_cycle
-
   outputs:
     - name: result
       direction: output
       type: "bits<32>"
       protocol: fixed_cycle
-
   state:
     - name: acc
       kind: register
@@ -32,7 +29,6 @@ module:
       kind: register
       type: "bits<32>"
       initial: 0
-
     - name: stage1_val
       kind: register
       type: "bits<32>"
@@ -41,7 +37,6 @@ module:
       kind: register
       type: "bool"
       initial: false
-
     - name: stage2_val
       kind: register
       type: "bits<32>"
@@ -50,7 +45,6 @@ module:
       kind: register
       type: "bool"
       initial: false
-
     - name: fwd_val
       kind: register
       type: "bits<32>"
@@ -59,18 +53,13 @@ module:
       kind: register
       type: "bool"
       initial: false
-
   rules:
     - name: stage1
       condition: "true"
       action:
         - (write stage1_valid true)
-        - (write stage1_val
-            (ite (read fwd_valid)
-                 (read fwd_val)
-                 (read data_in)))
+        - (write stage1_val (ite (read fwd_valid) (read fwd_val) (read data_in)))
         - (write fwd_valid false)
-
     - name: stage2
       condition: (read stage1_valid)
       action:
@@ -79,37 +68,55 @@ module:
         - (write fwd_valid true)
         - (write fwd_val (add (read acc) (read stage1_val)))
         - (write stage1_valid false)
-
     - name: stage3
       condition: (read stage2_valid)
       action:
         - (write acc (read stage2_val))
         - (write tmp (read stage2_val))
         - (write stage2_valid false)
-
   properties:
-    - name: result_nonneg
+    - name: tmp_equals_acc
       kind: safety
       expression:
         kind: always
-        operand: (ge (read tmp) 0)
-
-    - name: acc_nonneg
-      kind: safety
+        operand: (eq (read tmp) (read acc))
+    - name: capture_input_or_forward
+      kind: transition
       expression:
-        kind: always
-        operand: (ge (read acc) 0)
-
+        kind: transition
+        rule: stage1
+        operand: (and (eq (read stage1_valid) True) (eq (read stage1_val) (ite (prev
+          fwd_valid) (prev fwd_val) (prev data_in))))
+    - name: accumulate_partial_sum
+      kind: transition
+      expression:
+        kind: transition
+        rule: stage2
+        operand: (and (eq (read stage2_valid) True) (and (eq (read stage2_val) (add
+          (prev acc) (prev stage1_val))) (eq (read fwd_val) (add (prev acc) (prev
+          stage1_val)))))
+    - name: writeback_result
+      kind: transition
+      expression:
+        kind: transition
+        rule: stage3
+        operand: (and (eq (read acc) (prev stage2_val)) (eq (read tmp) (prev stage2_val)))
   proof_obligations:
-    - property: result_nonneg
+    - property: tmp_equals_acc
       engine: model_checking
-    - property: acc_nonneg
-      engine: model_checking
-    - property: acc_nonneg
+    - property: capture_input_or_forward
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: acc_nonneg
+      backend: koika_acl2
+    - property: accumulate_partial_sum
       status: unproved
       engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
+    - property: writeback_result
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: tmp_equals_acc
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

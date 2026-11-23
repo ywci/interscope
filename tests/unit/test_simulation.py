@@ -48,7 +48,7 @@ class TestSimulateDesign:
                 spec_module=spec_mod,
                 output_dir=tmp_path,
                 cycles=10
-            )
+)
 
             mock_rtl.assert_called_once()
             mock_sim.assert_called_once()
@@ -165,7 +165,7 @@ class TestSimulateDesign:
                 output_dir=tmp_path,
                 cycles=10,
                 assert_lang="sva"
-            )
+)
 
             mock_gen.assert_called_once_with(spec_mod, "sva", tmp_path)
             assert isinstance(result, SimulationReport)
@@ -193,6 +193,6 @@ class TestSimulateDesign:
                 spec_module=spec_mod,
                 output_dir=tmp_path,
                 cycles=10
-            )
+)
 
             mock_gen.assert_not_called()

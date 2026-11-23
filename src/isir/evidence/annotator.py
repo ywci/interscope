@@ -41,7 +41,7 @@ def create_evidence_ref(evidence_type: str,
         ref=ref,
         engine=engine,
         status=status,
-    )
+)
 
 
 def add_evidence_to_registry(evidence: Evidence,
@@ -69,7 +69,7 @@ def add_evidence_to_registry(evidence: Evidence,
         status=evidence.status,
         property_name=property_name,
         design_name=design_name
-    )
+)
 
 
 def annotate_module(module: Module,

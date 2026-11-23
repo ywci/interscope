@@ -268,7 +268,7 @@ class RtlDirectEmitter:
                 w = h - l + 1
                 # Sized cast forces the exact slice width; a bare `>> ... & mask`
                 # would keep the operand width and widen enclosing concats.
-                return f"{w}'( ({v}) >> {l} )"
+                return f"{w}'(({v}) >> {l})"
             return f"{v}[{h}:{l}]"
         if op == "concat":
             high = self._lower(args[0], width)
@@ -277,7 +277,7 @@ class RtlDirectEmitter:
             if isinstance(lw, int):
                 # Size the low field to exactly `lw` bits so the concat width is
                 # width(high) + lw rather than widening from the low operand.
-                return f"{{{high}, {lw}'( {low} )}}"
+                return f"{{{high}, {lw}'({low})}}"
             return f"{{{high}, {low}}}"
         raise ExprError(f"Unsupported operator '{op}' in direct lowering: {expr!r}")
 
@@ -319,7 +319,7 @@ class RtlDirectEmitter:
             f"\n{self._sequential()}\n"
             f"\n{self._mem_sequential()}\n"
             f"\nendmodule\n"
-        )
+)
 
     def _ports(self) -> List[str]:
         ports: List[str] = []

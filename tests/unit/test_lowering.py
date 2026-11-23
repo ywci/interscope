@@ -22,24 +22,24 @@ def create_test_spec_module():
             directive_name="no_simultaneous",
             kind="assume",
             expression="(not (and enqueue dequeue))",
-        ),
+),
         isir.SpecDirectiveOp(
             directive_name="always_not_full",
             kind="assert",
             expression="(implies (read full) (not enqueue))",
-        ),
+),
         isir.SpecDirectiveOp(
             directive_name="full_reached",
             kind="cover",
             expression="(read full)",
-        ),
+),
     ]
 
     prop_op = isir.SpecPropertyOp(
         prop_name="no_overflow",
         kind="safety",
         expression={"kind": "always", "operand": "(not (and (read full) enqueue))"},
-    )
+)
 
     spec_module = isir.SpecModule(
         name="fifo",
@@ -49,7 +49,7 @@ def create_test_spec_module():
         rule_ops=[],
         property_ops=[prop_op],
         directive_ops=directives,
-    )
+)
     return spec_module
 
 
@@ -86,12 +86,12 @@ def test_isir_to_assert_eventually_property():
         name="test",
         clocks=[{"name": "clk", "edge": "posedge"}],
         resets=[],
-    )
+)
     prop_op = isir.SpecPropertyOp(
         prop_name="eventual_grant",
         kind="liveness",
         expression={"kind": "eventually", "operand": "(read grant)", "bound": 10},
-    )
+)
     spec_mod.property_ops = [prop_op]
     spec_mod.directive_ops = []
 
@@ -119,7 +119,7 @@ def test_assert_to_sva_with_eventually():
         prop_name="eventual_grant",
         kind="liveness",
         expression={"kind": "eventually", "operand": "(read grant)", "bound": 10},
-    )
+)
     spec_mod.property_ops = [prop_op]
     spec_mod.directive_ops = []
     assert_mod = isir_to_assert.convert(spec_mod)
@@ -157,7 +157,7 @@ def test_assert_to_ovl_unsupported_property():
         prop_name="eventual_grant",
         kind="liveness",
         expression={"kind": "eventually", "operand": "(read grant)"},
-    )
+)
     spec_mod.property_ops = [prop_op]
     spec_mod.directive_ops = []
     assert_mod = isir_to_assert.convert(spec_mod)

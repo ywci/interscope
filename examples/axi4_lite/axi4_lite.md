@@ -35,8 +35,8 @@
 - **write_reg1** (transition): after each step, if awvalid and wvalid and awaddr equals 1, then `reg1` equals wdata.
 - **write_reg2** (transition): after each step, if awvalid and wvalid and awaddr equals 2, then `reg2` equals wdata.
 - **write_reg3** (transition): after each step, if awvalid and wvalid and awaddr equals 3, then `reg3` equals wdata.
-- **write_responds** (transition): after each step, if awvalid and wvalid, then `bvalid` equals true.
-- **read_responds** (transition): after each step, if arvalid, then `rvalid` equals true.
-- **read_data_correct** (transition): after each step, if arvalid, then `rdata` equals read_reg(araddr, prev(reg0), prev(reg1), prev(reg2), prev(reg3)).
-- **bvalid_held_until_bready** (transition): after each step, if prev(bvalid) and not (bready), then `bvalid` equals true.
-- **rvalid_held_until_rready** (transition): after each step, if prev(rvalid) and not (rready), then `rvalid` equals true.
+- **write_responds** (transition): after each step, if awvalid and wvalid, then bvalid equals true.
+- **read_responds** (transition): after each step, if arvalid, then rvalid equals true.
+- **read_data_correct** (transition): after each step, if arvalid, then rdata equals read_reg(araddr, prev(reg0), prev(reg1), prev(reg2), prev(reg3)).
+- **bvalid_held_until_bready** (transition): after each step, if prev(bvalid) and not (bready), then bvalid equals true.
+- **rvalid_held_until_rready** (transition): after each step, if prev(rvalid) and not (rready), then rvalid equals true.

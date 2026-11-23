@@ -10,53 +10,48 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: x
       direction: input
-      type: "bits<8>"   # INT8 activation
+      type: "bits<8>"
     - name: valid
       direction: input
       type: "bool"
-
   state:
     - name: out
       kind: register
       type: "bits<8>"
       initial: 0
-
   functions:
-    # GELU activation (shifted-ReLU stand-in for the 256-entry LUT): a nonlinear
-    # gate expressed with min/max/sub only, so the INT8 bound is auto-provable.
     - name: gelu
-      params: [{name: x, type: "bits<8>"}]
+      params:
+        - name: x
+          type: "bits<8>"
       return: "bits<8>"
       body: (min (max 0 (sub x 32)) 255)
-
   rules:
     - name: compute
       condition: valid
       action:
         - (write out (gelu x))
-
   properties:
-    - name: out_bounded
+    - name: out_equals_gelu_x
       kind: safety
       expression:
         kind: always
-        operand: (le (read out) 255)
-    - name: out_nonneg
-      kind: safety
+        operand: (eq (read out) (gelu x))
+    - name: out_applies_gelu
+      kind: transition
       expression:
-        kind: always
-        operand: (ge (read out) 0)
-
+        kind: transition
+        rule: compute
+        operand: (eq (read out) (gelu x))
   proof_obligations:
-    - property: out_bounded
+    - property: out_applies_gelu
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: out_nonneg
+      backend: koika_acl2
+    - property: out_equals_gelu_x
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

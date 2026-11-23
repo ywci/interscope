@@ -1,12 +1,10 @@
 # src/isir/verification/sat_gate/compile_dyn.py
 #
 # Dynamic obligation compiler: lower an ITP-side predicate (the `always`
-# operand) into a bit-blasted formula.  Backend-agnostic w.r.t. the model
+# operand) into a bit-blasted formula. Backend-agnostic w.r.t. the model
 # encoding path, but it drives the shared bit-blaster.
-"""Lower S-expression predicates to bit-blasted CNF."""
 
 from typing import Dict, List, Optional, Sequence, Union
-
 from isir.utils.expr import parse_sexpr
 from isir.verification.sat_gate.bitblast import BitBlaster
 
@@ -241,3 +239,50 @@ def compile_ind_step(inv_pred: Union[str, List],
     blaster.cnf.add([-inv_prime])
 
     return blaster
+
+
+def compile_bad_cube_step_with_selectors(
+        local_blocks: Sequence[Union[str, List]],
+        transitions: Dict[str, Union[str, List]],
+        widths: Dict[str, int],
+        cube) -> "tuple[BitBlaster, Dict[tuple, int]]":
+    """Compile ``BAD_CUBE_STEP(F, cube)`` with a selector literal per cube literal.
+
+    For each cube literal ``(name, value)`` a fresh selector ``a_l`` is attached
+    to BOTH the antecedent (``a_l → ¬l(s)``) and the consequent (``a_l → l(s')``).
+    Solving under the assumptions ``{a_l}`` and reading the failed core lets the
+    caller drop every literal whose selector is unused by the refutation.
+    """
+    blaster = BitBlaster()
+    for block in local_blocks:
+        blaster.cnf.add([lower_pred(block, blaster, widths)])
+
+    # Antecedent ¬b(s) = ∨_l ¬l(s) is a SINGLE clause; the selector gates each
+    # ¬l(s) via a_l → ¬l(s) = (¬a_l ∨ ¬l(s)).  Under {a_l} the clause is the
+    # plain ∨ ¬l(s); with a_l unassigned the solver can drop the disjunct.
+    selectors: Dict[tuple, int] = {}
+    antecedent: List[int] = []
+    for name, value in sorted(cube):
+        sel = blaster.cnf.new_var()
+        selectors[(name, value)] = sel
+        lit_cur = lower_pred(["eq", ["read", name], value], blaster, widths)
+        antecedent.extend([-sel, -lit_cur])   # ¬a_l ∨ ¬l(s)
+    blaster.cnf.add(antecedent)
+
+    primed_map: Dict[str, str] = {}
+    for name, next_expr in transitions.items():
+        w = widths[name]
+        nxt = lower_term(next_expr, blaster, widths)
+        pname = name + "'"
+        primed = [blaster.symbols.intern(pname, w) + i for i in range(w)]
+        eq = blaster.blast_eq(primed, nxt)
+        blaster.cnf.add([eq])
+        primed_map[name] = pname
+
+    for name, value in sorted(cube):
+        sel = selectors[(name, value)]
+        lit_next = lower_pred(["eq", ["read", name], value], blaster, widths,
+                              name_map=primed_map)
+        blaster.cnf.add([-sel, lit_next])  # a_l -> l(s')
+
+    return blaster, selectors

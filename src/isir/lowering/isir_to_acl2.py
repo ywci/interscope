@@ -553,7 +553,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         spec_module.rule_ops,
         key=lambda r: r.priority if r.priority is not None else 0,
         reverse=True
-    )
+)
 
     has_mem = bool(memory_names)
 
@@ -654,7 +654,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         func_name=f"{spec_module.name}_step",
         args=["st"] + input_names + (["mem"] if has_mem else []),
         body=body
-    )
+)
 
     # 3. Generate initial state definition
     init_vals = []
@@ -673,7 +673,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         func_name=f"{spec_module.name}_init",
         args=[],
         body=init_list
-    )
+)
 
     defuns = [init_state_defun, next_state_defun]
 
@@ -704,7 +704,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             func_name=fname,
             args=["fuel"] + pnames,
             body=f"(if (zp fuel) {zero}\n    {body_acl2})"
-        ))
+))
 
     # 3b. n-cycle step (clocked trace model for temporal properties).
     inputs_str = " ".join(input_names)
@@ -720,7 +720,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         func_name=f"{spec_module.name}_stepn",
         args=["n", "st"] + input_names + (["mem"] if has_mem else []),
         body=stepn_body
-    )
+)
     defuns.append(stepn_defun)
 
     # 4. Theorems from proof obligations (with auto‑hints)
@@ -853,7 +853,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
                         temporal_defuns.append(acl2.ACL2DefunOp(
                             func_name=fn, args=["n", "st"] + input_names,
                             body=f"(if (zp n)\n    {op_acl2}\n  (or {op_acl2} ({fn} (1- n) st {inputs_str})))"
-                        ))
+))
                         prop_acl2 = f"({fn} n st {inputs_str})"
                     else:
                         left = prop_op.expression.get("left")
@@ -864,7 +864,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
                         temporal_defuns.append(acl2.ACL2DefunOp(
                             func_name=fn, args=["n", "st"] + input_names,
                             body=f"(if (zp n)\n    {psi_acl2}\n  (or {psi_acl2} (and {phi_acl2} ({fn} (1- n) st {inputs_str}))))"
-                        ))
+))
                         prop_acl2 = f"({fn} n st {inputs_str})"
             else:
                 # safety / invariant / always: the operand holds in every
@@ -911,7 +911,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             hints=hints_list,
             skip_proofs=True,
             rule_classes_nil=True,
-        )
+)
         defthms.append(defthm)
 
     # 4b. Axioms (unproved assumptions): defaxiom.
@@ -952,7 +952,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             statement=f"(implies (natp t) {inv_acl2})",
             hints=[f'("Goal" :induct ({tr} t {init} {inputs_str}{mem_arg}))'],
             skip_proofs=True,
-        ))
+))
 
     # 4c. Directives: assume -> hypothesis (added to every property below);
     #     assert/cover -> a theorem of the directive expression.
@@ -969,7 +969,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             defthms.append(acl2.ACL2DefthmOp(
                 thm_name=f"{directive.directive_name}_holds",
                 statement=d_acl2,
-            ))
+))
 
     # Fold global assume directives into the property hypotheses.
     if global_assumes:
@@ -1019,7 +1019,7 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             f"  ((({fname} {stars}) => *\n"
             f"    :formals ({formals})))\n"
             f"  (local (defun {fname} ({args_str}) {ignore} 0)))"
-        )
+)
 
     defuns.extend(temporal_defuns)
 
@@ -1030,19 +1030,19 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
             statement="(implies (and (integerp x) (integerp y) (<= 0 x) (< 0 y)) (<= (mod x y) x))",
             hints=['("Goal" :in-theory (enable mod))'],
             rule_classes=[":linear"],
-        ),
+),
         acl2.ACL2DefthmOp(
             thm_name="isir-mod-x-y-x",
             statement="(implies (and (integerp x) (integerp y) (<= 0 x) (< x y)) (equal (mod x y) x))",
             hints=['("Goal" :in-theory (enable mod))'],
             rule_classes=[":rewrite"],
-        ),
+),
         acl2.ACL2DefthmOp(
             thm_name="isir-natp-mod",
             statement="(implies (and (integerp x) (integerp y) (< 0 y)) (natp (mod x y)))",
             hints=['("Goal" :in-theory (enable mod))'],
             rule_classes=[":rewrite", ":type-prescription"],
-        ),
+),
     ]
     for lemma in domain_lemmas:
         raw_forms.append(lemma.to_lisp())
@@ -1054,5 +1054,5 @@ def convert(spec_module: isir.SpecModule) -> acl2.ACL2Module:
         defthms=defthms,
         defun_sk_ops=defun_sk_ops,
         raw_forms=raw_forms
-    )
+)
     return acl2_mod

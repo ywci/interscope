@@ -81,4 +81,4 @@ class TestCombinationalProve:
         assert "ACL2 Error" not in text, f"combinational proof failed:\n{text[-2000:]}"
         assert "FAILED" not in text, f"combinational proof failed:\n{text[-2000:]}"
         for name in sorted(provable):
-            assert re.search(rf"\( DEFTHM {name.upper()} ", text), f"{name} not attempted"
+            assert re.search(rf"\(\s*DEFTHM {name.upper()} ", text), f"{name} not attempted"

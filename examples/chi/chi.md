@@ -91,3 +91,7 @@
 - **rn0_is_modified_implies_valid** (safety): always, if rn0_is_modified(`c0_mstate_signal`), then `c0_mstate_signal` does not equal 0.
 - **rn1_has_line_holds_line** (safety): always, if rn1_has_line(`c0_mstate_signal`, `req_addr_signal`, `req_addr_signal`), then `c0_mstate_signal` does not equal 0.
 - **rn1_is_modified_implies_valid** (safety): always, if rn1_is_modified(`c0_mstate_signal`), then `c0_mstate_signal` does not equal 0.
+- **req_mux_merges_channels** (transition): after each step, `req_valid_signal` equals prev(req_out0) or prev(req_out1) and `req_core_signal` equals prev(req_out1) and `req_write_signal` equals if prev(req_out1), then prev(req_out1_write), otherwise prev(req_out0_write) and `req_addr_signal` equals if prev(req_out1), then prev(req_out1_addr), otherwise prev(req_out0_addr) and `req_data_signal` equals if prev(req_out1), then prev(req_out1_data), otherwise prev(req_out0_data).
+- **rsp_mux_merges_channels** (transition): after each step, `snp_rsp_signal` equals prev(snp_rsp0) or prev(snp_rsp1).
+- **snoop_routes_to_core** (transition): after each step, `snp0_valid_signal` equals prev(snp_valid_signal) and not (prev(snp_core_signal)) and `snp1_valid_signal` equals prev(snp_valid_signal) and prev(snp_core_signal).
+- **grant_routes_to_core** (transition): after each step, `grant0_valid_signal` equals prev(grant_valid_signal) and not (prev(grant_core_signal)) and `grant1_valid_signal` equals prev(grant_valid_signal) and prev(grant_core_signal).

@@ -12,12 +12,12 @@ module:
   inputs:
     - name: taken
       direction: input
-      type: "bool"   # actual branch outcome this cycle
+      type: "bool"
   state:
     - name: ctr
       kind: register
       type: "bits<2>"
-      initial: 1       # 2-bit saturating counter, start weakly-not-taken
+      initial: 1
     - name: predict
       kind: register
       type: "bool"
@@ -26,26 +26,38 @@ module:
     - name: update
       condition: "true"
       action:
-        - (write ctr (ite taken (ite (lt (read ctr) 3) (add (read ctr) 1) 3)
-                               (ite (gt (read ctr) 0) (sub (read ctr) 1) 0)))
+        - (write ctr (ite taken (ite (lt (read ctr) 3) (add (read ctr) 1) 3) (ite
+          (gt (read ctr) 0) (sub (read ctr) 1) 0)))
         - (write predict (ge (read ctr) 2))
   properties:
     - name: predict_bool
       kind: safety
       expression:
         kind: always
-        operand: (or (eq (read predict) true) (eq (read predict) false))
-    - name: ctr_bounded
+        operand: (or (eq (read predict) True) (eq (read predict) False))
+    - name: predict_equals_taken_threshold
       kind: safety
       expression:
         kind: always
-        operand: (and (ge (read ctr) 0) (le (read ctr) 3))
+        operand: (eq (read predict) (ge (read ctr) 2))
+    - name: predictor_tracks_taken
+      kind: transition
+      expression:
+        kind: transition
+        rule: update
+        operand: (and (eq (read ctr) (ite taken (ite (lt (prev ctr) 3) (add (prev
+          ctr) 1) 3) (ite (gt (prev ctr) 0) (sub (prev ctr) 1) 0))) (eq (read predict)
+          (ge (prev ctr) 2)))
   proof_obligations:
+    - property: predictor_tracks_taken
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: predict_bool
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: ctr_bounded
+      backend: koika_acl2
+    - property: predict_equals_taken_threshold
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

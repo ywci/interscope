@@ -82,7 +82,7 @@ def aggregate_verification_reports(
 
     overall_pass = sum(
         1 for r in reports if r.overall_status == Status.PASS
-    )
+)
 
     return {
         "total_designs": total_designs,

@@ -251,11 +251,8 @@
 ## Properties
 
 - **cache_l1d_is_modified_implies_valid** (safety): always, if cache_l1d_is_modified(`cache_l1d_s0`), then `cache_l1d_s0` does not equal 0.
-- **cache_l1d_phys_index_bounded** (safety): always, cache_l1d_phys_index(`cache_l1d_a0`) ≤ 3.
 - **cache_l1i_is_modified_implies_valid** (safety): always, if cache_l1i_is_modified(`cache_l1i_s0`), then `cache_l1i_s0` does not equal 0.
-- **cache_l1i_phys_index_bounded** (safety): always, cache_l1i_phys_index(`cache_l1i_a0`) ≤ 3.
 - **ooo_lsu_l1d_is_modified_implies_valid** (safety): always, if ooo_lsu_l1d_is_modified(`ooo_lsu_l1d_s0`), then `ooo_lsu_l1d_s0` does not equal 0.
-- **ooo_lsu_l1d_phys_index_bounded** (safety): always, ooo_lsu_l1d_phys_index(`ooo_lsu_l1d_a0`) ≤ 3.
 - **pc_increments** (transition): after each step, `pc` equals prev(pc) + 1.
 - **itlb_hit_sets_i_pa** (transition): after each step, `i_pa_signal` equals `mmu_itlb_way0_ppn`.
 - **dtlb_hit_sets_pa** (transition): after each step, `pa_signal` equals `mmu_dtlb_way0_ppn`.

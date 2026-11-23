@@ -75,7 +75,7 @@ class TestPERFConfig:
     def test_validation_primary_dimension_outside_dimensions(self):
         config = PERFConfig(
             dimensions=["subgoal_reduction"], primary_dimension="trace_alignment"
-        )
+)
         config.validate()
 
     def test_validation_tournament_size(self):
@@ -157,14 +157,14 @@ class TestPERFConfig:
     def test_get_effective_dimensions(self):
         config = PERFConfig(
             dimensions=["subgoal_reduction"], primary_dimension="trace_alignment"
-        )
+)
         effective = config.get_effective_dimensions()
         assert effective == ["trace_alignment", "subgoal_reduction"]
 
         config = PERFConfig(
             dimensions=["subgoal_reduction", "trace_alignment"],
             primary_dimension="trace_alignment",
-        )
+)
         effective = config.get_effective_dimensions()
         assert effective == ["subgoal_reduction", "trace_alignment"]
 
@@ -188,7 +188,7 @@ class TestPERFConfig:
         }
         with pytest.raises(
             ValueError, match="Configuration conflict: PERF enabled but use_proof_library is true"
-        ):
+):
             validate_perf_against_config(config)
 
     def test_validate_perf_against_config_no_conflict(self):
@@ -294,7 +294,7 @@ class TestPERFScorer:
         llm = MagicMock(spec=LLMClient)
         llm.generate.return_value = (
             '{"subgoal_reduction": 1, "trace_alignment": 1, "syntactic_purity": 1}'
-        )
+)
         scorer = PERFScorer(config, llm)
         node_a = PERFNode(script="a", verification_result={"success": True})
         node_b = PERFNode(script="b", verification_result={"success": False})
@@ -408,7 +408,7 @@ class TestPERFEvidence:
             proof_script="Proof. Qed.",
             backend="koika",
             stats=stats,
-        )
+)
         assert pid == 123
         assert mock_add_evidence.call_count == 2
 
@@ -437,14 +437,14 @@ class TestPERFEvidence:
         with patch.object(evidence_manager.registry, "add_counterexample", return_value=456) as mock_add_counter:
             cid = evidence_manager.register_counterexample(
                 property_name="prop", trace_path=trace_path, engine="BMC"
-            )
+)
         assert cid == 456
         mock_add_counter.assert_called_once_with(
             property_name="prop",
             engine="BMC",
             trace_path=trace_path,
             status="counterexample",
-        )
+)
 
     @patch("isir.verification.perf.perf_evidence.add_evidence_to_registry")
     def test_register_stats(self, mock_add_evidence):
@@ -477,7 +477,7 @@ class TestPERFEvidence:
         evidence_manager.get_perf_proofs(property_name="prop", backend="koika")
         mock_registry.list_evidence.assert_called_with(
             evidence_type="coq_theorem", property_name="prop", engine="perf_koika"
-        )
+)
 
         mock_registry.list_evidence.reset_mock()
         evidence_manager.get_perf_proofs(property_name="prop")
@@ -495,7 +495,7 @@ class TestPERFTraversal:
             branches_per_node=2,
             depth_limit=2,
             always_verify_children=True,
-        )
+)
         self.llm = MagicMock(spec=LLMClient)
         self.context = {
             "obligation": {"property": "prop", "backend": "koika"},
@@ -593,7 +593,7 @@ class TestPERFTraversal:
     def test_traverse_with_acl2_backend(self, mock_scorer_class, mock_parallel_class):
         config = PERFConfig(
             enabled=True, beam_size=2, branches_per_node=2, depth_limit=1
-        )
+)
         context = {
             "obligation": {"property": "prop", "backend": "acl2"},
             "acl2_file_path": "/tmp/test.lisp",
@@ -603,7 +603,7 @@ class TestPERFTraversal:
         traversal = PERFTraversal(config, self.llm, context)
         traversal._get_initial_script = MagicMock(
             return_value="(defthm prop_correct ...)"
-        )
+)
         traversal._validate_initial_script = MagicMock(return_value=True)
         traversal._evaluate_node = MagicMock(return_value={"success": True})
         script, stats = traversal.traverse()

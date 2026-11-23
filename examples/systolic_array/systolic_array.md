@@ -36,9 +36,7 @@
 
 ## Properties
 
-- **acc_nonneg** (safety): always, `acc0` ≥ 0 and `acc1` ≥ 0.
 - **mac_step_correct** (transition): after each step, `acc0` equals prev(acc0) + a0 × prev(w00) + a1 × prev(w10).
 - **acc_monotonic** (transition): after each step, `acc0` ≥ prev(acc0) and `acc1` ≥ prev(acc1).
 - **weights_stationary** (transition): after each step, `w00` equals prev(w00) and `w01` equals prev(w01) and `w10` equals prev(w10) and `w11` equals prev(w11).
-- **out_bounded** (safety): always, `out0` ≤ 255 and `out1` ≤ 255.
-- **out_nonneg** (safety): always, `out0` ≥ 0 and `out1` ≥ 0.
+- **out0_equals_requantized_acc0** (safety): always, `out0` equals min(`acc0` × scale shifted right by shift, 255).

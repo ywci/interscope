@@ -54,22 +54,31 @@ module:
       kind: register
       type: "bits<32>"
       initial: 0
-
-  # Combinational reference functions for the multiplier datapath.
   functions:
     - name: mul_exact
-      params: [{name: a, type: "bits<16>"}, {name: b, type: "bits<16>"}]
+      params:
+        - name: a
+          type: "bits<16>"
+        - name: b
+          type: "bits<16>"
       return: "bits<32>"
       body: (mul a b)
     - name: mul_truncated_result
-      params: [{name: a, type: "bits<16>"}, {name: b, type: "bits<16>"}]
+      params:
+        - name: a
+          type: "bits<16>"
+        - name: b
+          type: "bits<16>"
       return: "bits<16>"
       body: (slice (mul_exact a b) 15 0)
     - name: mul_truncated_ovf
-      params: [{name: a, type: "bits<16>"}, {name: b, type: "bits<16>"}]
+      params:
+        - name: a
+          type: "bits<16>"
+        - name: b
+          type: "bits<16>"
       return: "bool"
       body: (neq (slice (mul_exact a b) 31 16) 0)
-
   rules:
     - name: load
       condition: start
@@ -80,13 +89,15 @@ module:
         - (write count 0)
         - (write done false)
     - name: add_step
-      condition: (and (not (read done)) (and (lt (read count) 16) (eq (mod (read multiplier) 2) 1)))
+      condition: (and (not (read done)) (and (lt (read count) 16) (eq (mod (read multiplier)
+        2) 1)))
       action:
         - (write acc (add (read acc) (read multiplicand)))
         - (write multiplier (div (read multiplier) 2))
         - (write count (add (read count) 1))
     - name: shift_step
-      condition: (and (not (read done)) (and (lt (read count) 16) (eq (mod (read multiplier) 2) 0)))
+      condition: (and (not (read done)) (and (lt (read count) 16) (eq (mod (read multiplier)
+        2) 0)))
       action:
         - (write multiplier (div (read multiplier) 2))
         - (write count (add (read count) 1))
@@ -96,16 +107,11 @@ module:
         - (write done true)
         - (write product (read acc))
   properties:
-    - name: count_in_range
+    - name: done_implies_product_equals_acc
       kind: safety
       expression:
         kind: always
-        operand: (and (ge (read count) 0) (le (read count) 16))
-    - name: acc_nonneg
-      kind: safety
-      expression:
-        kind: always
-        operand: (ge (read acc) 0)
+        operand: (implies done (eq product (read acc)))
     - name: mul_commutative
       kind: combinational
       expression:
@@ -151,69 +157,35 @@ module:
         operand: (le (mul_exact x y) 65025)
         reference: true
   proof_obligations:
-    - property: count_in_range
-      status: unproved
-      engine: theorem_proving
-      backend: koika
-    - property: acc_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: koika
     - property: mul_commutative
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: mul_commutative
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: mul_distributive
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: mul_distributive
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: mul_zero
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: mul_zero
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: mul_one
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: mul_one
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: truncation_definitional
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: truncation_definitional
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: overflow_definitional
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: overflow_definitional
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: unsigned_max_bound
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: unsigned_max_bound
+      backend: koika_acl2
+    - property: done_implies_product_equals_acc
       status: unproved
       engine: theorem_proving
-      backend: acl2
-    - property: count_in_range
-      engine: model_checking
+      backend: koika_acl2

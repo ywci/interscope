@@ -73,7 +73,7 @@ class TestValidateConfig:
 
     def test_provider_with_env_key_emits_no_missing_key_warning(
         self, tmp_path, monkeypatch, capsys
-    ):
+):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-key")
         cfg = copy.deepcopy(_PERF_BASE)
         cfg["llm"] = {"provider": "deepseek", "model": "qwen3.5:27b"}
@@ -108,7 +108,7 @@ class TestValidateConfig:
         cfg = copy.deepcopy(_PERF_BASE)
         cfg["proof"]["perf"].update(
             {"beam_size": 0, "branches_per_node": 1, "depth_limit": 1, "dimensions": ["a"]}
-        )
+)
         cfg["llm"] = {"provider": "ollama", "model": "qwen"}
         assert validate_config(_write_config(tmp_path, cfg), verbose=False) is False
 

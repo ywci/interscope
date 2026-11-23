@@ -1,8 +1,6 @@
 # tests/sat_gate/test_arithmetic.py
-"""Arithmetic truth tables: add/sub/ult/ule match the reference."""
 
 from sat_helper import dpll_sat, vars_of
-
 from isir.verification.sat_gate.bitblast import BitBlaster
 
 

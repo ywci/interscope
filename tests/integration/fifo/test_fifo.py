@@ -85,12 +85,12 @@ def test_fifo_compile_koika(fifo_spec_path, build_dir):
         capture_output=True,
         text=True,
         timeout=60,
-    )
+)
     assert result.returncode == 0, (
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
         f"STDOUT: {result.stdout}"
-    )
+)
     coq_file = build_dir / "fifo" / "coq" / "fifo.v"
     assert coq_file.exists(), f"Coq file not found: {coq_file}"
 
@@ -108,12 +108,12 @@ def test_fifo_compile_acl2(fifo_spec_path, build_dir):
         capture_output=True,
         text=True,
         timeout=60,
-    )
+)
     assert result.returncode == 0, (
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
         f"STDOUT: {result.stdout}"
-    )
+)
     acl2_file = build_dir / "fifo" / "acl2" / "fifo.lisp"
     assert acl2_file.exists(), f"ACL2 file not found: {acl2_file}"
 
@@ -145,14 +145,14 @@ def test_fifo_verify_koika(fifo_spec_path, build_dir):
         text=True,
         timeout=120,
         env=env,
-    )
+)
 
     if result.returncode not in (0, 1):
         pytest.fail(
             f"Verification crashed with code {result.returncode}:\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
     coq_file = build_dir / "verify" / "fifo" / "coq" / "fifo.v"
     if not coq_file.exists():
@@ -160,7 +160,7 @@ def test_fifo_verify_koika(fifo_spec_path, build_dir):
             f"Coq file was not generated.\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
     if result.returncode == 0:
         assert "PASS" in result.stdout
@@ -184,7 +184,7 @@ def test_fifo_verify_acl2(fifo_spec_path, build_dir):
             capture_output=True,
             text=True,
             timeout=120,
-        )
+)
     except subprocess.TimeoutExpired as e:
         pytest.fail(
             f"ACL2 verification timed out (120 seconds).\n"
@@ -192,14 +192,14 @@ def test_fifo_verify_acl2(fifo_spec_path, build_dir):
             f"{e.stderr.decode() if e.stderr else '(none)'}\n"
             f"STDOUT captured so far:\n"
             f"{e.stdout.decode() if e.stdout else '(none)'}"
-        )
+)
 
     if result.returncode not in (0, 1):
         pytest.fail(
             f"Verification crashed with code {result.returncode}:\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
     acl2_file = build_dir / "verify" / "fifo" / "acl2" / "fifo.lisp"
     if not acl2_file.exists():
@@ -207,7 +207,7 @@ def test_fifo_verify_acl2(fifo_spec_path, build_dir):
             f"ACL2 file was not generated.\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
 
 @pytest.mark.integration

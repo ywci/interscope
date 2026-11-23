@@ -60,7 +60,7 @@ def synthesize_rtl(
     if not yosys_path:
         raise YosysSynthesisError(
             "Yosys not found.  Install it or set 'tools.yosys' in conf/config.yaml."
-        )
+)
 
     verilog_path = verilog_path.resolve()
     if not verilog_path.exists():
@@ -106,7 +106,7 @@ def synthesize_rtl(
             text=True,
             timeout=timeout,
             cwd=str(output_dir),
-        )
+)
     except subprocess.TimeoutExpired:
         raise YosysSynthesisError(f"Yosys synthesis timed out after {timeout}s")
 
@@ -114,7 +114,7 @@ def synthesize_rtl(
         logger.error("Yosys stderr:\n%s", result.stderr)
         raise YosysSynthesisError(
             f"Yosys synthesis failed with code {result.returncode}:\n{result.stderr[:1000]}"
-        )
+)
 
     log_text = result.stdout + "\n" + result.stderr
     logger.debug("Yosys output:\n%s", log_text[:2000])
@@ -209,4 +209,4 @@ def synthesize_from_config(
         library=synth_cfg.get("library"),
         flatten=synth_cfg.get("flatten", True),
         timeout=synth_cfg.get("timeout", 300),
-    )
+)

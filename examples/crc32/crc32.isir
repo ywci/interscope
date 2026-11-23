@@ -10,7 +10,6 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: data_in
       direction: input
@@ -20,7 +19,6 @@ module:
       direction: input
       type: "bool"
       protocol: fixed_cycle
-
   outputs:
     - name: crc_out
       direction: output
@@ -30,98 +28,88 @@ module:
       direction: output
       type: "bool"
       protocol: fixed_cycle
-
   state:
     - name: crc
       kind: register
       type: "bits<32>"
-      initial: 0               # changed from 0xFFFFFFFF to avoid Kōika stack overflow
-
+      initial: 0
     - name: count
       kind: register
       type: "bits<2>"
       initial: 0
-
     - name: done
       kind: register
       type: "bool"
       initial: false
-
     - name: crc_table
       kind: memory
       type:
         type: memory
         elem: "bits<32>"
         depth: 256
-
   rules:
     - name: process_byte
       condition: (and data_valid (not (read done)))
       action:
-        - (write crc
-            (xor (rshift (read crc) 8)
-                 (mem_read crc_table
-                   (and (xor (read crc) (read data_in)) 255))))
+        - (write crc (xor (rshift (read crc) 8) (mem_read crc_table (and (xor (read
+          crc) (read data_in)) 255))))
         - (write count (add (read count) 1))
         - (write done (eq (read count) 3))
-
   directives:
     - type: assume
       name: one_byte_per_cycle
       expression: (implies data_valid true)
-
   properties:
     - name: done_after_4_bytes
       kind: safety
       expression:
         kind: always
-        operand: (implies (read done) (eq (read count) 3))
-
+        operand: (implies done (eq (read count) 3))
     - name: crc_reset_value
       kind: safety
       expression:
         kind: always
         operand: (implies (not rst_n) (eq (read crc) 0))
-
     - name: done_initial_false
       kind: safety
       expression:
         kind: always
-        operand: (implies (not rst_n) (not (read done)))
-
-    - name: count_in_range
+        operand: (implies (not rst_n) (not done))
+    - name: done_iff_count_eq_4
       kind: safety
       expression:
         kind: always
-        operand: (and (ge (read count) 0) (le (read count) 3))
-
+        operand: (eq done (eq (read count) 4))
     - name: crc_32_bit
       kind: safety
       expression:
         kind: always
         operand: (and (ge (read crc) 0) (le (read crc) 4294967295))
-
+    - name: crc_accumulates_byte
+      kind: transition
+      expression:
+        kind: transition
+        rule: process_byte
+        operand: (and (eq (read count) (add (prev count) 1)) (eq done (eq (prev count)
+          3)))
   proof_obligations:
+    - property: crc_accumulates_byte
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: crc_32_bit
       status: unproved
       engine: theorem_proving
-      backend: koika
-
-    - property: count_in_range
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-
-    - property: crc_32_bit
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-
+      backend: koika_acl2
     - property: done_after_4_bytes
       engine: model_checking
     - property: done_initial_false
       engine: model_checking
-    - property: count_in_range
+    - property: done_iff_count_eq_4
       engine: model_checking
     - property: crc_32_bit
       engine: model_checking
+    - property: done_iff_count_eq_4
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
-from gen_spec import (  # noqa: E402
+from gen_spec import (# noqa: E402
     _facts,
     _reconstruct,
     gen_markdown,
@@ -21,7 +21,7 @@ from isir.parser.parser import parse_isir  # noqa: E402
 def _spec(ex):
     return convert_ast_to_isir_module(
         parse_isir(Path(f"examples/{ex}/{ex}.isir")).module
-    )
+)
 
 
 class TestGenSpec:
@@ -77,7 +77,7 @@ class TestGenSpec:
                     "  state:\n"
                     "    - {name: result_reg, type: \"bits<8>\", initial: 0}\n"
                     "}\n"
-                )
+)
 
         def fake_load_config():
             return {"llm": {"provider": "deepseek", "model": "deepseek-chat"}}

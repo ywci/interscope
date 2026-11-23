@@ -28,7 +28,7 @@ class ACL2Client:
         mcp_path: str = "acl2-mcp",
         timeout: int = 30,
         init_commands: Optional[List[str]] = None,
-    ):
+):
         self.mcp_path = mcp_path
         self.timeout = timeout
         self.init_commands = init_commands or []
@@ -58,7 +58,7 @@ class ACL2Client:
         self._init_error = None
         self._session_future = asyncio.run_coroutine_threadsafe(
             self._session_main(), self._loop
-        )
+)
 
         if not self._ready_event.wait(timeout=30):
             # The session task never signalled readiness.
@@ -68,7 +68,7 @@ class ACL2Client:
             self._cleanup_thread()
             raise ACL2ClientError(
                 f"Failed to start ACL2 MCP client: {self._init_error}"
-            )
+)
         self._started = True
         logger.info("ACL2 MCP client started successfully.")
 
@@ -122,7 +122,7 @@ class ACL2Client:
                 except Exception as e:
                     logger.warning(
                         "Error during ACL2 client shutdown: %s", e
-                    )
+)
         finally:
             self._cleanup_thread()
 
@@ -161,7 +161,7 @@ class ACL2Client:
             "ACL2 response (%d chars): %s",
             len(result) if result else 0,
             (result or "")[:500],
-        )
+)
         return result
 
     async def _send_async(self, command: str) -> str:
@@ -169,7 +169,7 @@ class ACL2Client:
         try:
             result = await self.session.call_tool(
                 "evaluate", arguments={"form": command}
-            )
+)
             if result.content and len(result.content) > 0:
                 return result.content[0].text
             return ""
@@ -179,7 +179,7 @@ class ACL2Client:
 
     async def _call_tool(
         self, tool_name: str, arguments: Dict[str, Any]
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         """Call an MCP tool and log the raw response.
 
         Returns a dict with keys: success, output, error.
@@ -191,7 +191,7 @@ class ACL2Client:
                 "Tool '%s' raw result: %s",
                 tool_name,
                 str(result.content)[:500],
-            )
+)
             if result.content and len(result.content) > 0:
                 text = result.content[0].text
                 try:
@@ -240,7 +240,7 @@ class ACL2Client:
                     "Failed to load ACL2 file %s: %s",
                     path_str,
                     (result or "")[:500],
-                )
+)
             return {"success": success, "output": result}
         except Exception as e:
             logger.error("Failed to load ACL2 file %s: %s", path_str, e)
@@ -254,7 +254,7 @@ class ACL2Client:
         guard: Optional[str] = None,
         mode: str = ":logic",
         verify_guards: bool = True,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         args_str = " ".join(args)
         xargs_parts = []
         if guard:
@@ -280,25 +280,25 @@ class ACL2Client:
         theorem_name: str,
         statement: str,
         hints: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         if not self._started:
             raise ACL2ClientError("ACL2 client not started")
         return self._run_async(
             self._defthm_async(theorem_name, statement, hints)
-        )
+)
 
     async def _defthm_async(
         self,
         theorem_name: str,
         statement: str,
         hints: Optional[List[str]],
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         hints_str = " ".join(hints) if hints else ""
         if hints_str:
             form = (
                 f"(defthm {theorem_name}\n  {statement}\n"
                 f"  :hints ({hints_str}))"
-            )
+)
         else:
             form = f"(defthm {theorem_name}\n  {statement})"
 
@@ -310,14 +310,14 @@ class ACL2Client:
                 "name": theorem_name,
                 **({"hints": hints} if hints else {}),
             },
-        )
+)
         if result["success"]:
             return result
 
         logger.warning(
             "'prove' tool failed (error: %s). Falling back to evaluate.",
             result.get("error"),
-        )
+)
         logger.debug("Falling back to evaluate with form: %s", form)
         eval_result = await self._call_tool("evaluate", {"form": form})
         return {
@@ -381,4 +381,4 @@ def get_acl2_client_from_config(
         mcp_path=acl2_cfg.get("mcp_path", "acl2-mcp"),
         timeout=acl2_cfg.get("mcp_timeout", 30),
         init_commands=acl2_cfg.get("init_commands", []),
-    )
+)

@@ -16,7 +16,7 @@ def _emitter(states, rule_actions, inputs=(), outputs=()):
         rule_ops=[SpecRuleOp(rule_name="tick", condition="true", actions=rule_actions)],
         inputs=list(inputs), outputs=list(outputs),
         property_ops=[], proof_obligations=[],
-    ))
+))
 
 
 class TestSigSanitization:

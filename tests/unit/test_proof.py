@@ -24,7 +24,7 @@ class TestProofResult:
             error_message="auto failed",
             auxiliary_lemmas=["lemma1"],
             metadata={"attempts": 3}
-        )
+)
         assert result.success is False
         assert result.proof_script == "Proof. auto. Qed."
         assert result.error_message == "auto failed"

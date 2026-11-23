@@ -43,21 +43,21 @@ class PERFAnalyzer:
     _STEP_INDUCTIVE_RE = re.compile(
         r"Inductive\s+step\s*:.*?:=\s*(.*?)\.",
         re.DOTALL,
-    )
+)
     _CONSTRUCTOR_RE = re.compile(r"\|\s*step_(\w+)\s*:", re.DOTALL)
     _THEOREM_RE = re.compile(
         r"Theorem\s+(\w+)\s*:\s*(.*?)\.",
         re.DOTALL,
-    )
+)
     _DEFINITIONAL_RE = re.compile(
         r"(\w+_reg)\s+\w+\s*=\s*\(\s*Nat\.eqb\s+\(\s*(\w+_reg)\s+\w+\s*\)\s*0\s*\)"
-    )
+)
 
     def analyze(
         self,
         coq_file: Path,
         theorem_name: str,
-    ) -> ObligationAnalysis:
+) -> ObligationAnalysis:
         """Run the analysis on a Coq file.
 
         Args:
@@ -90,7 +90,7 @@ class PERFAnalyzer:
         logger.debug(
             "PERFAnalyzer: num_ctors=%d, names=%s, has_nested_ite=%s, max_ite_depth=%d",
             num_ctors, ctor_names, has_nested, max_depth
-        )
+)
 
         # 3. Find the theorem statement.
         _, theorem_stmt = self._find_theorem(content, theorem_name)
@@ -104,7 +104,7 @@ class PERFAnalyzer:
             num_ctors == 1
             and max_depth >= 3
             and "step_execute" in content
-        )
+)
         suggests_lemma = len(duplicates) > 0
 
         # 6. Definitional property detection.
@@ -125,13 +125,13 @@ class PERFAnalyzer:
             duplicated_subexpressions=duplicates,
             is_definitional=is_def,
             suggested_helper_lemmas=suggested_lemmas,
-        )
+)
 
         logger.debug(
             "Obligation analysis for '%s': %s",
             theorem_name,
             analysis,
-        )
+)
         return analysis
 
     @staticmethod
@@ -145,7 +145,7 @@ class PERFAnalyzer:
 
     def _extract_step_constructors(
         self, content: str
-    ) -> Tuple[int, List[str], List[str]]:
+) -> Tuple[int, List[str], List[str]]:
         """
         Return the number of step constructors, their names, and a list of
         their bodies.
@@ -257,7 +257,7 @@ class PERFAnalyzer:
         logger.debug(
             "Extracted %d step constructors: %s",
             len(names), names
-        )
+)
         return len(names), names, bodies
 
     def _max_if_depth(self, body: str) -> int:
@@ -374,7 +374,7 @@ class PERFAnalyzer:
 
     def _find_theorem(
         self, content: str, theorem_name: str
-    ) -> Tuple[Optional[str], Optional[str]]:
+) -> Tuple[Optional[str], Optional[str]]:
         """Return the full theorem statement for *theorem_name*."""
         clean = self._strip_coq_comments(content)
         for match in self._THEOREM_RE.finditer(clean):
@@ -389,7 +389,7 @@ class PERFAnalyzer:
         content: str,
         ctor_bodies: List[str],
         theorem_stmt: Optional[str],
-    ) -> List[str]:
+) -> List[str]:
         """Detect large duplicated sub‑expressions within the step constructors."""
         duplicates: List[str] = []
         for body in ctor_bodies:
@@ -404,14 +404,14 @@ class PERFAnalyzer:
                     duplicates.append(
                         "zero_reg computation duplicates result_reg expression; "
                         "introducing a lemma for result_reg could simplify the proof."
-                    )
+)
                 overflow_reg_expr = self._extract_field(record, "overflow_reg")
                 if overflow_reg_expr and result_reg_expr:
                     if self._similar(overflow_reg_expr[:100], result_reg_expr[:100]):
                         duplicates.append(
                             "overflow_reg and result_reg share common sub‑expressions; "
                             "helper lemmas may reduce complexity."
-                        )
+)
         return duplicates
 
     def _extract_field(self, record: str, field: str) -> Optional[str]:
@@ -445,7 +445,7 @@ class PERFAnalyzer:
         duplicated_subexprs: List[str],
         ctor_bodies: List[str],
         theorem_stmt: Optional[str],
-    ) -> List[str]:
+) -> List[str]:
         """
         Generate candidate helper lemma names based on duplicated
         sub‑expressions and repeated field computations.

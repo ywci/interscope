@@ -26,5 +26,7 @@
 
 ## Properties
 
-- **addr_bounded** (safety): always, `addr` ≤ 255.
-- **remaining_bounded** (safety): always, `remaining` ≤ 15.
+- **busy_iff_remaining_nonzero** (safety): always, `busy` equals `remaining` does not equal 0.
+- **burst_initializes** (transition): after each step, `addr` equals min(base_addr, 255) and `remaining` equals min(burst_len, 15) and `is_store` equals direction and `busy` equals true.
+- **burst_advances** (transition): after each step, `addr` equals min(prev(addr) + 1, 255) and `remaining` equals prev(remaining) − 1.
+- **burst_completes** (transition): after each step, `busy` equals false.

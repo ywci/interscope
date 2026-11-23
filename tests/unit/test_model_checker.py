@@ -27,7 +27,7 @@ class TestSBYScript:
             "bmc",
             42,
             timeout=100,
-        )
+)
         content = sby.read_text()
         assert "mode bmc" in content
         assert "depth 42" in content
@@ -48,7 +48,7 @@ class TestSBYScript:
             "induction",
             1000,
             timeout=200,
-        )
+)
         content = sby.read_text()
         assert "mode prove" in content
         assert "depth 1000" in content
@@ -65,7 +65,7 @@ class TestSBYScript:
             "bmc",
             10,
             timeout=50,
-        )
+)
         content = sby.read_text()
         assert "/rtl/test.v" in content
         assert "/rtl/test_assert.sv" in content
@@ -115,14 +115,14 @@ class TestRunModelCheck:
     def test_success(self, mock_which, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0, stdout="DONE (PASS, rc=0)", stderr=""
-        )
+)
         result = run_model_check(
             rtl_path=tmp_path / "test.v",
             assertions_path=tmp_path / "test.sv",
             top_module="top",
             engine="bmc",
             depth=10,
-        )
+)
         assert result["success"] is True
         assert result["status"] == "proved"
         assert result["error"] is None
@@ -132,14 +132,14 @@ class TestRunModelCheck:
     def test_failure(self, mock_which, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=1, stdout="DONE (FAIL, rc=1)", stderr=""
-        )
+)
         result = run_model_check(
             rtl_path=tmp_path / "test.v",
             assertions_path=tmp_path / "test.sv",
             top_module="top",
             engine="bmc",
             depth=10,
-        )
+)
         assert result["success"] is False
         assert result["status"] == "disproved"
 
@@ -153,7 +153,7 @@ class TestRunModelCheck:
             top_module="top",
             engine="bmc",
             depth=10,
-        )
+)
         assert result["success"] is False
         assert result["status"] == "inconclusive"
         assert "timed out" in result["error"].lower()
@@ -165,20 +165,20 @@ class TestRunModelCheck:
                     rtl_path=Path("/tmp/test.v"),
                     assertions_path=Path("/tmp/test.sv"),
                     top_module="top",
-                )
+)
 
     @patch("subprocess.run")
     @patch("shutil.which", return_value="/usr/bin/sby")
     def test_extra_args(self, mock_which, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0, stdout="DONE (PASS, rc=0)", stderr=""
-        )
+)
         run_model_check(
             rtl_path=tmp_path / "test.v",
             assertions_path=tmp_path / "test.sv",
             top_module="top",
             extra_args=["--smtc", "z3"],
-        )
+)
         call_args = mock_run.call_args[0][0]
         assert "--smtc" in call_args
         assert "z3" in call_args

@@ -20,6 +20,5 @@
 
 ## Properties
 
-- **result_le_cap** (safety): always, `result` ≤ 255.
-- **overflow_is_bool** (safety): always, `overflow` equals true or `overflow` equals false.
-- **result_is_min** (transition): after each step, `result` equals saturate(x + y, 255) and `overflow` equals x + y ≥ 256.
+- **result_le_cap** (safety): always, result ≤ 255.
+- **result_is_min** (transition): after each step, result equals saturate(x + y, 255) and overflow equals x + y ≥ 256.

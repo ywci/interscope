@@ -23,8 +23,6 @@
 
 ## Properties
 
-- **lo_count_bounded** (safety): always, `lo_count` ≤ 15.
-- **hi_count_bounded** (safety): always, `hi_count` ≤ 15.
 - **lo_counter_bound** (safety): always, `lo_count` ≤ 15.
 - **lo_no_overflow_when_not_full** (safety): always, if not (`lo_count` equals 15), then not (`lo_overflow_flag`).
 - **lo_count_increments** (transition): after each step, `lo_count` equals prev(lo_count) + 1 and `lo_overflow_flag` equals prev(lo_count) equals 15.

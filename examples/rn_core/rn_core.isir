@@ -12,7 +12,7 @@ module:
   inputs:
     - name: req_valid
       direction: input
-      type: "bool"      # this RN has a request to issue
+      type: "bool"
     - name: req_write
       direction: input
       type: "bool"
@@ -24,19 +24,19 @@ module:
       type: "bits<8>"
     - name: snp_valid
       direction: input
-      type: "bool"      # snoop from the home node (SNP channel)
+      type: "bool"
     - name: snp_op
       direction: input
-      type: "bool"      # true = invalidate (write snoop); false = downgrade (read snoop)
+      type: "bool"
     - name: snp_addr
       direction: input
       type: "bits<4>"
     - name: grant_valid
       direction: input
-      type: "bool"      # grant from the home node (RSP channel)
+      type: "bool"
     - name: grant_write
       direction: input
-      type: "bool"      # true = write grant (-> M); false = read grant (-> S)
+      type: "bool"
     - name: grant_addr
       direction: input
       type: "bits<4>"
@@ -44,7 +44,6 @@ module:
       direction: input
       type: "bits<8>"
   state:
-    # This RN's L1D line (MESI): the real coherence state.
     - name: mstate
       kind: register
       type: "bits<2>"
@@ -57,7 +56,6 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    # REQ channel output (RN -> HN).
     - name: req_out_valid
       kind: register
       type: "bool"
@@ -74,22 +72,28 @@ module:
       kind: register
       type: "bits<8>"
       initial: 0
-    # RSP channel output (RN -> HN): snoop response.
     - name: snp_rsp_valid
       kind: register
       type: "bool"
       initial: false
   functions:
     - name: has_line
-      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      params:
+        - name: s
+          type: "bits<2>"
+        - name: a
+          type: "bits<4>"
+        - name: ra
+          type: "bits<4>"
       return: "bool"
       body: (and (neq s 0) (eq a ra))
     - name: is_modified
-      params: [{name: s, type: "bits<2>"}]
+      params:
+        - name: s
+          type: "bits<2>"
       return: "bool"
       body: (eq s 3)
   rules:
-    # Issue a request onto the REQ channel.
     - name: issue_req
       condition: req_valid
       action:
@@ -97,12 +101,10 @@ module:
         - (write req_out_write req_write)
         - (write req_out_addr req_addr)
         - (write req_out_data req_data)
-    # Complete a request when the grant arrives (RSP channel).
     - name: complete_req
       condition: grant_valid
       action:
         - (write req_out_valid false)
-    # Respond to a snoop: invalidate or downgrade the line (SNP -> RSP).
     - name: respond_snp
       condition: snp_valid
       action:
@@ -112,7 +114,6 @@ module:
       condition: (not snp_valid)
       action:
         - (write snp_rsp_valid false)
-    # Receive a grant: adopt the granted state and data (RSP + DAT).
     - name: receive_grant
       condition: grant_valid
       action:
@@ -124,7 +125,8 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (implies (has_line (read mstate) (read maddr) (read maddr)) (neq (read mstate) 0))
+        operand: (implies (has_line (read mstate) (read maddr) (read maddr)) (neq
+          (read mstate) 0))
     - name: is_modified_implies_valid
       kind: safety
       expression:
@@ -135,16 +137,70 @@ module:
       expression:
         kind: always
         operand: (and (ge (read mstate) 0) (le (read mstate) 3))
+    - name: request_forwarded_out
+      kind: transition
+      expression:
+        kind: transition
+        rule: issue_req
+        operand: (and (eq (read req_out_valid) True) (and (eq (read req_out_write)
+          req_write) (and (eq (read req_out_addr) req_addr) (eq (read req_out_data)
+          req_data))))
+    - name: request_deasserts_on_grant
+      kind: transition
+      expression:
+        kind: transition
+        rule: complete_req
+        operand: (eq (read req_out_valid) False)
+    - name: snoop_response_updates_state
+      kind: transition
+      expression:
+        kind: transition
+        rule: respond_snp
+        operand: (and (eq (read snp_rsp_valid) True) (eq (read mstate) (ite snp_op
+          0 (ite (eq (prev mstate) 3) 1 (prev mstate)))))
+    - name: snoop_response_deasserts
+      kind: transition
+      expression:
+        kind: transition
+        rule: clear_snp_rsp
+        operand: (eq (read snp_rsp_valid) False)
+    - name: grant_updates_cache_line
+      kind: transition
+      expression:
+        kind: transition
+        rule: receive_grant
+        operand: (and (eq (read mstate) (ite grant_write 3 1)) (and (eq (read maddr)
+          grant_addr) (eq (read mdata) grant_data)))
   proof_obligations:
+    - property: request_forwarded_out
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: request_deasserts_on_grant
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: snoop_response_updates_state
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: snoop_response_deasserts
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: grant_updates_cache_line
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: states_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

@@ -24,5 +24,5 @@
 
 ## Properties
 
-- **out_bounded** (safety): always, `out` ≤ 255.
-- **out_nonneg** (safety): always, `out` ≥ 0.
+- **out_equals_x_minus_row_max** (safety): always, `out` equals min(x − `row_max`, 255).
+- **out_subtracts_row_max** (transition): after each step, `out` equals min(x − prev(row_max), 255).

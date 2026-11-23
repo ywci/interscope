@@ -56,7 +56,7 @@ class TestKoikaAcl2Integration:
             property_ops=[],
             invariants=[{"name": "c_le_255", "operand": "(le (read c) 255)"}],
             proof_obligations=[],
-        )
+)
         km = isir_to_acl2.convert(spec)
         thm = next((t for t in km.defthms if t.thm_name == "c_le_255"), None)
         assert thm is not None, "invariant not lowered to ACL2"
@@ -76,7 +76,7 @@ class TestKoikaAcl2Integration:
             property_ops=[isir.SpecPropertyOp(prop_name="c_self", kind="safety",
                           expression={"kind": "always", "operand": "(eq (read c) (read c))"})],
             proof_obligations=[{"property": "c_self", "backend": "koika_acl2", "engine": "theorem_proving"}],
-        )
+)
         acl2_mod = isir_to_acl2.convert(spec)
         assert any(t.thm_name == "c_self_correct" for t in acl2_mod.defthms)
         koika_mod = isir_to_koika.convert(spec)
@@ -127,7 +127,7 @@ class TestCrossBackendReflection:
             metadata={"koika_error": "lia cannot prove x*y <= 65025",
                       "acl2_error": "checkpoint: (<= (mod (* x y) 65536) 65025)"},
             error_message="koika: ...; acl2: ...",
-        )
+)
 
     def test_build_prompt_contains_both_errors(self):
         from isir.verification.cowork import build_reflection_prompt
@@ -268,7 +268,7 @@ class TestLemmaShareArm:
             "Proof. Admitted.\n"
             "Theorem always_prop : f 5 = 6.\n"
             "Proof. eauto. Qed.\n"
-        )
+)
         # Without the hint, eauto cannot close always_prop (f is opaque).
         no_hint = tmp_path / "no_hint.v"
         no_hint.write_text(base)
@@ -292,5 +292,5 @@ class TestLemmaShareArm:
         spec = convert_ast_to_isir_module(parse_isir(Path("examples/energy_accum/energy_accum.isir")).module)
         a = {t.thm_name for t in isir_to_acl2.convert(spec).defthms}
         k = "\n".join(isir_to_koika.convert(spec).state_definitions)
-        assert "energy_step_correct" in a and "energy_bounded_correct" in a
-        assert "energy_step_proved" in k and "energy_bounded_proved" in k
+        assert "energy_squares_sample_correct" in a and "energy_equals_sample_squared_correct" in a
+        assert "energy_squares_sample_proved" in k and "energy_equals_sample_squared_proved" in k

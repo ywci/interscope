@@ -32,7 +32,7 @@ class TestGenerateTestbench:
             cycles=10,
             rst_active=0,
             rst_inactive=1
-        )
+)
         assert result == tb_path
         content = tb_path.read_text()
         assert '#include "Vmy_fifo.h"' in content
@@ -48,7 +48,7 @@ class TestGenerateTestbench:
         generate_testbench(
             top_module="top",
             output_path=tb_path
-        )
+)
         content = tb_path.read_text()
         assert 'for (int cycle = 0; cycle < 1000; cycle++)' in content
 
@@ -62,7 +62,7 @@ class TestBuildSimulation:
                     rtl_paths=[tmp_dir / "dummy.v"],
                     top_module="top",
                     output_dir=tmp_dir
-                )
+)
 
     def test_verilator_found_but_build_fails(self, tmp_dir):
         """If verilator is found but the build command fails, an error is raised."""
@@ -79,7 +79,7 @@ class TestBuildSimulation:
                         rtl_paths=[dummy_v],
                         top_module="top",
                         output_dir=tmp_dir
-                    )
+)
 
 
 class TestRunSimulation:
@@ -95,7 +95,7 @@ class TestRunSimulation:
                     sim_exe=fake_exe,
                     vcd_path=vcd_path,
                     cycles=10
-                )
+)
 
     def test_simulation_timeout(self, tmp_dir):
         """If the simulation times out, VerilatorError is raised."""
@@ -107,13 +107,13 @@ class TestRunSimulation:
             import subprocess
             with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(
                 cmd=["fake_exe"], timeout=300, output=b"", stderr=b""
-            )):
+)):
                 with pytest.raises(VerilatorError, match="Simulation timed out"):
                     run_simulation(
                         sim_exe=fake_exe,
                         vcd_path=vcd_path,
                         cycles=10
-                    )
+)
 
     def test_simulation_failure(self, tmp_dir):
         """If the simulation exits with non‑zero code, VerilatorError is raised."""
@@ -131,7 +131,7 @@ class TestRunSimulation:
                     sim_exe=fake_exe,
                     vcd_path=vcd_path,
                     cycles=10
-                )
+)
 
     def test_vcd_not_found_after_simulation(self, tmp_dir):
         """If simulation runs but no VCD is produced, an error is raised."""
@@ -148,4 +148,4 @@ class TestRunSimulation:
                     sim_exe=fake_exe,
                     vcd_path=vcd_path,
                     cycles=10
-                )
+)

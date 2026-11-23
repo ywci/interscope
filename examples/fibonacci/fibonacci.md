@@ -19,7 +19,7 @@
 
 ## Properties
 
-- **fib_monotonic** (safety): always, `fib_prev` ≤ `fib_curr`.
-- **fib_nonneg** (safety): always, `fib_prev` ≥ 0 and `fib_curr` ≥ 0.
-- **advance_latches** (transition): after each step, `fib_prev` equals prev(fib_curr).
-- **advance_recurrence** (transition): after each step, `fib_curr` equals prev(fib_prev) + prev(fib_curr).
+- **fib_monotonic** (safety): always, fib_prev ≤ fib_curr.
+- **fib_curr_geq_prev** (safety): always, fib_curr ≥ fib_prev.
+- **advance_latches** (transition): after each step, fib_prev equals prev(fib_curr).
+- **advance_recurrence** (transition): after each step, fib_curr equals prev(fib_prev) + prev(fib_curr).

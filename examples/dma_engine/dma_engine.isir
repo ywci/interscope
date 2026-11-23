@@ -10,33 +10,28 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: start
       direction: input
       type: "bool"
     - name: direction
       direction: input
-      type: "bool"     # false = DDR -> SRAM (load), true = SRAM -> DDR (store)
+      type: "bool"
     - name: base_addr
       direction: input
-      type: "bits<8>"  # DDR burst base address
+      type: "bits<8>"
     - name: burst_len
       direction: input
-      type: "bits<4>"  # number of beats in the burst
-
+      type: "bits<4>"
   state:
-    # Current burst beat address (DDR side).
     - name: addr
       kind: register
       type: "bits<8>"
       initial: 0
-    # Beats remaining in the current burst.
     - name: remaining
       kind: register
       type: "bits<4>"
       initial: 0
-    # Direction of the in-flight burst.
     - name: is_store
       kind: register
       type: "bool"
@@ -45,10 +40,7 @@ module:
       kind: register
       type: "bool"
       initial: false
-
   rules:
-    # Start a burst: latch the base address, length and direction (parameters
-    # clamped to the address/counter widths).
     - name: start_burst
       condition: (and start (not (read busy)))
       action:
@@ -56,38 +48,56 @@ module:
         - (write remaining (min burst_len 15))
         - (write is_store direction)
         - (write busy true)
-    # Advance one beat per cycle until the burst is exhausted (address clamped
-    # to the 8-bit address space).
     - name: burst_step
       condition: (and (read busy) (neq (read remaining) 0))
       action:
         - (write addr (min (add (read addr) 1) 255))
         - (write remaining (sub (read remaining) 1))
-    # Complete the burst.
     - name: complete_burst
       condition: (and (read busy) (eq (read remaining) 0))
       action:
         - (write busy false)
-
   properties:
-    # The DDR burst address stays within the 8-bit address space.
-    - name: addr_bounded
+    - name: busy_iff_remaining_nonzero
       kind: safety
       expression:
         kind: always
-        operand: (le (read addr) 255)
-    - name: remaining_bounded
-      kind: safety
+        operand: (eq (read busy) (neq (read remaining) 0))
+    - name: burst_initializes
+      kind: transition
       expression:
-        kind: always
-        operand: (le (read remaining) 15)
-
+        kind: transition
+        rule: start_burst
+        operand: (and (eq (read addr) (min base_addr 255)) (and (eq (read remaining)
+          (min burst_len 15)) (and (eq (read is_store) direction) (eq (read busy)
+          True))))
+    - name: burst_advances
+      kind: transition
+      expression:
+        kind: transition
+        rule: burst_step
+        operand: (and (eq (read addr) (min (add (prev addr) 1) 255)) (eq (read remaining)
+          (sub (prev remaining) 1)))
+    - name: burst_completes
+      kind: transition
+      expression:
+        kind: transition
+        rule: complete_burst
+        operand: (eq (read busy) False)
   proof_obligations:
-    - property: addr_bounded
+    - property: burst_initializes
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: remaining_bounded
+      backend: koika_acl2
+    - property: burst_advances
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
+    - property: burst_completes
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: busy_iff_remaining_nonzero
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

@@ -19,5 +19,5 @@
 
 ## Properties
 
-- **energy_step** (transition): after each step, `energy` equals square(prev(sample)).
-- **energy_bounded** (safety): always, `energy` ≤ 65025.
+- **energy_squares_sample** (transition): after each step, `energy` equals square(prev(sample)).
+- **energy_equals_sample_squared** (safety): always, `energy` equals square(sample).

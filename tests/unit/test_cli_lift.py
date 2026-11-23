@@ -17,7 +17,7 @@ def _make_args(vcd_path, spec_path, mapping=None, out=None, debug=False):
         mapping=mapping,
         out=out,
         debug=debug,
-    )
+)
 
 
 def _write(tmp_path, name, content="dummy"):

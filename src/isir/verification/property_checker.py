@@ -61,7 +61,7 @@ def _evaluate_operand(
                 "Cycle %d: input '%s' shadows a state variable of the same name. "
                 "Expression evaluation may produce unexpected results.",
                 cycle, k
-            )
+)
         context[k] = inputs[k]
     for k in outputs:
         if k in context:
@@ -69,7 +69,7 @@ def _evaluate_operand(
                 "Cycle %d: output '%s' shadows a state/input variable of the same name. "
                 "Expression evaluation may produce unexpected results.",
                 cycle, k
-            )
+)
         context[k] = outputs[k]
 
     # Previous and next cycle states for temporal operators
@@ -90,7 +90,7 @@ def _evaluate_operand(
             memories=memories,
             previous_state=prev_state,
             next_state=next_state
-        )
+)
         return result
     except ExprError:
         return False
@@ -109,7 +109,7 @@ def _check_always(
                 holds=False,
                 failing_cycle=i,
                 detail=f"Operand evaluated to {val} at cycle {i}"
-            )
+)
     return PropertyCheckResult(name="", holds=True)
 
 
@@ -128,12 +128,12 @@ def _check_eventually(
                 name="",
                 holds=False,
                 detail=f"Operand not satisfied within bound {bound}"
-            )
+)
     return PropertyCheckResult(
         name="",
         holds=False,
         detail="Operand never satisfied"
-    )
+)
 
 
 def _check_until(
@@ -153,18 +153,18 @@ def _check_until(
                 holds=False,
                 failing_cycle=i,
                 detail="Left operand false before right became true"
-            )
+)
         if bound is not None and i >= bound:
             return PropertyCheckResult(
                 name="",
                 holds=False,
                 detail=f"Until not satisfied within bound {bound}"
-            )
+)
     return PropertyCheckResult(
         name="",
         holds=False,
         detail="Right operand never became true"
-    )
+)
 
 
 def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheckResult:
@@ -190,7 +190,7 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
                 holds=True,
                 vacuous=True,
                 detail=f"Assumption violated at cycle {assume_result.failing_cycle}",
-            )
+)
 
     # 2. Evaluate the main temporal expression
     expr = prop.expression
@@ -208,7 +208,7 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
             holds=True,
             vacuous=True,
             detail="combinational equivalence is not checked on traces",
-        )
+)
     elif expr.kind == "transition":
         # Transitional properties relate a state to its successor; they are
         # checked by the theorem prover over the step relation, not on a trace.
@@ -217,7 +217,7 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
             holds=True,
             vacuous=True,
             detail="transition property is not checked on traces",
-        )
+)
     elif expr.kind == "independence":
         # Independence (relational non-interference) relates two executions;
         # it is checked by the theorem prover, not against a single trace.
@@ -226,7 +226,7 @@ def check_property(prop: Property, trace: List[Dict[str, Any]]) -> PropertyCheck
             holds=True,
             vacuous=True,
             detail="independence property is not checked on traces",
-        )
+)
     else:
         raise PropertyCheckError(f"Unknown temporal kind: {expr.kind}")
 
@@ -258,7 +258,7 @@ def check_all_properties(
                 name=prop.name,
                 holds=False,
                 detail=str(e)
-            )
+)
         results.append(result)
     return results
 
@@ -300,14 +300,14 @@ def check_properties_from_spec_dialect(
                 left=expr_dict.get("left"),
                 right=expr_dict.get("right"),
                 bound=expr_dict.get("bound")
-            )
+)
             prop = Property(
                 name=prop_op.prop_name,
                 kind=prop_op.kind,
                 expression=temporal_expr,
                 assumes=prop_op.assumes,
                 guarantees=prop_op.guarantees
-            )
+)
             result = check_property(prop, trace)
         except Exception as e:
             logger.error("Property %s check error: %s", prop_op.prop_name, e)
@@ -315,6 +315,6 @@ def check_properties_from_spec_dialect(
                 name=prop_op.prop_name,
                 holds=False,
                 detail=str(e)
-            )
+)
         results.append(result)
     return results

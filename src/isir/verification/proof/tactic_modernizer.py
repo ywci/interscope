@@ -99,7 +99,7 @@ def modernize_tactics(
             rf"(?<![\w'])({re.escape(old)})(?![\w'])",
             new,
             modernized
-        )
+)
 
     # 2. Replace import lines
     for old, new in _EXTRA_REPLACEMENTS.items():
@@ -113,12 +113,12 @@ def modernize_tactics(
                 rf"\b{re.escape(old)}\b",
                 new,
                 modernized
-            )
+)
         if any(old in script for old in _NAT_MOD_REPLACEMENTS):
             logger.debug(
                 "Optional Nat.mod*/Nat.div* replacement applied "
                 "(replace_nat_mod_add=True)."
-            )
+)
 
     # 4. Conservative correction of `discriminate` on boolean equalities.
     #    If the script contains a hypothesis of the form `name : (...) = true`
@@ -138,7 +138,7 @@ def _modernize_boolean_discriminate(script: str) -> str:
 
     This is a heuristic: if the script contains a command
     `discriminate <name>.` and also contains a hypothesis line that
-    looks like `<name> : ( ... =? ... ) = true` or
+    looks like `<name> : (... =? ...) = true` or
     `<name> : (Nat.eqb ... ...) = true`, then we replace that
     `discriminate` with `inversion`.  The patch is applied only to the
     specific occurrence, not globally.
@@ -161,17 +161,17 @@ def _modernize_boolean_discriminate(script: str) -> str:
         hyp_name = m.group(1)
 
         # Check if this hypothesis is declared as a boolean equality.
-        # Pattern: `hyp_name : ( ... =? ... ) = true` or
+ # Pattern: `hyp_name : (... =? ...) = true` or
         #          `hyp_name : (Nat.eqb ... ...) = true`
         boolean_hyp_pattern = re.compile(
             rf"{re.escape(hyp_name)}\s*:\s*\(?[^\)]*(?:=\?|Nat\.eqb)[^\)]*\)?\s*=\s*true"
-        )
+)
         if boolean_hyp_pattern.search(script):
             start, end = m.span()
             script = script[:start] + f"inversion {hyp_name}." + script[end:]
             logger.debug(
                 "Modernised `discriminate %s` to `inversion %s` (boolean equality).",
                 hyp_name, hyp_name
-            )
+)
 
     return script

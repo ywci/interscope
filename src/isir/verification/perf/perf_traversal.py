@@ -68,7 +68,7 @@ class PERFTraversal:
         config: PERFConfig,
         llm_client: LLMClient,
         context: Dict[str, Any]
-    ):
+):
         self.config = config
         self.llm = llm_client
         self.context = context
@@ -97,7 +97,7 @@ class PERFTraversal:
             max_workers=config.max_workers,
             timeout_per_node=config.timeout_per_node,
             config=context.get("config", {})
-        )
+)
         self.evidence = PERFEvidence()
         self.stats = PERFStats()
 
@@ -116,10 +116,10 @@ class PERFTraversal:
 
         self._unify_repair = self.config_dict.get("proof", {}).get("perf", {}).get(
             "unify_repair_and_generation", False
-        )
+)
         self._parallel_gen = self.config_dict.get("proof", {}).get("perf", {}).get(
             "parallel_variant_generation", False
-        )
+)
         if self._parallel_gen:
             logger.info("Parallel variant generation enabled.")
         if self._unify_repair:
@@ -238,7 +238,7 @@ class PERFTraversal:
             try:
                 self._proof_cache.store_successful_proof(
                     self._design_name, prop_name, proof_script
-                )
+)
             except Exception as e:
                 logger.warning("Failed to store proof in pattern cache: %s", e)
 
@@ -288,7 +288,7 @@ class PERFTraversal:
                 proof, theorem_name, theorem_stmt,
                 condition_subst=condition_subst,
                 operation_subst=operation_subst,
-            )
+)
             if adapted:
                 return adapted
         return None
@@ -307,13 +307,13 @@ class PERFTraversal:
                     logger.warning(
                         "Obligation analysis suggests rule splitting would help. "
                         "Consider adding the 'split' attribute to monolithic rules."
-                    )
+)
                 if self.analysis.suggests_lemma_introduction:
                     logger.info(
                         "Detected duplicated subexpressions: %s. "
                         "PERF may benefit from helper lemmas.",
                         self.analysis.duplicated_subexpressions,
-                    )
+)
         else:
             self.analysis = ObligationAnalysis()
 
@@ -362,7 +362,7 @@ class PERFTraversal:
                     proof_script=root.script,
                     backend=self.backend,
                     stats=self.stats,
-                )
+)
                 self.best_candidate_script = root.script
                 self.best_candidate_score = 1.0
                 self._record_successful_proof(self.obligation.get("property", ""), root.script)
@@ -379,7 +379,7 @@ class PERFTraversal:
                 logger.info(
                     "PERF depth %d/%d: frontier size = %d",
                     current_depth, self.config.depth_limit, len(frontier),
-                )
+)
                 self.stats.record_depth(current_depth)
 
                 if self._on_demand_cooldown > 0:
@@ -397,14 +397,14 @@ class PERFTraversal:
                             post_error_sig=current_sig,
                             subgoal_reduction=self._estimate_subgoal_reduction(),
                             diversity_score=self._estimate_beam_diversity(frontier),
-                        )
+)
                         if quality < self.config.min_reflection_quality:
                             self._reflection_retries += 1
                             if self._reflection_retries <= self.config.max_reflection_retries:
                                 logger.warning(
                                     "Reflection quality %.2f below threshold %.2f; attempting another backtrack.",
                                     quality, self.config.min_reflection_quality,
-                                )
+)
                                 self._reflection_eval_pending = False
                                 if self._attempt_backtrack(current_depth):
                                     depth = self._backtrack_new_depth
@@ -421,7 +421,7 @@ class PERFTraversal:
                             else:
                                 logger.warning(
                                     "Reflection quality low and out of retries; disabling further backtracking."
-                                )
+)
                                 self._backtracking_disabled = True
                                 self._reflection_eval_pending = False
                         else:
@@ -488,7 +488,7 @@ class PERFTraversal:
                         logger.info(
                             "PERF found a successful proof at depth %d (after repair)!",
                             current_depth,
-                        )
+)
                         self.stats.record_success(current_depth)
                         self.stats.record_beam_size(len(frontier))
                         self.stats.finish()
@@ -499,7 +499,7 @@ class PERFTraversal:
                             proof_script=node.script,
                             backend=self.backend,
                             stats=self.stats,
-                        )
+)
                         self.best_candidate_script = node.script
                         self.best_candidate_score = 1.0
                         return node.script, self.stats
@@ -515,7 +515,7 @@ class PERFTraversal:
                 logger.info("Scoring %d children...", len(children))
                 scored_children = self.scorer.score_nodes(
                     children, self.obligation, self.context
-                )
+)
 
                 self._adjust_scores_for_quality(scored_children)
 
@@ -523,30 +523,30 @@ class PERFTraversal:
                     scored_children,
                     dimensions=self.config.dimensions,
                     primary_dim=self.config.primary_dimension,
-                )
+)
                 pruned_count = len(scored_children) - len(pareto_front)
                 self.stats.record_pareto_pruned(pruned_count)
                 logger.info(
                     "Pareto front: %d nodes (pruned %d)",
                     len(pareto_front), pruned_count,
-                )
+)
 
                 frontier = select_beam(
                     pareto_front,
                     self.config.beam_size,
                     self.config.primary_dimension,
-                )
+)
 
                 if len(frontier) < self.config.min_beam_size:
                     logger.info(
                         "Beam size %d is below min_beam_size %d; adding best remaining candidates.",
                         len(frontier), self.config.min_beam_size,
-                    )
+)
                     sorted_all = sorted(
                         scored_children,
                         key=lambda n: n.score.get(self.config.primary_dimension, 0.0) if n.score else 0.0,
                         reverse=True,
-                    )
+)
                     existing_ids = {id(n) for n in frontier}
                     for node in sorted_all:
                         if len(frontier) >= self.config.min_beam_size:
@@ -558,7 +558,7 @@ class PERFTraversal:
                         logger.warning(
                             "Could not reach min_beam_size %d; beam has %d nodes.",
                             self.config.min_beam_size, len(frontier),
-                        )
+)
                         self.stats.record_beam_collapse()
 
                 self.stats.record_beam_size(len(frontier))
@@ -590,7 +590,7 @@ class PERFTraversal:
 
                 self.stats.record_depth_stats(
                     current_depth, len(children), len(frontier), pruned_count
-                )
+)
 
                 best_primary = 0.0
                 for node in frontier:
@@ -600,7 +600,7 @@ class PERFTraversal:
                             best_primary = val
                 self.stats.record_progress(
                     best_primary, self.config.early_stop_min_improvement
-                )
+)
 
                 if (self.config.backtracking_on_demand_enabled and
                     not self._backtracking_disabled and
@@ -650,7 +650,7 @@ class PERFTraversal:
                         "Stagnation detected at depth %d (no improvement for %d depths). "
                         "Attempting backtrack...",
                         current_depth, self.stats.consecutive_no_improvement,
-                    )
+)
                     if self._attempt_backtrack(current_depth):
                         depth = self._backtrack_new_depth
                         frontier = self._backtrack_new_frontier
@@ -667,7 +667,7 @@ class PERFTraversal:
                         logger.warning(
                             "Early stopping: no Pareto improvement for %d consecutive depths.",
                             self.stats.consecutive_no_improvement,
-                        )
+)
                         break
 
                 if current_depth == 2 and not self._any_progress(frontier):
@@ -682,7 +682,7 @@ class PERFTraversal:
                         and not self._mc_injection_attempted):
                     mc_enabled = (
                         self.config_dict.get("provers", {}).get("koika", {}).get("use_mc_lemmas", False)
-                    )
+)
                     if mc_enabled:
                         logger.info("Attempting MC lemma injection to unstick the search.")
                         self._mc_injection_attempted = True
@@ -714,7 +714,7 @@ class PERFTraversal:
                     "Depth budget exhausted or early stopped at depth %d. "
                     "Attempting backtrack before giving up.",
                     last_completed_depth,
-                )
+)
                 if self._attempt_backtrack(last_completed_depth):
                     depth = self._backtrack_new_depth
                     frontier = self._backtrack_new_frontier
@@ -731,7 +731,7 @@ class PERFTraversal:
             "PERF exhausted after %d depths, %d backtrack restarts.",
             self.config.depth_limit,
             self._backtrack_count,
-        )
+)
         self.stats.finish()
         return None, self.stats
 
@@ -764,11 +764,11 @@ class PERFTraversal:
 
         target_depth = max(
             0, current_depth - self.config.backtracking_max_backtrack_depth
-        )
+)
         logger.info(
             "Backtracking: looking for a snapshot at depth %d (current depth %d).",
             target_depth, current_depth,
-        )
+)
 
         snapshot = None
         for entry in reversed(self._frontier_history):
@@ -781,7 +781,7 @@ class PERFTraversal:
                 logger.info(
                     "No exact match; using earliest snapshot at depth %d.",
                     snapshot["depth"],
-                )
+)
             else:
                 return False
 
@@ -796,7 +796,7 @@ class PERFTraversal:
         logger.info(
             "Backtrack #%d: restoring frontier from depth %d.",
             self._backtrack_count, snapshot["depth"],
-        )
+)
 
         if self.config.backtracking_store_all_scored_children and "all_scored_children" in snapshot:
             candidates = snapshot["all_scored_children"]
@@ -823,7 +823,7 @@ class PERFTraversal:
                 candidates,
                 snapshot["beam_scripts"],
                 diversity_dimensions=self.config.backtracking_diversity_dimensions,
-            )
+)
             diversity_used = True
 
         extended_dimensions = list(self.config.dimensions)
@@ -837,7 +837,7 @@ class PERFTraversal:
                 candidates,
                 self._failure_signatures,
                 penalty_factor=0.2,
-            )
+)
             experience_used = True
 
         if self.config.backtracking_avoid_repeated_branches and "beam_ids" in snapshot:
@@ -864,7 +864,7 @@ class PERFTraversal:
             candidates,
             dimensions=extended_dimensions,
             primary_dim=primary_dim,
-        )
+)
 
         restore_size = self.config.backtracking_restore_beam_size
         new_frontier = select_beam(pareto_front, restore_size, primary_dim)
@@ -874,7 +874,7 @@ class PERFTraversal:
                 candidates,
                 key=lambda n: n.score.get(primary_dim, 0.0) if n.score else 0.0,
                 reverse=True,
-            )
+)
             existing_ids = {id(n) for n in new_frontier}
             for node in sorted_candidates:
                 if len(new_frontier) >= self.config.min_beam_size:
@@ -891,7 +891,7 @@ class PERFTraversal:
             alternate_primary_used=alt_primary_used,
             experience_penalty_used=experience_used,
             noise_used=noise_used,
-        )
+)
 
         self._backtrack_new_depth = snapshot["depth"] - 1
         self._backtrack_new_frontier = new_frontier
@@ -903,17 +903,17 @@ class PERFTraversal:
             self._force_strategy_hint = (
                 "Do NOT rely solely on `reflexivity`. Use `lia` or `nia` for arithmetic goals, "
                 "or `auto` with lemma rewriting."
-            )
+)
         elif any("lia" in sig.lower() for sig in self._failure_signatures):
             self._force_strategy_hint = (
                 "Avoid `lia` for now; try `reflexivity` after full simplification, "
                 "or use `apply IH` after destructing opcode conditions."
-            )
+)
         else:
             self._force_strategy_hint = (
                 "Try a fundamentally different tactic pattern: split on step constructors, "
                 "then destruct opcode and use `simpl; auto` or `simpl; reflexivity`."
-            )
+)
         logger.info("Forced strategy switch enabled for next generation.")
 
     def _force_regenerate_children(self, frontier: List[PERFNode], depth: int) -> List[PERFNode]:
@@ -932,7 +932,7 @@ class PERFTraversal:
                 "Common errors in previous attempts:\n" +
                 "\n".join(f"- {sig[:200]}" for sig in recent) +
                 "\n\n"
-            )
+)
 
         temp = self.config.generation_temperature + self.config.backtracking_regeneration_temperature_boost
         temp = min(1.0, max(0.1, temp))
@@ -948,7 +948,7 @@ class PERFTraversal:
                 "\n\n**CONCRETE DESTRUCT PATTERN (must be used):**\n"
                 f"```coq\n{destruct_pattern}\n```\n"
                 "After inversion on Hstep, you MUST insert this destruct chain."
-            )
+)
 
         positive_example = self._get_positive_example()
 
@@ -961,7 +961,7 @@ class PERFTraversal:
                 available_lemmas=self.available_lemmas,
                 mandatory_avoid=mandatory_avoid,
                 positive_example=positive_example,
-            )
+)
             raw_responses = [self._safe_llm_generate(info["prompt"]) for info in prompts_info]
 
             scripts = []
@@ -995,11 +995,11 @@ class PERFTraversal:
             branches_per_node = max(
                 self.config.min_branches_for_hard_obligations,
                 self.config.branches_per_node
-            )
+)
             branches_per_node = min(
                 branches_per_node,
                 self.config.max_branches_for_hard_obligations
-            )
+)
             total_budget = self.config.beam_size * branches_per_node
         else:
             branches_per_node = self.config.branches_per_node
@@ -1053,7 +1053,7 @@ class PERFTraversal:
                 available_lemmas=self.available_lemmas,
                 mandatory_avoid=mandatory_avoid,
                 positive_example=positive_example,
-            )
+)
             for info in prompts_info:
                 info["parent_idx"] = parent_idx
                 all_prompts.append(info)
@@ -1066,7 +1066,7 @@ class PERFTraversal:
                         system=None,
                         max_workers=min(self.config.max_workers, len(all_prompts)),
                         max_tokens=None,
-                    )
+)
                 except Exception:
                     raw_responses = [self._safe_llm_generate(p["prompt"]) for p in all_prompts]
             else:
@@ -1104,7 +1104,7 @@ class PERFTraversal:
                     domain_script = get_koika_tactic_pattern(
                         self.context.get("theorem_name", ""),
                         self.analysis
-                    )
+)
                     if domain_script and not self._has_critical_structural_issues(domain_script):
                         extra = [domain_script] * shortfall
                     else:
@@ -1114,7 +1114,7 @@ class PERFTraversal:
                             theorem_statement="",
                             num_variants=shortfall,
                             analysis=self.analysis,
-                        )
+)
                         extra = [s for s in extra if not self._has_critical_structural_issues(s)]
                 else:
                     from isir.verification.proof.acl2.template_gen import generate_acl2_proof_variants_template
@@ -1123,7 +1123,7 @@ class PERFTraversal:
                         theorem_statement=self.context.get("theorem_statement", ""),
                         num_variants=shortfall,
                         analysis=self.analysis,
-                    )
+)
                     extra = [s for s in extra if not self._has_critical_structural_issues(s)]
                 variants_per_parent[parent_idx].extend(extra)
             while len(variants_per_parent[parent_idx]) < raw[parent_idx]:
@@ -1172,7 +1172,7 @@ class PERFTraversal:
         available_lemmas: Optional[List[str]] = None,
         mandatory_avoid: Optional[List[str]] = None,
         positive_example: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
         prompts = []
         n = num_variants
         theorem_name = self.context.get("theorem_name", "unknown")
@@ -1209,7 +1209,7 @@ class PERFTraversal:
                     assumptions=None,
                     previous_attempts=(
                         [{"script": parent.script, "error": error_with_loc}] if err else None
-                    ),
+),
                     structural_hints=self._build_structural_hints(),
                     strategy_hint=hint,
                     available_lemmas=available_lemmas,
@@ -1217,7 +1217,7 @@ class PERFTraversal:
                     positive_example=positive_example,
                     failure_prompt_snippet=None,  # already injected in mandatory_avoid
                     mc_trace_info=mc_trace_info,
-                )
+)
                 prompts.append({"prompt": prompt, "is_repair": False, "tag": hint})
         else:
             from isir.verification.proof.acl2.proof_gen import build_acl2_proof_prompt
@@ -1232,9 +1232,9 @@ class PERFTraversal:
                     assumptions=None,
                     previous_attempts=(
                         [{"script": parent.script, "error": error_with_loc}] if err else None
-                    ),
+),
                     strategy_hint=hint,
-                )
+)
                 prompts.append({"prompt": prompt, "is_repair": False, "tag": hint})
 
         if inject_repair:
@@ -1253,7 +1253,7 @@ class PERFTraversal:
                     mandatory_avoid=mandatory_avoid,
                     positive_example=positive_example,
                     mc_trace_info=mc_trace_info,
-                )
+)
             else:
                 from isir.verification.proof.acl2.proof_gen import build_acl2_proof_prompt
                 error_with_loc = self._augment_error_with_location(err) if err else err
@@ -1265,7 +1265,7 @@ class PERFTraversal:
                     assumptions=None,
                     previous_attempts=[{"script": parent.script, "error": error_with_loc}],
                     strategy_hint="repair the previous failed attempt",
-                )
+)
             prompts.append({"prompt": repair_prompt, "is_repair": True, "tag": "repair"})
 
         return prompts
@@ -1311,7 +1311,7 @@ class PERFTraversal:
                     "    all: try (simpl; reflexivity); try (apply IH; auto).\n"
                     "  }\n"
                     "Qed."
-                )
+)
                 logger.debug("Built pre‑skeleton from destruct pattern for initial script.")
                 return skeleton
 
@@ -1331,7 +1331,7 @@ class PERFTraversal:
         if theorem_name:
             pattern1 = re.compile(
                 rf"(Theorem\s+{re.escape(theorem_name)}.*?)(?:Proof\..*?)Admitted\.", re.DOTALL
-            )
+)
         else:
             pattern1 = re.compile(r"(Theorem\s+\w+.*?)(?:Proof\..*?)Admitted\.", re.DOTALL)
         match = pattern1.search(content)
@@ -1340,7 +1340,7 @@ class PERFTraversal:
         if theorem_name:
             pattern2 = re.compile(
                 rf"(Theorem\s+{re.escape(theorem_name)}\s+.*?)Admitted\.", re.DOTALL
-            )
+)
         else:
             pattern2 = re.compile(r"(Theorem\s+\w+\s+.*?)Admitted\.", re.DOTALL)
         match2 = pattern2.search(content)
@@ -1379,7 +1379,7 @@ class PERFTraversal:
                 pattern = re.compile(
                     rf"\(defthm\s+{re.escape(candidate)}\b",
                     re.IGNORECASE | re.MULTILINE,
-                )
+)
                 m = pattern.search(content)
                 if m:
                     result = _extract_at(m.start())
@@ -1425,7 +1425,7 @@ class PERFTraversal:
                 text=True,
                 timeout=60,
                 cwd=str(workspace),
-            )
+)
             if result.returncode == 0:
                 return True
             else:
@@ -1472,13 +1472,13 @@ class PERFTraversal:
                 "The step constructor contains a deeply nested if-then-else chain "
                 f"(depth {self.analysis.max_ite_depth}). "
                 "Consider using 'destruct' on the condition variables to split into cases."
-            )
+)
         if self.analysis.suggests_lemma_introduction:
             hints.append(
                 "Duplicated subexpressions detected: "
                 + "; ".join(self.analysis.duplicated_subexpressions)
                 + ". A helper lemma could simplify the proof."
-            )
+)
         return "\n".join(hints) if hints else None
 
     def _verify_children(self, children: List[PERFNode]) -> List[PERFNode]:
@@ -1488,7 +1488,7 @@ class PERFTraversal:
             self._evaluate_koika_node
             if self.backend.startswith("koi")
             else self._evaluate_acl2_node
-        )
+)
 
         def safe_evaluator(node):
             result = evaluator(node)
@@ -1502,7 +1502,7 @@ class PERFTraversal:
                     else:
                         raise ToolFailureError(
                             "Both rocq-mcp and coqc failed. Possible environment issue."
-                        )
+)
             else:
                 self._tool_failure_count = 0
             return result
@@ -1531,7 +1531,7 @@ class PERFTraversal:
             self._evaluate_koika_node(node)
             if self.backend.startswith("koi")
             else self._evaluate_acl2_node(node)
-        )
+)
 
     def _evaluate_koika_node(self, node: PERFNode) -> Dict[str, Any]:
         coq_file = self.context.get("coq_file_path")
@@ -1560,13 +1560,13 @@ class PERFTraversal:
 
             (temp_dir_path / "_CoqProject").write_text(
                 f'-R "{temp_dir_path.resolve()}" Test\n'
-            )
+)
 
             original_content = temp_coq_file.read_text()
             if node.script.strip().startswith("Theorem "):
                 pattern = re.compile(
                     rf"(Theorem\s+{re.escape(theorem_name)}.*?)Admitted\.", re.DOTALL
-                )
+)
                 match = pattern.search(original_content)
                 if match:
                     proof_match = re.search(r"Proof\..*?(Qed\.|Admitted\.)", node.script, re.DOTALL)
@@ -1579,7 +1579,7 @@ class PERFTraversal:
             else:
                 pattern = re.compile(
                     rf"(Theorem\s+{re.escape(theorem_name)}.*?)Admitted\.", re.DOTALL
-                )
+)
                 match = pattern.search(original_content)
                 if not match:
                     return {"success": False, "error": "Theorem not found in Coq file"}
@@ -1595,7 +1595,7 @@ class PERFTraversal:
                 timeout=self.config.timeout_per_node,
                 cwd=temp_dir_path,
                 server_args=["--workspace", str(temp_dir_path)],
-            )
+)
             rocq_error = None
             try:
                 rocq.start()
@@ -1624,7 +1624,7 @@ class PERFTraversal:
                         text=True,
                         timeout=self.config.coqc_timeout,
                         cwd=str(temp_dir_path),
-                    )
+)
                     if result.returncode == 0:
                         content = temp_coq_file.read_text()
                         if self._theorem_is_closed(content, theorem_name):
@@ -1646,7 +1646,7 @@ class PERFTraversal:
     def _theorem_is_closed(self, content: str, theorem_name: str) -> bool:
         pattern = re.compile(
             rf"Theorem\s+{re.escape(theorem_name)}\s+.*?Qed\.", re.DOTALL
-        )
+)
         match = pattern.search(content)
         if not match:
             return False
@@ -1660,7 +1660,7 @@ class PERFTraversal:
             "unknown error" in msg
             or "not found in the current environment" in msg
             or "theorem_not_found" in msg
-        )
+)
 
     def _evaluate_with_coqc(self, node: PERFNode) -> Dict[str, Any]:
         coq_file = self.context.get("coq_file_path")
@@ -1677,13 +1677,13 @@ class PERFTraversal:
             shutil.copy2(coq_file, temp_coq_file)
             (temp_dir_path / "_CoqProject").write_text(
                 f'-R "{temp_dir_path.resolve()}" Test\n'
-            )
+)
 
             original_content = temp_coq_file.read_text()
             if node.script.strip().startswith("Theorem "):
                 pattern = re.compile(
                     rf"(Theorem\s+{re.escape(theorem_name)}.*?)Admitted\.", re.DOTALL
-                )
+)
                 match = pattern.search(original_content)
                 if match:
                     proof_match = re.search(r"Proof\..*?(Qed\.|Admitted\.)", node.script, re.DOTALL)
@@ -1696,7 +1696,7 @@ class PERFTraversal:
             else:
                 pattern = re.compile(
                     rf"(Theorem\s+{re.escape(theorem_name)}.*?)Admitted\.", re.DOTALL
-                )
+)
                 match = pattern.search(original_content)
                 if not match:
                     return {"success": False, "error": "Theorem not found"}
@@ -1712,7 +1712,7 @@ class PERFTraversal:
                 text=True,
                 timeout=self.config.coqc_timeout,
                 cwd=str(temp_dir_path),
-            )
+)
             if result.returncode == 0:
                 return {"success": True, "goals_remaining": 0, "verified_by": "coqc"}
             else:
@@ -1738,7 +1738,7 @@ class PERFTraversal:
             mcp_path=self.context.get("acl2_mcp_path", "acl2-mcp"),
             timeout=self.config.timeout_per_node,
             init_commands=[],
-        )
+)
         try:
             acl2.start()
 
@@ -1752,7 +1752,7 @@ class PERFTraversal:
                     "error": (
                         "Failed to load ACL2 file: "
                         f"{load_result.get('error') or load_result.get('output')}"
-                    ),
+),
                 }
 
             # Evaluate the candidate proof script.
@@ -1814,12 +1814,12 @@ class PERFTraversal:
                 err[:200],
                 attempt_count + 1,
                 self.config.perf_light_repair_attempts,
-            )
+)
             new_script = self._repair_child_script(
                 child,
                 err,
                 strategy_hint_override=strategy_hint,
-            )
+)
             repair_attempts_by_error[err_key] = attempt_count + 1
 
             if new_script is not None and new_script != child.script:
@@ -1891,7 +1891,7 @@ class PERFTraversal:
         node: PERFNode,
         error_msg: str,
         strategy_hint_override: Optional[str] = None,
-    ) -> Optional[str]:
+) -> Optional[str]:
         theorem_name = self.context.get("theorem_name", "unknown")
         theorem_stmt = self.context.get("theorem_statement", "")
 
@@ -1919,7 +1919,7 @@ class PERFTraversal:
             positive_example=self._get_positive_example(),
             strategy_hint=repair_hint,
             mc_trace_info=mc_trace_info,
-        )
+)
 
         response = self._safe_llm_generate(prompt)
         if response:
@@ -1937,32 +1937,32 @@ class PERFTraversal:
                 return (
                     "Your proof attempted to use `reflexivity` on a contradictory equality "
                     "(e.g., `false = true`).  Use `discriminate` or `inversion` on that hypothesis instead."
-                )
+)
             if "valid s" in err_lower or "IHHreach" in err_lower:
                 return (
                     "The induction hypothesis could not be applied directly.  Destruct the opcode "
                     "condition (`op_reg s =? ...`) before applying IH, and `simpl` the state projections."
-                )
+)
         if "no such hypothesis" in err_lower and "hstep" in err_lower:
             return (
                 "The script references `Hstep`, but it was not named during induction.  Use "
                 "`induction Hreach as [| s' s'' inputs' Hreach' IH Hstep]` to name it explicitly."
-            )
+)
         if "found no subterm matching" in err_lower:
             return (
                 "A rewrite failed because the term does not appear in the goal.  Check that the "
                 "rewritten expression matches exactly; use `simpl` before rewriting if needed."
-            )
+)
         if "not a discriminable equality" in err_lower:
             return (
                 "`discriminate` was used on a non‑constructor equality, likely a boolean equality "
                 "such as `(op_reg s =? 0) = true`.  Use `inversion` or `rewrite Nat.eqb_eq` instead."
-            )
+)
         if "wrong bullet" in err_lower:
             return (
                 "The script contains a bullet (`-`, `+`, `*`) that is not properly nested.  Remove "
                 "standalone bullets or restructure the proof with explicit `{` and `}`."
-            )
+)
         return "Please fix the error described above."
 
     @staticmethod
@@ -1976,7 +1976,7 @@ class PERFTraversal:
             or "not found in the current environment" in error_lower
             or "theorem_not_found" in error_lower
             or "the reference" in error_lower
-        )
+)
 
     def _count_compiler_errors(self, error_msg: str) -> int:
         if not error_msg:
@@ -2028,7 +2028,7 @@ class PERFTraversal:
                 "reason": (
                     "The design has a monolithic rule with deeply nested conditionals. "
                     "Enable rule splitting or add the 'split' attribute to the execute rule."
-                ),
+),
             }
         return {"recommendation": "continue", "reason": "No clear failure pattern yet."}
 

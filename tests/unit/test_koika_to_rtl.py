@@ -56,14 +56,14 @@ class TestCoqGeneration:
         mod = _make_spec_module("minimal")
         mod.state_ops.append(
             isir.SpecStateOp(state_name="cnt", kind="register", data_type="bits<8>", initial=0)
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(
                 rule_name="inc",
                 condition="true",
                 actions=["(write cnt (add (read cnt) 1))"]
-            )
-        )
+)
+)
         coq = _generate_coq_design(mod, {})
         assert "Require Import Koika.Frontend." in coq
         assert "Inductive reg_t :=" in coq
@@ -80,14 +80,14 @@ class TestCoqGeneration:
         mod = _make_spec_module("cond")
         mod.state_ops.append(
             isir.SpecStateOp(state_name="flag", kind="register", data_type="bool", initial=False)
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(
                 rule_name="toggle",
                 condition="(not (read flag))",
                 actions=["(write flag true)"]
-            )
-        )
+)
+)
         coq = _generate_coq_design(mod, {})
         assert "if" in coq
         assert "then" in coq
@@ -98,14 +98,14 @@ class TestCoqGeneration:
         mod = _make_spec_module("arith")
         mod.state_ops.append(
             isir.SpecStateOp(state_name="x", kind="register", data_type="bits<32>", initial=0)
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(
                 rule_name="compute",
                 condition="true",
                 actions=["(write x (add (mul (read x) 3) 1))"]
-            )
-        )
+)
+)
         coq = _generate_coq_design(mod, {})
         assert "Inductive reg_t" in coq
         assert "Extraction" in coq
@@ -115,13 +115,13 @@ class TestCoqGeneration:
         mod = _make_spec_module("seq")
         mod.state_ops.append(
             isir.SpecStateOp(state_name="a", kind="register", data_type="bits<8>", initial=0)
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(rule_name="step1", condition="true", actions=["(write a 1)"])
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(rule_name="step2", condition="true", actions=["(write a 2)"])
-        )
+)
         coq = _generate_coq_design(mod, {})
         assert "Step_merged |> done" in coq
 
@@ -129,13 +129,13 @@ class TestCoqGeneration:
         mod = _make_spec_module("init")
         mod.state_ops.append(
             isir.SpecStateOp(state_name="ready", kind="register", data_type="bool", initial=True)
-        )
+)
         mod.state_ops.append(
             isir.SpecStateOp(state_name="count", kind="register", data_type="bits<16>", initial=42)
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(rule_name="nop", condition="true", actions=[])
-        )
+)
         coq = _generate_coq_design(mod, {})
         assert "Bits.of_nat 1 1" in coq
         assert "Bits.of_nat 16 42" in coq
@@ -144,10 +144,10 @@ class TestCoqGeneration:
         mod = _make_spec_module("param", {"W": {"default": 16}})
         mod.state_ops.append(
             isir.SpecStateOp(state_name="x", kind="register", data_type="bits<W>", initial=0)
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(rule_name="inc", condition="true", actions=["(write x (add (read x) 1))"])
-        )
+)
         coq = _generate_coq_design(mod, {"W": 16})
         assert "bits_t 16" in coq
 
@@ -165,11 +165,11 @@ class TestConvert:
         mod = _make_spec_module(name)
         mod.state_ops.append(
             isir.SpecStateOp(state_name="cnt", kind="register", data_type="bits<8>", initial=0)
-        )
+)
         mod.rule_ops.append(
             isir.SpecRuleOp(rule_name="inc", condition="true",
                                actions=["(write cnt (add (read cnt) 1))"])
-        )
+)
         return mod
 
     @patch("subprocess.run")

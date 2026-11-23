@@ -1,14 +1,12 @@
 # src/isir/verification/sat_gate/policy.py
 #
 # Evidence policy (objective-free) and disposition (objective-dependent).
-# The split enforces P8: search objective must never influence evidence
-# interpretation.  This module MUST NOT import solver/encoder modules (§27.5).
-"""Objective-free evidence policy and objective-dependent disposition."""
+# The split enforces: search objective must never influence evidence
+# interpretation. This module MUST NOT import solver/encoder modules.
 
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
-
 from isir.verification.sat_gate.obligation import (
     ModelApprox, QueryKind, TargetScope,
 )
@@ -52,7 +50,7 @@ class Objective(Enum):
 
 
 # Hard actions are irreversible and soundness/completeness critical; soft
-# actions are reversible.  The "no default hard action" invariant is enforced
+# actions are reversible. The "no default hard action" invariant is enforced
 # by the evidence_action function returning only soft actions on fall-through.
 _HARD_ACTIONS = frozenset({
     EvidenceAction.CLOSE_VACUOUS,
@@ -74,12 +72,13 @@ def evidence_action(
     predicate_exact: bool,
     target_scope: TargetScope,
     cti_reachable: Optional[bool],
+    composed_replay_checked: bool,
     cert_state: CertState,
     cert_tier: CertTier,
 ) -> EvidenceAction:
-    """Objective-free evidence policy (§6.5).
+    """Objective-free evidence policy.
 
-    Total over all inputs; the final fall-through is FORWARD (never hard).
+    Total over all inputs; the final fall-through is PARK (never hard).
     """
     exact = model_approx is ModelApprox.EXACT
     checked = cert_state is CertState.CHECKED
@@ -89,7 +88,7 @@ def evidence_action(
 
     # Cross-cutting guards first (a failed check never authorizes anything hard).
     if cert_state is CertState.FAILED:
-        return EvidenceAction.FORWARD  # P0 bug, flagged by the caller
+        return EvidenceAction.FORWARD  # bug, flagged by the caller
     if status is Status.UNKNOWN:
         return EvidenceAction.FORWARD
     if status is Status.ERROR:
@@ -114,7 +113,7 @@ def evidence_action(
         if cti_reachable is False:
             return EvidenceAction.FORWARD
         if cti_reachable is True:
-            if exact and predicate_exact and replay_checked:
+            if exact and predicate_exact and replay_checked and composed_replay_checked:
                 return EvidenceAction.REPORT_CEX if scope_theorem else EvidenceAction.REJECT_CANDIDATE
             return EvidenceAction.PARK
         return EvidenceAction.PARK  # cti_reachable is None or unchecked
@@ -127,12 +126,12 @@ def evidence_action(
             return EvidenceAction.REJECT_CANDIDATE
         return EvidenceAction.PARK
 
-    return EvidenceAction.FORWARD  # safety net: never hard
+    return EvidenceAction.PARK  # safety net: never hard
 
 
 @dataclass(frozen=True)
 class SearchAction:
-    """Objective-dependent search directive (§6.6)."""
+    """Objective-dependent search directive ."""
     action: EvidenceAction
     terminal: bool
     park_depth: int
@@ -145,7 +144,7 @@ def disposition(action: EvidenceAction, objective: Objective,
 
     The objective influences exactly three levers and never the evidence
     interpretation: terminality of REPORT_CEX, park ordering, and CTI probe
-    budget (§6.6).
+    budget.
     """
     bug_hunt = objective is Objective.BUG_HUNT
 

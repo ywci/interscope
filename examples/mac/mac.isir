@@ -10,47 +10,41 @@ module:
       polarity: active_low
       async: false
       affects: all
-
   inputs:
     - name: a
       direction: input
-      type: "bits<8>"   # INT8 activation
+      type: "bits<8>"
       protocol: fixed_cycle
     - name: b
       direction: input
-      type: "bits<8>"   # INT8 weight
+      type: "bits<8>"
       protocol: fixed_cycle
     - name: enable
       direction: input
       type: "bool"
       protocol: fixed_cycle
-
   outputs:
     - name: acc_out
       direction: output
       type: "bits<32>"
       protocol: fixed_cycle
-
   state:
     - name: acc
       kind: register
       type: "bits<32>"
       initial: 0
-
   rules:
     - name: accumulate
       condition: enable
       action:
         - (write acc (add (read acc) (mul (read a) (read b))))
-        # Drive the combinational output with the accumulated result.
         - (write acc_out (add (read acc) (mul (read a) (read b))))
-
   properties:
-    - name: acc_nonneg
+    - name: acc_out_equals_acc
       kind: safety
       expression:
         kind: always
-        operand: (ge (read acc) 0)
+        operand: (eq acc_out (read acc))
     - name: accumulate_mac
       kind: transition
       expression:
@@ -63,25 +57,18 @@ module:
         kind: transition
         rule: accumulate
         operand: (ge (read acc) (prev acc))
-
   proof_obligations:
-    - property: acc_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: koika
     - property: accumulate_mac
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: acc_monotonic
       status: unproved
       engine: theorem_proving
-      backend: koika
-
-    - property: acc_nonneg
+      backend: koika_acl2
+    - property: acc_out_equals_acc
       status: unproved
       engine: theorem_proving
-      backend: acl2
-
-    - property: acc_nonneg
+      backend: koika_acl2
+    - property: acc_out_equals_acc
       engine: model_checking

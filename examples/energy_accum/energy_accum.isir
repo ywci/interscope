@@ -27,7 +27,9 @@ module:
       initial: 0
   functions:
     - name: square
-      params: [{name: x, type: "bits<8>"}]
+      params:
+        - name: x
+          type: "bits<8>"
       return: "bits<16>"
       body: (mul_full x x)
   rules:
@@ -36,27 +38,24 @@ module:
       action:
         - (write energy (square sample))
   properties:
-    # transition step-identity: energy' = sample^2 (the square is the
-    # NON-LINEAR part `lia` cannot discharge).
-    - name: energy_step
+    - name: energy_squares_sample
       kind: transition
       expression:
         kind: transition
         rule: measure
         operand: (eq (read energy) (square (prev sample)))
-    # always invariant: the measured energy fits in 16 bits (sample^2 <= 65025).
-    - name: energy_bounded
+    - name: energy_equals_sample_squared
       kind: safety
       expression:
         kind: always
-        operand: (le (read energy) 65025)
+        operand: (eq (read energy) (square sample))
         reference: t
   proof_obligations:
-    - property: energy_step
+    - property: energy_squares_sample
       status: unproved
       engine: theorem_proving
       backend: koika_acl2
-    - property: energy_bounded
+    - property: energy_equals_sample_squared
       status: unproved
       engine: theorem_proving
       backend: koika_acl2

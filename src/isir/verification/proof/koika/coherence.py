@@ -157,7 +157,7 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
                         expr_obj.get("operand")
                         if isinstance(expr_obj, dict)
                         else getattr(expr_obj, "operand", None)
-                    )
+)
                 break
     if operand is None:
         return None
@@ -337,7 +337,7 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
         f"Axiom {h1} : {quant} {flag_ty} {C} {sel_var} = {cval2_s} -> "
         f"~ ({peer1_coq}).\n"
         f"Hint Resolve {h0} {h1} : core.\n"
-    )
+)
     fpat = ", ".join(f"Hx{i} : {fl} {'?inputs' if fl in input_names else '?s0'} = {str(is_true).lower()}" for i, (fl, is_true) in enumerate(flags))
     farg = " ".join(f"Hx{i}" for i in range(len(flags)))
     sel_pat = "?inputs" if is_input_selector else "?s0"
@@ -369,12 +369,12 @@ def synthesize_coherence_helper(spec, theorem_name: str) -> Optional[Tuple[str, 
         f"    all: try (intro Hc; destruct Hc as {destr}; match goal with [ Hr : reachable ?s0, {fpat}, Hp : {C} {sel_pat} = {cval_s} |- _ ] => exact ({h0} {helper_args} Hr {farg} Hp {arg0}) end).\n"
         f"    all: try (intro Hc; destruct Hc as {destr}; match goal with [ Hr : reachable ?s0, {fpat}, Hp : {C} {sel_pat} = {cval2_s} |- _ ] => exact ({h1} {helper_args} Hr {farg} Hp {arg1}) end).\n"
         f"Qed."
-    )
+)
     flags_expr = " ".join(
         (fl if fl in input_names else f"(read {fl})") if is_true
         else f"(not {fl if fl in input_names else '(read ' + fl + ')'})"
         for fl, is_true in flags
-    )
+)
     C_isir = C if is_input_selector else f"(read {C})"
     isir_invariants = [
         (f"{h0}",
@@ -448,7 +448,7 @@ def try_coherence_synthesis(prover, coq_file: Path, theorem_name: str) -> Option
                 remove(coq_file, name)
                 get_logger(__name__).warning(
                     "Rejected coherence helper '%s': failed the bounded gate.", name
-                )
+)
                 return None
             remove(coq_file, name)
     if "Ltac nat_eqb_norm" not in content:

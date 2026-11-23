@@ -1,15 +1,14 @@
 # src/isir/verification/sat_gate/smt_encode.py
 #
 # Independent second encoder: lower a predicate to SMT-LIB QF_BV and solve via
-# the z3 binary.  This is a DIFFERENT encoding route from the bit-blaster, so
-# dual-encoder agreement can catch cross-route divergence (§13.4, §20.4).
-"""SMT-LIB QF_BV encoder + one-shot solve."""
+# the z3 binary. This is a DIFFERENT encoding route from the bit-blaster, so
+# dual-encoder agreement can catch cross-route divergence.
 
+import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Union
-
+from typing import Dict, List, Optional
 from isir.utils.expr import parse_sexpr
 
 
@@ -326,6 +325,165 @@ def solve_smt_ind_step(inv_pred, transitions: Dict[str, str], widths) -> str:
     inv2 = _pred(inv_pred, widths, primed)
     asserts.append(f"(assert (not {inv2}))")
     return _run_smt(decls + asserts)
+
+
+def solve_smt_ind_step_model(inv_pred, transitions: Dict[str, str], widths,
+                             blocked_cubes=None):
+    """IND_STEP with the (s, s') models.
+
+    Returns ``(status, s_state, s_prime_state)``; when SAT, both states are
+    ``{name: int}`` mappings from the model; otherwise they are None.
+    ``blocked_cubes`` (optional) is a list of ``{name: int}`` cubes whose
+    conjunctions are asserted false (model blocking for multi-CTI seeding).
+    """
+    env: Dict[str, str] = {}
+    decls = _declare(env, widths)
+    asserts = [f"(assert {_pred(inv_pred, widths, env)})"]
+    primed: Dict[str, str] = dict(env)
+    for name, nxt in transitions.items():
+        w = widths[name]
+        p = name.replace("'", "_p") + "n"
+        primed[name] = p
+        decls.append(f"(declare-const {p} (_ BitVec {w}))")
+        asserts.append(f"(assert (= {p} {_term(nxt, widths, env)}))")
+    asserts.append(f"(assert (not {_pred(inv_pred, widths, primed)}))")
+    for cube in (blocked_cubes or []):
+        parts = [f"(eq (read {n}) {v})" for n, v in sorted(cube.items())]
+        conj = parts[0]
+        for p in parts[1:]:
+            conj = f"(and {conj} {p})"
+        asserts.append(f"(assert (not {conj}))")
+
+    names = " ".join(f"{env[n]} {primed[n]}" for n in widths)
+    body = ("(set-logic QF_ABV)\n" + "\n".join(decls + asserts) +
+            "\n(check-sat)\n(get-value (" + names + "))\n")
+    with tempfile.NamedTemporaryFile("w", suffix=".smt2", delete=False) as f:
+        f.write(body)
+        path = Path(f.name)
+    try:
+        proc = subprocess.run(["z3", str(path)], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        return ("unknown", None, None)
+    out = proc.stdout
+    if out.startswith("unsat"):
+        return ("unsat", None, None)
+    if out.startswith("sat"):
+        s_state: Dict[str, int] = {}
+        s_prime: Dict[str, int] = {}
+        for name, w in widths.items():
+            m = re.search(r"\(\(?" + re.escape(env[name]) + r"\s+#x([0-9a-f]+)\)", out)
+            if m:
+                s_state[name] = int(m.group(1), 16)
+            m = re.search(r"\(\(?" + re.escape(primed[name]) + r"\s+#x([0-9a-f]+)\)", out)
+            if m:
+                s_prime[name] = int(m.group(1), 16)
+        return ("sat", s_state, s_prime)
+    return ("unknown", None, None)
+
+
+def solve_smt_reachability(init_values: Dict[str, int], transitions: Dict[str, str],
+                           widths, target_pred, depth: int) -> str:
+    """Bounded reachability: Init ∧ (∃ j ≤ depth: target(s_j)).
+
+    SAT means ``target_pred`` is reachable within ``depth`` steps; UNSAT means it
+    is unreachable up to that bound (bounded, not unbounded, unreachability).
+    """
+    env: Dict[str, str] = {}
+    decls = _declare(env, widths)
+    asserts = []
+    for name, val in init_values.items():
+        w = widths[name]
+        asserts.append(f"(assert (= {env[name]} (_ bv{val} {w})))")
+
+    target_at_steps = [f"{_pred(target_pred, widths, env)}"]  # step 0
+    cur: Dict[str, str] = dict(env)
+    for step in range(depth):
+        nxt: Dict[str, str] = {}
+        for name in widths:
+            var = f"{name}_{step}"
+            nxt[name] = var
+            decls.append(f"(declare-const {var} (_ BitVec {widths[name]}))")
+        for name, nxt_expr in transitions.items():
+            asserts.append(f"(assert (= {nxt[name]} {_term(nxt_expr, widths, cur)}))")
+        cur = nxt
+        target_at_steps.append(f"{_pred(target_pred, widths, cur)}")
+
+    # the target is reachable at some step j <= depth.
+    asserts.append(f"(assert (or {' '.join(target_at_steps)}))")
+    return _run_smt(decls + asserts)
+
+
+def solve_smt_bad_cube_step(local_blocks, transitions: Dict[str, str],
+                            widths, cube_pred: str) -> str:
+    """BAD_CUBE_STEP(F, b) = F(s) ∧ ¬b(s) ∧ T(s, s') ∧ b(s').
+
+    UNSAT means ``¬b`` is inductive relative to the local blocking clauses F.
+    ``local_blocks`` are S-expression predicates over the current state.
+    """
+    env: Dict[str, str] = {}
+    decls = _declare(env, widths)
+    asserts = []
+    for block in local_blocks:
+        asserts.append(f"(assert {_pred(block, widths, env)})")
+    asserts.append(f"(assert (not {_pred(cube_pred, widths, env)}))")
+
+    primed: Dict[str, str] = dict(env)
+    for name, nxt in transitions.items():
+        w = widths[name]
+        p = name.replace("'", "_p") + "n"
+        primed[name] = p
+        decls.append(f"(declare-const {p} (_ BitVec {w}))")
+        asserts.append(f"(assert (= {p} {_term(nxt, widths, env)}))")
+
+    asserts.append(f"(assert {_pred(cube_pred, widths, primed)})")
+    return _run_smt(decls + asserts)
+
+
+def solve_smt_bad_cube_step_model(local_blocks, transitions: Dict[str, str],
+                                  widths, cube_pred: str):
+    """BAD_CUBE_STEP with the predecessor-state model.
+
+    Returns ``(status, state)``: when SAT, ``state`` is a ``{name: int}`` mapping
+    of the predecessor state ``s`` from the model; otherwise ``state`` is None.
+    """
+    env: Dict[str, str] = {}
+    decls = _declare(env, widths)
+    asserts = []
+    for block in local_blocks:
+        asserts.append(f"(assert {_pred(block, widths, env)})")
+    asserts.append(f"(assert (not {_pred(cube_pred, widths, env)}))")
+
+    primed: Dict[str, str] = dict(env)
+    for name, nxt in transitions.items():
+        w = widths[name]
+        p = name.replace("'", "_p") + "n"
+        primed[name] = p
+        decls.append(f"(declare-const {p} (_ BitVec {w}))")
+        asserts.append(f"(assert (= {p} {_term(nxt, widths, env)}))")
+
+    asserts.append(f"(assert {_pred(cube_pred, widths, primed)})")
+
+    names = " ".join(f"{env[n]}" for n in widths)
+    body = ("(set-logic QF_ABV)\n" + "\n".join(decls + asserts) +
+            "\n(check-sat)\n(get-value (" + names + "))\n")
+    with tempfile.NamedTemporaryFile("w", suffix=".smt2", delete=False) as f:
+        f.write(body)
+        path = Path(f.name)
+    try:
+        proc = subprocess.run(["z3", str(path)], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        return ("unknown", None)
+    out = proc.stdout
+    if out.startswith("unsat"):
+        return ("unsat", None)
+    if out.startswith("sat"):
+        state: Dict[str, int] = {}
+        for name, w in widths.items():
+            m = re.search(r"\(\(?" + re.escape(env[name]) + r"\s+#x([0-9a-f]+)\)", out)
+            if m:
+                state[name] = int(m.group(1), 16)
+        return ("sat", state)
+    return ("unknown", None)
 
 
 def _run_smt(decls_and_asserts: List[str]) -> str:

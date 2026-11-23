@@ -1,5 +1,4 @@
 # tests/sat_gate/test_certificate_t3.py
-"""T3 certification: DRAT check with the assumption-unit gotcha (§13.3)."""
 
 from isir.verification.sat_gate.bitblast import CNF
 from isir.verification.sat_gate.solver_oneshot import solve_cnf_with_proof

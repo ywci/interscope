@@ -74,7 +74,7 @@ class TestSetupLogging:
     def test_level_from_config(self, monkeypatch):
         monkeypatch.setattr(
             logger_mod, "get_config", lambda key, default=None: "WARNING"
-        )
+)
         setup_logging(file_enabled=False, force=True)
         assert logging.getLogger().level == logging.WARNING
 
@@ -84,25 +84,25 @@ class TestSetupLogging:
             console_enabled=False,
             file_enabled=False,
             force=True,
-        )
+)
         assert logging.getLogger().level == logging.INFO
 
     def test_no_handlers_when_both_disabled(self):
         setup_logging(
             level="INFO", console_enabled=False, file_enabled=False, force=True
-        )
+)
         assert len(logging.getLogger().handlers) == 0
 
     def test_console_disabled(self, tmp_path):
         log_file = tmp_path / "isir.log"
         setup_logging(
             level="INFO", log_file=log_file, console_enabled=False, force=True
-        )
+)
         root = logging.getLogger()
         assert not any(type(h) is logging.StreamHandler for h in root.handlers)
         assert any(
             isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers
-        )
+)
 
     def test_file_handler_rotation_parameters(self, tmp_path):
         log_file = tmp_path / "isir.log"
@@ -112,13 +112,13 @@ class TestSetupLogging:
             max_bytes=12345,
             backup_count=7,
             force=True,
-        )
+)
         root = logging.getLogger()
         fh = next(
             h
             for h in root.handlers
             if isinstance(h, logging.handlers.RotatingFileHandler)
-        )
+)
         assert fh.maxBytes == 12345
         assert fh.backupCount == 7
         assert str(fh.baseFilename) == str(log_file)

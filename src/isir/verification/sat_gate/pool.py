@@ -1,11 +1,9 @@
 # src/isir/verification/sat_gate/pool.py
 #
-# Sharded solver pool (§14.4): a fixed number of resident solver instances,
-# sharded by group-id hash.  Contention is measured, not hidden.
-"""Sharded solver pool with contention measurement."""
+# Sharded solver pool: a fixed number of resident solver instances,
+# sharded by group-id hash. Contention is measured, not hidden.
 
 from typing import Callable, Optional, Set
-
 from isir.verification.sat_gate.solver_cadical import IncrementalSolver
 
 

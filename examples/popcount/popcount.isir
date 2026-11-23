@@ -49,13 +49,15 @@ module:
         - (write index 0)
         - (write done false)
     - name: count_bit
-      condition: (and (not (read done)) (and (lt (read index) 8) (eq (mod (read value) 2) 1)))
+      condition: (and (not (read done)) (and (lt (read index) 8) (eq (mod (read value)
+        2) 1)))
       action:
         - (write count (add (read count) 1))
         - (write value (div (read value) 2))
         - (write index (add (read index) 1))
     - name: shift_bit
-      condition: (and (not (read done)) (and (lt (read index) 8) (eq (mod (read value) 2) 0)))
+      condition: (and (not (read done)) (and (lt (read index) 8) (eq (mod (read value)
+        2) 0)))
       action:
         - (write value (div (read value) 2))
         - (write index (add (read index) 1))
@@ -68,20 +70,63 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (le (read count) (read index))
-    - name: count_nonneg
+        operand: (le count (read index))
+    - name: done_iff_index_eq_8
       kind: safety
       expression:
         kind: always
-        operand: (ge (read count) 0)
+        operand: (eq done (eq (read index) 8))
+    - name: popcount_loads_value
+      kind: transition
+      expression:
+        kind: transition
+        rule: load
+        operand: (and (eq (read value) (prev data)) (and (eq count 0) (and (eq (read
+          index) 0) (eq done False))))
+    - name: set_bit_counted
+      kind: transition
+      expression:
+        kind: transition
+        rule: count_bit
+        operand: (and (eq count (add (prev count) 1)) (and (eq (read value) (div (prev
+          value) 2)) (eq (read index) (add (prev index) 1))))
+    - name: clear_bit_shifted
+      kind: transition
+      expression:
+        kind: transition
+        rule: shift_bit
+        operand: (and (eq (read value) (div (prev value) 2)) (eq (read index) (add
+          (prev index) 1)))
+    - name: popcount_finishes
+      kind: transition
+      expression:
+        kind: transition
+        rule: finish
+        operand: (eq done True)
   proof_obligations:
-    - property: count_le_index
+    - property: popcount_loads_value
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: count_nonneg
+      backend: koika_acl2
+    - property: set_bit_counted
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: count_le_index
       engine: model_checking
+    - property: clear_bit_shifted
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: popcount_finishes
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: count_le_index
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: done_iff_index_eq_8
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

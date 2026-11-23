@@ -1,8 +1,7 @@
 # src/isir/verification/sat_gate/canonical.py
 #
-# Canonicalization: byte-stable structural form + hash (§9.2).  No solver or
+# Canonicalization: byte-stable structural form + hash. No solver or
 # encoder imports.
-"""Deterministic S-expression canonical form and hash."""
 
 import hashlib
 from typing import Any, List, Union
@@ -11,8 +10,8 @@ from typing import Any, List, Union
 def canonical_form(expr: Union[str, int, bool, List]) -> Any:
     """Return a byte-stable canonical structure for an S-expression.
 
-    Lists are recursed; atoms pass through.  The returned structure is JSON /
-    repr stable for identical inputs (a CI check requirement, §9.2).
+    Lists are recursed; atoms pass through. The returned structure is JSON /
+    repr stable for identical inputs (a CI check requirement).
     """
     if isinstance(expr, list):
         return [canonical_form(x) for x in expr]

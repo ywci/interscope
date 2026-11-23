@@ -60,3 +60,13 @@
 ## Properties
 
 - **states_valid** (safety): always, `s0` ≥ 0 and `s0` ≤ 3 and `s1` ≥ 0 and `s1` ≤ 3.
+- **way0_write_hit_updates_line** (transition): after each step, `s0` equals 3 and `lru` equals true.
+- **way1_write_hit_updates_line** (transition): after each step, `s1` equals 3 and `lru` equals false.
+- **way0_write_miss_allocates_line** (transition): after each step, `s0` equals 3 and `a0` equals req_addr and `lru` equals true and `miss_valid` equals true and `miss_addr` equals req_addr.
+- **way1_write_miss_allocates_line** (transition): after each step, `s1` equals 3 and `a1` equals req_addr and `lru` equals false and `miss_valid` equals true and `miss_addr` equals req_addr.
+- **way0_read_miss_allocates_line** (transition): after each step, `s0` equals 1 and `a0` equals req_addr and `miss_valid` equals true and `miss_addr` equals req_addr.
+- **way1_read_miss_allocates_line** (transition): after each step, `s1` equals 1 and `a1` equals req_addr and `miss_valid` equals true and `miss_addr` equals req_addr.
+- **way0_snoop_invalidates** (transition): after each step, `s0` equals 0.
+- **way1_snoop_invalidates** (transition): after each step, `s1` equals 0.
+- **way0_snoop_downgrades** (transition): after each step, `s0` equals 1.
+- **way1_snoop_downgrades** (transition): after each step, `s1` equals 1.

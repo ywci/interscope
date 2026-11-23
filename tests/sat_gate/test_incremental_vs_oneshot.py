@@ -1,9 +1,7 @@
 # tests/sat_gate/test_incremental_vs_oneshot.py
-"""Incremental vs one-shot differential (§20.4): identical query, same answer."""
 
 from isir.parser.parser import parse_isir
 from isir.lowering.ast_to_isir import convert_ast_to_isir_module
-
 from isir.verification.sat_gate.isir_bridge import (
     always_operand, initial_values, transitions_of, widths_of,
 )
@@ -15,7 +13,7 @@ from isir.verification.sat_gate.solver_cadical import IncrementalSolver
 def _load(name):
     return convert_ast_to_isir_module(
         parse_isir(f"examples/{name}/{name}.isir").module
-    )
+)
 
 
 def _status_of(sat_or_unsat):
@@ -32,7 +30,7 @@ def test_incremental_agrees_with_oneshot_saturating():
     for compiled in (
         compile_base_entail(init, inv, widths),
         compile_ind_step(inv, transitions, widths),
-    ):
+):
         one = solve_cnf(compiled.cnf).status
         inc = IncrementalSolver(clauses=compiled.cnf.clauses)
         try:

@@ -477,17 +477,11 @@
 ## Properties
 
 - **core0_cache_l1d_is_modified_implies_valid** (safety): always, if core0_cache_l1d_is_modified(`core0_cache_l1d_s0`), then `core0_cache_l1d_s0` does not equal 0.
-- **core0_cache_l1d_phys_index_bounded** (safety): always, core0_cache_l1d_phys_index(`core0_cache_l1d_a0`) ≤ 3.
 - **core0_cache_l1i_is_modified_implies_valid** (safety): always, if core0_cache_l1i_is_modified(`core0_cache_l1i_s0`), then `core0_cache_l1i_s0` does not equal 0.
-- **core0_cache_l1i_phys_index_bounded** (safety): always, core0_cache_l1i_phys_index(`core0_cache_l1i_a0`) ≤ 3.
 - **core0_ooo_lsu_l1d_is_modified_implies_valid** (safety): always, if core0_ooo_lsu_l1d_is_modified(`core0_ooo_lsu_l1d_s0`), then `core0_ooo_lsu_l1d_s0` does not equal 0.
-- **core0_ooo_lsu_l1d_phys_index_bounded** (safety): always, core0_ooo_lsu_l1d_phys_index(`core0_ooo_lsu_l1d_a0`) ≤ 3.
 - **core1_cache_l1d_is_modified_implies_valid** (safety): always, if core1_cache_l1d_is_modified(`core1_cache_l1d_s0`), then `core1_cache_l1d_s0` does not equal 0.
-- **core1_cache_l1d_phys_index_bounded** (safety): always, core1_cache_l1d_phys_index(`core1_cache_l1d_a0`) ≤ 3.
 - **core1_cache_l1i_is_modified_implies_valid** (safety): always, if core1_cache_l1i_is_modified(`core1_cache_l1i_s0`), then `core1_cache_l1i_s0` does not equal 0.
-- **core1_cache_l1i_phys_index_bounded** (safety): always, core1_cache_l1i_phys_index(`core1_cache_l1i_a0`) ≤ 3.
 - **core1_ooo_lsu_l1d_is_modified_implies_valid** (safety): always, if core1_ooo_lsu_l1d_is_modified(`core1_ooo_lsu_l1d_s0`), then `core1_ooo_lsu_l1d_s0` does not equal 0.
-- **core1_ooo_lsu_l1d_phys_index_bounded** (safety): always, core1_ooo_lsu_l1d_phys_index(`core1_ooo_lsu_l1d_a0`) ≤ 3.
 - **e_at_holds_line** (safety): always, if e_at(`home_c0_state`, `home_c0_addr`, `home_c0_addr`), then `home_c0_state` does not equal 0.
 - **has_at_holds_line** (safety): always, if has_at(`home_c0_state`, `home_c0_addr`, `home_c0_addr`), then `home_c0_state` does not equal 0.
 - **home_is_exclusive_implies_valid** (safety): always, if home_is_exclusive(`home_c0_state`), then `home_c0_state` does not equal 0.

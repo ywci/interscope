@@ -73,7 +73,7 @@ class TestSelfIdentityAutoProof:
             property_ops=[isir.SpecPropertyOp(prop_name="x_self", kind="safety",
                           expression={"kind": "always", "operand": "(eq (read x) (read x))"})],
             proof_obligations=[{"property": "x_self", "backend": "koika", "engine": "theorem_proving"}],
-        )
+)
         km = isir_to_koika.convert(spec)
         code = "\n".join(km.state_definitions)
         import re

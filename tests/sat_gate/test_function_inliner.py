@@ -1,5 +1,4 @@
 # tests/sat_gate/test_function_inliner.py
-"""Function inlining: user-defined functions + built-in min/max/clamp."""
 
 from isir.verification.sat_gate.function_inliner import (
     functions_of, inline_functions, sexpr_to_string,

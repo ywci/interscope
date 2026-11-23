@@ -12,7 +12,7 @@ module:
   inputs:
     - name: req_core
       direction: input
-      type: "bits<4>"   # 0 = core0, 1 = core1 (matches the home's req_core width)
+      type: "bits<4>"
     - name: req_write
       direction: input
       type: "bool"
@@ -23,25 +23,33 @@ module:
       direction: input
       type: "bits<8>"
   components:
-    # Request nodes: their L1D MESI state is the real cache.
     - name: rn0
       module: "examples/rn_core/rn_core.isir"
       lift_properties: false
-      port_map: {req_core: false, mstate: c0_mstate_signal, maddr: c0_maddr_signal}
+      port_map:
+        req_core: false
+        mstate: c0_mstate_signal
+        maddr: c0_maddr_signal
     - name: rn1
       module: "examples/rn_core/rn_core.isir"
       lift_properties: false
-      port_map: {req_core: true, mstate: c1_mstate_signal, maddr: c1_maddr_signal}
-    # Home node: directory + centralized snoop, writing the RNs' L1D via cross-instance.
-    # Its proved SWMR is lifted as assumed reachable invariants.
+      port_map:
+        req_core: true
+        mstate: c1_mstate_signal
+        maddr: c1_maddr_signal
     - name: home
       module: "examples/home/home.isir"
       lift_properties: invariant
-      port_map: {req_core: req_core, req_write: req_write, req_addr: req_addr, req_data: req_data,
-                 c0_state: c0_mstate_signal, c0_addr: c0_maddr_signal,
-                 c1_state: c1_mstate_signal, c1_addr: c1_maddr_signal}
+      port_map:
+        req_core: req_core
+        req_write: req_write
+        req_addr: req_addr
+        req_data: req_data
+        c0_state: c0_mstate_signal
+        c0_addr: c0_maddr_signal
+        c1_state: c1_mstate_signal
+        c1_addr: c1_maddr_signal
   state:
-    # Shared signals carrying the RNs' L1D MESI state.
     - name: c0_mstate_signal
       kind: register
       type: "bits<2>"
@@ -63,86 +71,94 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (implies (home_is_exclusive (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+        operand: (implies (home_is_exclusive (read c0_mstate_signal)) (neq (read c0_mstate_signal)
+          0))
     - name: home_is_modified_implies_valid
       kind: safety
       expression:
         kind: always
-        operand: (implies (home_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+        operand: (implies (home_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal)
+          0))
     - name: rn0_has_line_holds_line
       kind: safety
       expression:
         kind: always
-        operand: (implies (rn0_has_line (read c0_mstate_signal) (read rn0_req_out_addr) (read rn0_req_out_addr)) (neq (read c0_mstate_signal) 0))
+        operand: (implies (rn0_has_line (read c0_mstate_signal) (read rn0_req_out_addr)
+          (read rn0_req_out_addr)) (neq (read c0_mstate_signal) 0))
     - name: rn0_is_modified_implies_valid
       kind: safety
       expression:
         kind: always
-        operand: (implies (rn0_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+        operand: (implies (rn0_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal)
+          0))
     - name: rn1_has_line_holds_line
       kind: safety
       expression:
         kind: always
-        operand: (implies (rn1_has_line (read c0_mstate_signal) (read rn1_req_out_addr) (read rn1_req_out_addr)) (neq (read c0_mstate_signal) 0))
+        operand: (implies (rn1_has_line (read c0_mstate_signal) (read rn1_req_out_addr)
+          (read rn1_req_out_addr)) (neq (read c0_mstate_signal) 0))
     - name: rn1_is_modified_implies_valid
       kind: safety
       expression:
         kind: always
-        operand: (implies (rn1_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal) 0))
+        operand: (implies (rn1_is_modified (read c0_mstate_signal)) (neq (read c0_mstate_signal)
+          0))
     - name: single_writer
       kind: safety
       expression:
         kind: always
-        operand: (not (and (and (eq (read c0_mstate_signal) 3) (eq (read c1_mstate_signal) 3))
-                          (eq (read c0_maddr_signal) (read c1_maddr_signal))))
+        operand: (not (and (and (eq (read c0_mstate_signal) 3) (eq (read c1_mstate_signal)
+          3)) (eq (read c0_maddr_signal) (read c1_maddr_signal))))
     - name: m_exclusive
       kind: safety
       expression:
         kind: always
-        operand: (and
-                   (not (and (eq (read c0_mstate_signal) 3) (and (neq (read c1_mstate_signal) 0) (eq (read c1_maddr_signal) (read c0_maddr_signal)))))
-                   (not (and (eq (read c1_mstate_signal) 3) (and (neq (read c0_mstate_signal) 0) (eq (read c0_maddr_signal) (read c1_maddr_signal))))))
+        operand: (and (not (and (eq (read c0_mstate_signal) 3) (and (neq (read c1_mstate_signal)
+          0) (eq (read c1_maddr_signal) (read c0_maddr_signal))))) (not (and (eq (read
+          c1_mstate_signal) 3) (and (neq (read c0_mstate_signal) 0) (eq (read c0_maddr_signal)
+          (read c1_maddr_signal))))))
     - name: e_exclusive
       kind: safety
       expression:
         kind: always
-        operand: (and
-                   (not (and (eq (read c0_mstate_signal) 2) (and (neq (read c1_mstate_signal) 0) (eq (read c1_maddr_signal) (read c0_maddr_signal)))))
-                   (not (and (eq (read c1_mstate_signal) 2) (and (neq (read c0_mstate_signal) 0) (eq (read c0_maddr_signal) (read c1_maddr_signal))))))
+        operand: (and (not (and (eq (read c0_mstate_signal) 2) (and (neq (read c1_mstate_signal)
+          0) (eq (read c1_maddr_signal) (read c0_maddr_signal))))) (not (and (eq (read
+          c1_mstate_signal) 2) (and (neq (read c0_mstate_signal) 0) (eq (read c0_maddr_signal)
+          (read c1_maddr_signal))))))
   proof_obligations:
     - property: home_is_exclusive_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: home_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn0_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_has_line_holds_line
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: rn1_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: single_writer
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: m_exclusive
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: e_exclusive
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

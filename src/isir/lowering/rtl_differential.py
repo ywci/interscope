@@ -1,6 +1,6 @@
 # src/isir/lowering/rtl_differential.py
 #
-# D5 — lockstep differential harness (short-path direct RTL vs long-path Kōika RTL).
+# Lockstep differential harness (short-path direct RTL vs long-path Kōika RTL).
 #
 # This harness drives both emitted RTL models with identical stimulus and compares
 # the *observable projection* (the non-memory state registers) every cycle.  It is

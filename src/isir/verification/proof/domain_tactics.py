@@ -227,7 +227,7 @@ def apply_domain_tactics(
             script = script.replace(
                 "discriminate Hop.",
                 "simpl in Hop. inversion Hop."
-            )
+)
 
     return script
 

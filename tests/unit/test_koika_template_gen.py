@@ -22,18 +22,18 @@ class TestGenerateVariants:
     def test_custom_num_variants(self):
         variants = generate_coq_proof_variants_template(
             "foo", "Theorem foo : True.", num_variants=7
-        )
+)
         assert len(variants) == 7
 
     def test_zero_variants_returns_empty(self):
         assert (
             generate_coq_proof_variants_template("foo", "T", num_variants=0) == []
-        )
+)
 
     def test_all_variants_have_proof_and_qed(self):
         variants = generate_coq_proof_variants_template(
             "foo", "Theorem foo : True.", num_variants=8
-        )
+)
         for v in variants:
             assert v.strip().startswith("Proof.")
             assert "Qed." in v
@@ -41,14 +41,14 @@ class TestGenerateVariants:
     def test_all_variants_structurally_valid(self):
         variants = generate_coq_proof_variants_template(
             "foo", "Theorem foo : True.", num_variants=8
-        )
+)
         for v in variants:
             assert validate_structure(v) == [], f"variant failed validation:\n{v}"
 
     def test_no_deprecated_notations(self):
         variants = generate_coq_proof_variants_template(
             "foo", "Theorem foo : True.", num_variants=8
-        )
+)
         for v in variants:
             assert "Nat.mod_add" not in v
             assert "Nat.div_same" not in v
@@ -56,7 +56,7 @@ class TestGenerateVariants:
     def test_variants_are_distinct(self):
         variants = generate_coq_proof_variants_template(
             "foo", "Theorem foo : True.", num_variants=4
-        )
+)
         assert len(set(variants)) == 4
 
     def test_variants_are_strings(self):
@@ -69,7 +69,7 @@ class TestWithAnalysis:
         a = ObligationAnalysis(
             num_step_constructors=2,
             step_constructor_names=["step_load_inputs", "step_execute"],
-        )
+)
         variants = generate_coq_proof_variants_template("foo", "T", num_variants=4, analysis=a)
         assert "discriminate Hvalid" in variants[0]
 
@@ -77,10 +77,10 @@ class TestWithAnalysis:
         a = ObligationAnalysis(
             num_step_constructors=2,
             step_constructor_names=["step_load_inputs", "step_execute"],
-        )
+)
         variants = generate_coq_proof_variants_template(
             "overflow_x", "T", num_variants=4, analysis=a
-        )
+)
         assert any("lia" in v for v in variants)
 
     def test_nested_ite_deep_uses_destruct_chain(self):
@@ -97,9 +97,9 @@ class TestWithAnalysis:
         a = ObligationAnalysis(
             num_step_constructors=2,
             step_constructor_names=["step_load_inputs", "step_execute"],
-        )
+)
         variants = generate_coq_proof_variants_template(
             "overflow_x", "T", num_variants=6, analysis=a
-        )
+)
         for v in variants:
             assert validate_structure(v) == [], f"variant failed validation:\n{v}"

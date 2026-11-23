@@ -279,7 +279,7 @@ class ProofObligation:
                 raise ValueError(
                     f"perf_generation_temperature must be between 0.0 and 1.0, "
                     f"got {self.perf_generation_temperature}"
-                )
+)
 
         # Validate weight
         if self.perf_trace_alignment_weight is not None:
@@ -287,7 +287,7 @@ class ProofObligation:
                 raise ValueError(
                     f"perf_trace_alignment_weight must be between 0.0 and 1.0, "
                     f"got {self.perf_trace_alignment_weight}"
-                )
+)
 
         # Validate dimensions (if provided, check they are non-empty)
         if self.perf_dimensions is not None:
@@ -298,7 +298,7 @@ class ProofObligation:
                 if not isinstance(dim, str):
                     raise ValueError(
                         f"perf_dimensions must contain strings, got {type(dim)}"
-                    )
+)
 
         # Validate primary dimension is in dimensions (if both set)
         if (self.perf_primary_dimension is not None and
@@ -307,7 +307,7 @@ class ProofObligation:
             raise ValueError(
                 f"perf_primary_dimension '{self.perf_primary_dimension}' must be "
                 f"one of perf_dimensions: {self.perf_dimensions}"
-            )
+)
 
     def to_perf_overrides(self) -> Dict[str, Any]:
         """

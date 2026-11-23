@@ -32,7 +32,7 @@ class TestErrorSignature:
             "Warning: this is a deprecation notice\n"
             "Deprecated notation Nat.mod_add\n"
             "Error: the real problem"
-        )
+)
         assert ErrorHistory._signature(msg) == "Error: the real problem"
 
     def test_skips_deprecated_substring_line(self):

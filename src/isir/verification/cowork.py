@@ -48,14 +48,14 @@ def merge_cowork(koika: ProofResult, acl2: ProofResult) -> CoWorkResult:
             proof_script=koika.proof_script or "",
             auxiliary_lemmas=shared,
             metadata={"koika": koika.metadata, "acl2": acl2.metadata},
-        )
+)
     if acl2.success:
         return CoWorkResult(
             success=True, winner="acl2",
             proof_script=acl2.proof_script or "",
             auxiliary_lemmas=shared,
             metadata={"koika": koika.metadata, "acl2": acl2.metadata},
-        )
+)
     return CoWorkResult(
         success=False, winner=None,
         metadata={
@@ -67,8 +67,8 @@ def merge_cowork(koika: ProofResult, acl2: ProofResult) -> CoWorkResult:
         error_message=(
             f"koika: {koika.error_message or 'unknown'}; "
             f"acl2: {acl2.error_message or 'unknown'}"
-        ),
-    )
+),
+)
 
 
 def build_reflection_prompt(cw: "CoWorkResult") -> str:
@@ -91,7 +91,7 @@ def build_reflection_prompt(cw: "CoWorkResult") -> str:
         "lemma is needed, declare it first (`Lemma <name> : <stmt>. Proof. ... Qed.`), "
         "then give the main proof (`Proof. ... Qed.`). Output ONLY the Coq code — no "
         "prose, no markdown fences."
-    )
+)
 
 
 def reflect_on_failure(cw: "CoWorkResult", llm) -> Optional[str]:
@@ -135,10 +135,10 @@ def run_cowork(koika_fn: Callable[[], ProofResult],
 
     The original implementation blocked on *both* futures, so a slow (or
     hanging) loser stalled the whole obligation even after the winner had
-    already proved it.  This version returns as soon as one side succeeds and
-    does await the loser's in-flight run to completion (wait=True) before
-    returning, so its writes to the shared Coq/ACL2 files finish before the
-    next obligation reads them (prevents a torn read-modify-write race).
+    already proved it.  This version returns as soon as one side succeeds; the
+    loser's still-running future is cancelled on shutdown and is not awaited
+    (the two backends write to separate Coq/ACL2 files, so there is no shared
+    read-modify-write to protect).
     """
     pool = ThreadPoolExecutor(max_workers=2)
     fut_koika = pool.submit(koika_fn)
@@ -157,7 +157,7 @@ def run_cowork(koika_fn: Callable[[], ProofResult],
     except TimeoutError:
         pass  # neither finished in time; treat as both-failed below
     finally:
-        pool.shutdown(wait=True, cancel_futures=True)
+        pool.shutdown(wait=False, cancel_futures=True)
 
     for fut, name in futures.items():
         if name not in results:
@@ -165,5 +165,5 @@ def run_cowork(koika_fn: Callable[[], ProofResult],
                 success=False,
                 error_message="co-work abandoned (other side won / timeout)",
                 backend=name,
-            )
+)
     return merge_cowork(results["koika"], results["acl2"])

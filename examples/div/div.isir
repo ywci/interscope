@@ -73,20 +73,16 @@ module:
         - (write count 16)
         - (write done false)
     - name: sub_step
-      condition: (and (not (read done))
-                      (and (gt (read count) 0)
-                           (ge (add (mul (read rem) 2) (slice (read quot) 15 15))
-                               (read divisor_reg))))
+      condition: (and (not (read done)) (and (gt (read count) 0) (ge (add (mul (read
+        rem) 2) (slice (read quot) 15 15)) (read divisor_reg))))
       action:
-        - (write rem (sub (add (mul (read rem) 2) (slice (read quot) 15 15))
-                          (read divisor_reg)))
+        - (write rem (sub (add (mul (read rem) 2) (slice (read quot) 15 15)) (read
+          divisor_reg)))
         - (write quot (add (mul (read quot) 2) 1))
         - (write count (sub (read count) 1))
     - name: shift_step
-      condition: (and (not (read done))
-                      (and (gt (read count) 0)
-                           (lt (add (mul (read rem) 2) (slice (read quot) 15 15))
-                               (read divisor_reg))))
+      condition: (and (not (read done)) (and (gt (read count) 0) (lt (add (mul (read
+        rem) 2) (slice (read quot) 15 15)) (read divisor_reg))))
       action:
         - (write rem (add (mul (read rem) 2) (slice (read quot) 15 15)))
         - (write quot (mul (read quot) 2))
@@ -98,52 +94,87 @@ module:
         - (write quotient (read quot))
         - (write remainder (read rem))
   properties:
-    - name: count_in_range
+    - name: done_implies_remainder_equals_rem
       kind: safety
       expression:
         kind: always
-        operand: (and (ge (read count) 0) (le (read count) 16))
-    - name: rem_nonneg
+        operand: (implies done (eq remainder (read rem)))
+    - name: done_implies_quotient_equals_quot
       kind: safety
       expression:
         kind: always
-        operand: (ge (read rem) 0)
-    - name: quot_nonneg
-      kind: safety
-      expression:
-        kind: always
-        operand: (ge (read quot) 0)
+        operand: (implies done (eq quotient (read quot)))
     - name: done_implies_count_zero
       kind: safety
       expression:
         kind: always
-        operand: (implies (read done) (eq (read count) 0))
+        operand: (implies done (eq (read count) 0))
     - name: remainder_lt_divisor
       kind: safety
       expression:
         kind: always
-        operand: (implies (gt (read divisor_reg) 0)
-                         (lt (read rem) (read divisor_reg)))
+        operand: (implies (gt (read divisor_reg) 0) (lt (read rem) (read divisor_reg)))
+    - name: divider_loads_operands
+      kind: transition
+      expression:
+        kind: transition
+        rule: load
+        operand: (and (eq (read rem) 0) (and (eq (read quot) (prev dividend)) (and
+          (eq (read divisor_reg) (prev divisor)) (and (eq (read dividend_init) (prev
+          dividend)) (and (eq (read count) 16) (eq done False))))))
+    - name: remainder_subtracts_divisor
+      kind: transition
+      expression:
+        kind: transition
+        rule: sub_step
+        operand: (and (eq (read rem) (sub (add (mul (prev rem) 2) (slice (prev quot)
+          15 15)) (prev divisor_reg))) (and (eq (read quot) (add (mul (prev quot)
+          2) 1)) (eq (read count) (sub (prev count) 1))))
+    - name: remainder_shifts_left
+      kind: transition
+      expression:
+        kind: transition
+        rule: shift_step
+        operand: (and (eq (read rem) (add (mul (prev rem) 2) (slice (prev quot) 15
+          15))) (and (eq (read quot) (mul (prev quot) 2)) (eq (read count) (sub (prev
+          count) 1))))
+    - name: division_finalizes_result
+      kind: transition
+      expression:
+        kind: transition
+        rule: finish
+        operand: (and (eq done True) (and (eq quotient (prev quot)) (eq remainder
+          (prev rem))))
   proof_obligations:
-    - property: count_in_range
+    - property: divider_loads_operands
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: rem_nonneg
+      backend: koika_acl2
+    - property: remainder_subtracts_divisor
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: quot_nonneg
+      backend: koika_acl2
+    - property: remainder_shifts_left
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
+    - property: division_finalizes_result
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: done_implies_remainder_equals_rem
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: done_implies_quotient_equals_quot
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: done_implies_count_zero
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: remainder_lt_divisor
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: count_in_range
-      engine: model_checking
+      backend: koika_acl2

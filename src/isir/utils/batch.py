@@ -113,7 +113,7 @@ def run_batch(
                 idx + 1,
                 len(file_list),
                 file_path.name
-            )
+)
 
         start = time.time()
         success = False
@@ -139,7 +139,7 @@ def run_batch(
                 len(file_list),
                 file_path.name,
                 error
-            )
+)
         except Exception as e:
             error = str(e)
             logger.error(
@@ -148,7 +148,7 @@ def run_batch(
                 len(file_list),
                 file_path.name,
                 error
-            )
+)
 
         duration = time.time() - start
         results.append(
@@ -159,6 +159,6 @@ def run_batch(
                 "error": error,
                 "duration": duration
             }
-        )
+)
 
     return results

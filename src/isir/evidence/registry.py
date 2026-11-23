@@ -151,7 +151,7 @@ class EvidenceRegistry:
                 """,
                 (evidence_type, ref_type, ref_value, engine, status,
                  property_name, design_name, iterations, llm_int)
-            )
+)
             return cursor.lastrowid
 
     def get_evidence(self, evidence_id: int) -> Optional[Dict[str, Any]]:
@@ -234,7 +234,7 @@ class EvidenceRegistry:
             engine=engine,
             design_name=design_name,
             limit=1
-        )
+)
         return results[0] if results else None
 
     def update_status(self, evidence_id: int, status: str) -> bool:
@@ -249,7 +249,7 @@ class EvidenceRegistry:
             cursor.execute(
                 "UPDATE evidence SET status = ? WHERE id = ?",
                 (status, evidence_id)
-            )
+)
             return cursor.rowcount > 0
 
     def delete_evidence(self, evidence_id: int) -> bool:
@@ -290,7 +290,7 @@ class EvidenceRegistry:
 
             cursor.execute(
                 "SELECT engine, COUNT(*) FROM evidence WHERE type IN ('coq_theorem','acl2_theorem') AND status='proved' GROUP BY engine"
-            )
+)
             proved_by_backend = {row[0]: row[1] for row in cursor.fetchall()}
 
             return {
@@ -309,7 +309,7 @@ class EvidenceRegistry:
         property_name: Optional[str] = None,
         evidence_type: Optional[str] = None,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
         return self.list_evidence(
             evidence_type=evidence_type,
             property_name=property_name,
@@ -317,7 +317,7 @@ class EvidenceRegistry:
             status=status,
             design_name=design,
             limit=limit,
-        )
+)
 
     def export_to_json(
         self,
@@ -325,7 +325,7 @@ class EvidenceRegistry:
         design: Optional[str] = None,
         backend: Optional[str] = None,
         status: Optional[str] = None,
-    ) -> None:
+) -> None:
         """
         Export matching evidence entries to a JSON file.
 
@@ -348,7 +348,7 @@ class EvidenceRegistry:
         design: Optional[str] = None,
         backend: Optional[str] = None,
         status: Optional[str] = None,
-    ) -> None:
+) -> None:
         """
         Export matching evidence entries to a CSV file.
 
@@ -377,7 +377,7 @@ class EvidenceRegistry:
         trace_path: Optional[Path] = None,
         status: str = "counterexample",
         design_name: Optional[str] = None,
-    ) -> int:
+) -> int:
         """
         Add a counterexample evidence entry (typically from model checking).
 
@@ -408,7 +408,7 @@ class EvidenceRegistry:
             status=status,
             property_name=property_name,
             design_name=design_name,
-        )
+)
 
     def get_counterexample(self, property_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -417,13 +417,13 @@ class EvidenceRegistry:
         return self.get_latest_evidence(
             evidence_type="counterexample_trace",
             property_name=property_name,
-        )
+)
 
     def get_proven_theorem(
         self,
         property_name: str,
         backend: str = "koika"
-    ) -> Optional[Dict[str, Any]]:
+) -> Optional[Dict[str, Any]]:
         """
         Retrieve a proven theorem for a property (from any engine).
         """
@@ -432,7 +432,7 @@ class EvidenceRegistry:
             evidence_type=evidence_type,
             property_name=property_name,
             status="proved",
-        )
+)
 
     def get_perf_evidence(
         self,
@@ -440,7 +440,7 @@ class EvidenceRegistry:
         backend: Optional[str] = None,
         status: Optional[str] = None,
         design_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
         """
         Retrieve PERF-generated evidence (proofs and counterexamples).
         """
@@ -457,7 +457,7 @@ class EvidenceRegistry:
                 status=status,
                 design_name=design_name,
                 limit=1000
-            )
+)
         else:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -488,19 +488,19 @@ class EvidenceRegistry:
 
             cursor.execute(
                 "SELECT type, COUNT(*) FROM evidence WHERE engine LIKE 'perf_%' GROUP BY type"
-            )
+)
             by_type = {row[0]: row[1] for row in cursor.fetchall()}
 
             cursor.execute(
                 "SELECT status, COUNT(*) FROM evidence WHERE engine LIKE 'perf_%' GROUP BY status"
-            )
+)
             by_status = {row[0]: row[1] for row in cursor.fetchall()}
 
             cursor.execute(
                 "SELECT property_name, type, status, COUNT(*) FROM evidence "
                 "WHERE engine LIKE 'perf_%' AND property_name IS NOT NULL "
                 "GROUP BY property_name, type, status"
-            )
+)
             rows = cursor.fetchall()
             per_property = {}
             for prop, typ, stat, count in rows:

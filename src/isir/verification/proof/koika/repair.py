@@ -80,7 +80,7 @@ def repair_coq_proof(
 
     prompt = _build_repair_prompt(
         original_script, error_message, theorem_name, theorem_statement
-    )
+)
 
     for attempt in range(max_attempts):
         repaired = llm_client.generate(prompt).strip()
@@ -98,10 +98,10 @@ def repair_coq_proof(
             logger.warning(
                 "Repair attempt %d produced a script that fails basic sanity.",
                 attempt + 1
-            )
+)
             prompt = _update_repair_prompt(
                 prompt, repaired, "The script is missing Proof. or Qed."
-            )
+)
             continue
 
         if rocq_client:
@@ -119,14 +119,14 @@ def repair_coq_proof(
                 logger.info(
                     "Repair attempt %d succeeded (compiled successfully).",
                     attempt + 1,
-                )
+)
                 return True, repaired
             except RocqClientError as compile_err:
                 logger.warning(
                     "Repair attempt %d failed compilation: %s",
                     attempt + 1,
                     compile_err,
-                )
+)
                 prompt = _update_repair_prompt(prompt, repaired, str(compile_err))
             except Exception as e:
                 logger.error("Unexpected error during repair validation: %s", e)
@@ -141,7 +141,7 @@ def repair_coq_proof(
             logger.info(
                 "Repair attempt %d produced a plausible script (no rocq validation).",
                 attempt + 1,
-            )
+)
             return True, repaired
 
     return False, original_script
@@ -156,7 +156,7 @@ def build_repair_prompt_from_error(
     """Public wrapper for `_build_repair_prompt`."""
     return _build_repair_prompt(
         failed_script, error_msg, theorem_name, theorem_statement
-    )
+)
 
 
 def _build_repair_prompt(
@@ -183,7 +183,7 @@ def _build_repair_prompt(
         "  Use `inversion` or `rewrite Nat.eqb_eq in H` first.\n"
         "- Use explicit braces `{ ... }` for each subgoal, not bullets `+` or `-`.\n"
         "- Replace any deprecated `Nat.mod_add` with `Div0.mod_add`."
-    )
+)
     return "\n".join(parts)
 
 
@@ -199,7 +199,7 @@ def _update_repair_prompt(
         f"```coq\n{attempted_script}\n```\n"
         f"This still failed with:\n{new_error}\n\n"
         f"Please provide a corrected script."
-    )
+)
 
 
 def _basic_sanity(script: str) -> bool:

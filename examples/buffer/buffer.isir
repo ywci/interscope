@@ -24,11 +24,11 @@ module:
       action:
         - (write q d)
   properties:
-    - name: q_nonneg
+    - name: q_equals_d
       kind: safety
       expression:
         kind: always
-        operand: (ge (read q) 0)
+        operand: (eq (read q) d)
     - name: q_passes_d
       kind: transition
       expression:
@@ -36,11 +36,11 @@ module:
         rule: update
         operand: (eq (read q) d)
   proof_obligations:
-    - property: q_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: koika
     - property: q_passes_d
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
+    - property: q_equals_d
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

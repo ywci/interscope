@@ -37,7 +37,7 @@ def _run_isir(subcommand: str, args: list, timeout: int = 180, **kwargs) -> subp
         text=True,
         timeout=timeout,
         **kwargs,
-    )
+)
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ def test_counter_compile_koika(counter_spec_path, build_dir):
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
         f"STDOUT: {result.stdout}"
-    )
+)
     coq_file = build_dir / "counter" / "coq" / "counter.v"
     assert coq_file.exists(), f"Coq file not found: {coq_file}"
 
@@ -113,7 +113,7 @@ def test_counter_compile_acl2(counter_spec_path, build_dir):
         f"Compilation failed with code {result.returncode}:\n"
         f"STDERR: {result.stderr}\n"
         f"STDOUT: {result.stdout}"
-    )
+)
     acl2_file = build_dir / "counter" / "acl2" / "counter.lisp"
     assert acl2_file.exists(), f"ACL2 file not found: {acl2_file}"
 
@@ -148,14 +148,14 @@ def test_counter_verify_koika(counter_spec_path, build_dir):
         text=True,
         timeout=120,
         env=env,
-    )
+)
 
     if result.returncode not in (0, 1):
         pytest.fail(
             f"Verification crashed with code {result.returncode}:\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
     coq_file = build_dir / "verify" / "counter" / "coq" / "counter.v"
     if not coq_file.exists():
@@ -163,7 +163,7 @@ def test_counter_verify_koika(counter_spec_path, build_dir):
             f"Coq file was not generated.\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
     if result.returncode == 0:
         assert "PASS" in result.stdout
@@ -190,14 +190,14 @@ def test_counter_verify_acl2(counter_spec_path, build_dir):
             f"{e.stderr.decode() if e.stderr else '(none)'}\n"
             f"STDOUT captured so far:\n"
             f"{e.stdout.decode() if e.stdout else '(none)'}"
-        )
+)
 
     if result.returncode not in (0, 1):
         pytest.fail(
             f"Verification crashed with code {result.returncode}:\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
     acl2_file = build_dir / "verify" / "counter" / "acl2" / "counter.lisp"
     if not acl2_file.exists():
@@ -205,7 +205,7 @@ def test_counter_verify_acl2(counter_spec_path, build_dir):
             f"ACL2 file was not generated.\n"
             f"STDERR: {result.stderr}\n"
             f"STDOUT: {result.stdout}"
-        )
+)
 
 
 @pytest.mark.integration

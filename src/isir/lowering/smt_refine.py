@@ -295,13 +295,13 @@ def validate_encoder(expr: Any, width: int, widths: Dict[str, int],
 _KOIKA_LITERAL = re.compile(r"\|(\d+)`([bdh])([0-9a-zA-Z_?]+)\|")
 _KOIKA_TOKENS = re.compile(r"""
     \s*(
-      \( | \) | , |
+      \(| \) | , |
       \|\d+`[bdh][0-9a-zA-Z_?]+\| |
       read0 | zeroExtend | if | then | else |
       && | \|\| | == | != | <= | >= | < | > |
       \+ | - | \^ | ! |
       [A-Za-z_][A-Za-z0-9_]* | \d+
-    )
+)
 """, re.VERBOSE)
 
 
@@ -440,7 +440,7 @@ def refine_trace(spec: Any, cycles: int, z3_bin: str = "z3") -> Dict[str, Any]:
     """
     from isir.lowering.koika_to_rtl import (
         _coq_bits_expr, _capitalize, _has_unsupported_ops, _internalize_inputs,
-    )
+)
     from isir.lowering.isir_to_rtl_direct import _width_of
     from isir.utils.expr import parse_sexpr, unfold_user_functions
 

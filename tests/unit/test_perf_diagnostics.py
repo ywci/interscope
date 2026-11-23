@@ -73,7 +73,7 @@ class TestBacktracking:
             alternate_primary_used=True,
             noise_used=True,
             force_regeneration_used=True,
-        )
+)
 
         report = generate_diagnostics(stats)
         assert "Total backtracks:            2" in report

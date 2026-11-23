@@ -82,13 +82,13 @@ class TestSynthesizeRtl:
         out_dir = tmp_path / "out"
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
+), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
             "isir.utils.yosys_synth.subprocess.run",
             return_value=_make_result(YOSYS_LOG),
-        ) as mock_run:
+) as mock_run:
             result = synthesize_rtl(
                 verilog, top_module="top", output_dir=out_dir
-            )
+)
 
         assert result["area"] == 1234.56
         assert result["cells"] == 42
@@ -109,13 +109,13 @@ class TestSynthesizeRtl:
 
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
+), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
             "isir.utils.yosys_synth.subprocess.run",
             return_value=_make_result(YOSYS_LOG),
-        ):
+):
             result = synthesize_rtl(
                 verilog, top_module="top", output_dir=out_dir
-            )
+)
 
         assert result["netlist"] == netlist.resolve()
 
@@ -123,10 +123,10 @@ class TestSynthesizeRtl:
         with patch("isir.utils.yosys_synth.shutil.which", return_value=None), patch(
             "isir.utils.yosys_synth.get_config",
             return_value={"tools": {"yosys": "/custom/yosys"}},
-        ), patch(
+), patch(
             "isir.utils.yosys_synth.subprocess.run",
             return_value=_make_result(YOSYS_LOG),
-        ) as mock_run:
+) as mock_run:
             synthesize_rtl(verilog, top_module="top", output_dir=tmp_path / "out")
 
         assert mock_run.call_args[0][0][0] == "/custom/yosys"
@@ -134,7 +134,7 @@ class TestSynthesizeRtl:
     def test_missing_yosys_raises(self, verilog, tmp_path):
         with patch("isir.utils.yosys_synth.shutil.which", return_value=None), patch(
             "isir.utils.yosys_synth.get_config", return_value={}
-        ):
+):
             with pytest.raises(YosysSynthesisError) as exc:
                 synthesize_rtl(verilog, top_module="top", output_dir=tmp_path / "out")
             assert "Yosys not found" in str(exc.value)
@@ -143,17 +143,17 @@ class TestSynthesizeRtl:
         missing = tmp_path / "missing.v"
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}):
+), patch("isir.utils.yosys_synth.get_config", return_value={}):
             with pytest.raises(FileNotFoundError):
                 synthesize_rtl(missing, top_module="top", output_dir=tmp_path / "out")
 
     def test_nonzero_returncode_raises(self, verilog, tmp_path):
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
+), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
             "isir.utils.yosys_synth.subprocess.run",
             return_value=_make_result("", returncode=1, stderr="synthesis blew up"),
-        ):
+):
             with pytest.raises(YosysSynthesisError) as exc:
                 synthesize_rtl(verilog, top_module="top", output_dir=tmp_path / "out")
             assert "failed with code 1" in str(exc.value)
@@ -162,14 +162,14 @@ class TestSynthesizeRtl:
     def test_timeout_raises(self, verilog, tmp_path):
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
+), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
             "isir.utils.yosys_synth.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="yosys", timeout=300),
-        ):
+):
             with pytest.raises(YosysSynthesisError) as exc:
                 synthesize_rtl(
                     verilog, top_module="top", output_dir=tmp_path / "out"
-                )
+)
             assert "timed out after 300s" in str(exc.value)
 
     def test_tcl_script_flatten_and_library(self, verilog, tmp_path):
@@ -177,17 +177,17 @@ class TestSynthesizeRtl:
         library = "/libs/tech.lib"
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
+), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
             "isir.utils.yosys_synth.subprocess.run",
             return_value=_make_result(YOSYS_LOG),
-        ):
+):
             synthesize_rtl(
                 verilog,
                 top_module="top",
                 output_dir=out_dir,
                 library=library,
                 flatten=True,
-            )
+)
 
         script = (out_dir / "synth.ys").read_text()
         assert f"read_verilog {verilog.resolve()}" in script
@@ -200,13 +200,13 @@ class TestSynthesizeRtl:
         out_dir = tmp_path / "out"
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
+), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
             "isir.utils.yosys_synth.subprocess.run",
             return_value=_make_result(YOSYS_LOG),
-        ):
+):
             synthesize_rtl(
                 verilog, top_module="top", output_dir=out_dir, flatten=False
-            )
+)
 
         script = (out_dir / "synth.ys").read_text()
         assert "hierarchy -check -top top" in script
@@ -216,16 +216,16 @@ class TestSynthesizeRtl:
     def test_extra_args_appended_to_command(self, verilog, tmp_path):
         with patch(
             "isir.utils.yosys_synth.shutil.which", return_value="/usr/bin/yosys"
-        ), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
+), patch("isir.utils.yosys_synth.get_config", return_value={}), patch(
             "isir.utils.yosys_synth.subprocess.run",
             return_value=_make_result(YOSYS_LOG),
-        ) as mock_run:
+) as mock_run:
             synthesize_rtl(
                 verilog,
                 top_module="top",
                 output_dir=tmp_path / "out",
                 extra_args=["-p", "stat"],
-            )
+)
 
         cmd = mock_run.call_args[0][0]
         assert cmd[-2:] == ["-p", "stat"]
@@ -242,11 +242,11 @@ class TestSynthesizeFromConfig:
                     "timeout": 120,
                 }
             },
-        ), patch(
+), patch(
             "isir.utils.yosys_synth.synthesize_rtl",
             return_value={"area": None, "cells": None, "delay": None,
                          "netlist": None, "log": ""},
-        ) as mock_rtl:
+) as mock_rtl:
             synthesize_from_config(verilog, top_module="top")
 
         kwargs = mock_rtl.call_args.kwargs

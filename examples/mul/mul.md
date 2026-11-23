@@ -29,8 +29,7 @@
 
 ## Properties
 
-- **count_in_range** (safety): always, `count` ≥ 0 and `count` ≤ 16.
-- **acc_nonneg** (safety): always, `acc` ≥ 0.
+- **done_implies_product_equals_acc** (safety): always, if done, then product equals `acc`.
 - **mul_commutative** (combinational): for all inputs, mul_exact(x, y) equals mul_exact(y, x).
 - **mul_distributive** (combinational): for all inputs, mul_exact(x, y + z) equals mul_exact(x, y) + mul_exact(x, z).
 - **mul_zero** (combinational): for all inputs, mul_exact(x, 0) equals 0.

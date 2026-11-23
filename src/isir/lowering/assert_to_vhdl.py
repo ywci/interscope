@@ -166,7 +166,7 @@ def _psl_reset_abort(reset_cond_raw: Optional[str]) -> str:
             "Could not convert reset condition '%s' to VHDL PSL expression: %s. "
             "Using raw string.",
             reset_cond_raw, e
-        )
+)
         return reset_cond_raw
 
 
@@ -182,7 +182,7 @@ def _assume_to_vhdl(assume: asserts.AssertAssumeOp,
     cond = _vhdl_expr(assume.condition, "boolean")
     reset_expr = assume.reset if assume.reset else (
         mod_reset.reset_condition if mod_reset else None
-    )
+)
     abort_clause = ""
     if reset_expr:
         abort_expr = _psl_reset_abort(reset_expr)
@@ -198,7 +198,7 @@ def _always_to_vhdl(always: asserts.AssertAlwaysOp,
     cond = _vhdl_expr(always.condition, "boolean")
     reset_expr = always.reset if always.reset else (
         mod_reset.reset_condition if mod_reset else None
-    )
+)
     abort_clause = ""
     if reset_expr:
         abort_expr = _psl_reset_abort(reset_expr)
@@ -213,7 +213,7 @@ def _property_to_vhdl(prop: asserts.AssertPropertyOp,
                       mod_reset: Optional[asserts.AssertResetOp]) -> str:
     reset_expr = prop.reset if prop.reset else (
         mod_reset.reset_condition if mod_reset else None
-    )
+)
     abort_clause = ""
     if reset_expr:
         abort_expr = _psl_reset_abort(reset_expr)
@@ -261,7 +261,7 @@ def convert(assert_module: asserts.AssertModule) -> str:
         ]
         raise NotImplementedError(
             f"VHDL PSL backend does not yet support sequences: {seq_names}."
-        )
+)
 
     mod_clock = assert_module.clock
     mod_reset = assert_module.reset

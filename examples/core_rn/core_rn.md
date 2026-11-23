@@ -65,5 +65,9 @@
 - **has_line_holds_line** (safety): always, if has_line(`mstate`, `maddr`, `maddr`), then `mstate` does not equal 0.
 - **is_modified_implies_valid** (safety): always, if is_modified(`mstate`), then `mstate` does not equal 0.
 - **l1_is_modified_implies_valid** (safety): always, if l1_is_modified(`l1_s0`), then `l1_s0` does not equal 0.
-- **l1_phys_index_bounded** (safety): always, l1_phys_index(`l1_req_addr`) ≤ 3.
 - **states_valid** (safety): always, `mstate` ≥ 0 and `mstate` ≤ 3.
+- **request_forwarded_out** (transition): after each step, `req_out_valid` equals true and `req_out_write` equals core_req_write and `req_out_addr` equals core_req_addr and `req_out_data` equals core_req_data and `l1_req_write` equals core_req_write and `l1_req_addr` equals core_req_addr and `l1_req_data` equals core_req_data.
+- **request_deasserts_on_grant** (transition): after each step, `req_out_valid` equals false.
+- **snoop_response_updates_state** (transition): after each step, `snp_rsp_valid` equals true and `mstate` equals if snp_op, then 0, otherwise if prev(mstate) equals 3, then 1, otherwise prev(mstate).
+- **snoop_response_deasserts** (transition): after each step, `snp_rsp_valid` equals false.
+- **grant_updates_cache_line** (transition): after each step, `mstate` equals if grant_write, then 3, otherwise 1 and `maddr` equals grant_addr and `mdata` equals grant_data and `l1_req_write` equals true and `l1_req_addr` equals grant_addr and `l1_req_data` equals grant_data.

@@ -31,7 +31,7 @@ def registry(tmp_path):
         design_name="fifo",
         iterations=10,
         llm_used=True
-    )
+)
     reg.add_evidence(
         evidence_type="counterexample_trace",
         ref_type="local_id",
@@ -41,7 +41,7 @@ def registry(tmp_path):
         property_name="p2",
         design_name="fifo",
         llm_used=False
-    )
+)
     return reg
 
 
@@ -122,7 +122,7 @@ class TestHelpers:
         new_id = registry.add_evidence(
             evidence_type="coq_theorem", ref_type="local_id",
             ref_value="local:x", engine="koika", status="proved",
-        )
+)
         ev = _get_evidence_by_id(registry, str(new_id))
         assert ev is not None
         assert ev["id"] == new_id
@@ -151,7 +151,7 @@ def _args(command, **overrides):
         backend=None,
         status=None,
         limit=1000
-    )
+)
     ns.__dict__.update(overrides)
     return ns
 
@@ -187,7 +187,7 @@ class TestQueryEvidence:
         new_id = registry.add_evidence(
             evidence_type="acl2_theorem", ref_type="local_id",
             ref_value="local:y", engine="acl2", status="proved",
-        )
+)
         args = _args("id", id=str(new_id), output_format="json")
         with patch("isir.cli.query.EvidenceRegistry", return_value=registry):
             ret = query_evidence(args)

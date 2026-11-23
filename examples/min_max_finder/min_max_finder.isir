@@ -44,8 +44,10 @@ module:
     - name: update
       condition: valid
       action:
-        - (write min_val (ite (read first) data (ite (lt data (read min_val)) data (read min_val))))
-        - (write max_val (ite (read first) data (ite (gt data (read max_val)) data (read max_val))))
+        - (write min_val (ite (read first) data (ite (lt data (read min_val)) data
+          (read min_val))))
+        - (write max_val (ite (read first) data (ite (gt data (read max_val)) data
+          (read max_val))))
         - (write count (add (read count) 1))
         - (write first false)
   properties:
@@ -53,20 +55,33 @@ module:
       kind: safety
       expression:
         kind: always
-        operand: (le (read min_val) (read max_val))
-    - name: count_nonneg
+        operand: (le min_val max_val)
+    - name: min_leq_max
       kind: safety
       expression:
         kind: always
-        operand: (ge (read count) 0)
+        operand: (le min_val max_val)
+    - name: running_min_max_updated
+      kind: transition
+      expression:
+        kind: transition
+        rule: update
+        operand: (and (eq min_val (ite (prev first) data (ite (lt data (prev min_val))
+          data (prev min_val)))) (and (eq max_val (ite (prev first) data (ite (gt
+          data (prev max_val)) data (prev max_val)))) (and (eq (read count) (add (prev
+          count) 1)) (eq (read first) False))))
   proof_obligations:
+    - property: running_min_max_updated
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: min_le_max
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: count_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: min_le_max
       engine: model_checking
+    - property: min_leq_max
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2

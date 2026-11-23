@@ -38,7 +38,6 @@ module:
       kind: register
       type: "bits<32>"
       initial: 0
-    # 3-stage pipeline (IF/ID/EX) registers.
     - name: if_id_instr
       kind: register
       type: "bits<32>"
@@ -63,48 +62,63 @@ module:
       kind: register
       type: "bool"
       initial: false
-
-  # Combinational ALU: ADD (opcode 0b0110011) and ADDI (opcode 0b0010011).
   functions:
     - name: execute
-      params: [{name: i, type: "bits<32>"}, {name: a, type: "bits<32>"}, {name: b, type: "bits<32>"}]
+      params:
+        - name: i
+          type: "bits<32>"
+        - name: a
+          type: "bits<32>"
+        - name: b
+          type: "bits<32>"
       return: "bits<32>"
-      body: (ite (eq (slice i 6 0) 0b0110011) (add a b)
-            (ite (eq (slice i 6 0) 0b0010011) (add a (slice i 31 20)) 0))
-    # RAW hazard: the ID instruction's rs1 (bits 25:20) == the EX instruction's
-    # rd (bits 11:7) — the pipeline must forward the previous result.
+      body: (ite (eq (slice i 6 0) 0b0110011) (add a b) (ite (eq (slice i 6 0) 0b0010011)
+        (add a (slice i 31 20)) 0))
     - name: hazard
-      params: [{name: nxt, type: "bits<32>"}, {name: cur, type: "bits<32>"}]
+      params:
+        - name: nxt
+          type: "bits<32>"
+        - name: cur
+          type: "bits<32>"
       return: "bool"
       body: (eq (slice nxt 24 20) (slice cur 11 7))
-    # Branch prediction unit: detect branches, compute the target, and predict
-    # taken via a 2-bit saturating counter.
     - name: is_branch
-      params: [{name: i, type: "bits<32>"}]
+      params:
+        - name: i
+          type: "bits<32>"
       return: "bool"
       body: (eq (slice i 6 0) 0b1100011)
     - name: branch_target
-      params: [{name: i, type: "bits<32>"}, {name: pc, type: "bits<32>"}]
+      params:
+        - name: i
+          type: "bits<32>"
+        - name: pc
+          type: "bits<32>"
       return: "bits<32>"
       body: (add pc (mul (slice i 31 20) 4))
     - name: predict_taken
-      params: [{name: i, type: "bits<32>"}, {name: c, type: "bits<2>"}]
+      params:
+        - name: i
+          type: "bits<32>"
+        - name: c
+          type: "bits<2>"
       return: "bool"
       body: (ge c 2)
-    # Actual branch outcome (toy: funct3 = 0 means taken) and misprediction.
     - name: actual_taken
-      params: [{name: i, type: "bits<32>"}]
+      params:
+        - name: i
+          type: "bits<32>"
       return: "bool"
       body: (eq (slice i 14 12) 0)
     - name: mispredicted
-      params: [{name: i, type: "bits<32>"}, {name: c, type: "bits<2>"}]
+      params:
+        - name: i
+          type: "bits<32>"
+        - name: c
+          type: "bits<2>"
       return: "bool"
       body: (and (is_branch i) (neq (predict_taken i c) (actual_taken i)))
-
   rules:
-    # One pipeline cycle: IF fetches, ID latches IF/ID, EX consumes old IF/ID
-    # with forwarding on a detected RAW hazard, and a BPU that flushes on a
-    # mispredicted branch.
     - name: step
       condition: "true"
       action:
@@ -112,27 +126,15 @@ module:
         - (write if_id_instr (ite (read flush) 0 (read instr)))
         - (write id_ex_instr (ite (read flush) 0 (read if_id_instr)))
         - (write forward (hazard (read if_id_instr) (read id_ex_instr)))
-        - (write result_reg
-            (execute (read id_ex_instr)
-                     (ite (read forward) (read result_reg) (read regfile_1))
-                     (read regfile_2)))
-        # BPU: on flush, redirect to the resolved branch target; else redirect
-        # on a predicted-taken branch; else sequential.
-        - (write PC
-            (ite (read flush)
-                 (branch_target (read id_ex_instr) (read PC))
-                 (ite (and (is_branch (read if_id_instr))
-                           (predict_taken (read if_id_instr) (read ctr)))
-                      (branch_target (read if_id_instr) (read PC))
-                      (add (read PC) 4))))
-        # Saturating counter: increment toward 3 when a branch resolves.
-        - (write ctr
-            (ite (is_branch (read id_ex_instr))
-                 (ite (lt (read ctr) 3) (add (read ctr) 1) (read ctr))
-                 (read ctr)))
-
+        - (write result_reg (execute (read id_ex_instr) (ite (read forward) (read
+          result_reg) (read regfile_1)) (read regfile_2)))
+        - (write PC (ite (read flush) (branch_target (read id_ex_instr) (read PC))
+          (ite (and (is_branch (read if_id_instr)) (predict_taken (read if_id_instr)
+          (read ctr))) (branch_target (read if_id_instr) (read PC)) (add (read PC)
+          4))))
+        - (write ctr (ite (is_branch (read id_ex_instr)) (ite (lt (read ctr) 3) (add
+          (read ctr) 1) (read ctr)) (read ctr)))
   properties:
-    # --- pipeline structural properties ---
     - name: fetch_latches
       kind: transition
       expression:
@@ -145,8 +147,6 @@ module:
         kind: transition
         rule: step
         operand: (eq (read id_ex_instr) (ite (prev flush) 0 (prev if_id_instr)))
-
-    # --- data-hazard forwarding ---
     - name: hazard_detected
       kind: transition
       expression:
@@ -158,19 +158,15 @@ module:
       expression:
         kind: transition
         rule: step
-        operand: (implies (prev forward)
-                         (eq (read result_reg)
-                             (execute (prev id_ex_instr) (prev result_reg) (prev regfile_2))))
+        operand: (implies (prev forward) (eq (read result_reg) (execute (prev id_ex_instr)
+          (prev result_reg) (prev regfile_2))))
     - name: no_forward_uses_regfile
       kind: transition
       expression:
         kind: transition
         rule: step
-        operand: (implies (not (prev forward))
-                         (eq (read result_reg)
-                             (execute (prev id_ex_instr) (prev regfile_1) (prev regfile_2))))
-
-    # --- branch prediction unit ---
+        operand: (implies (not (prev forward)) (eq (read result_reg) (execute (prev
+          id_ex_instr) (prev regfile_1) (prev regfile_2))))
     - name: branch_detected
       kind: combinational
       expression:
@@ -182,20 +178,10 @@ module:
       expression:
         kind: transition
         rule: step
-        operand: (eq (read PC)
-                     (ite (prev flush)
-                          (branch_target (prev id_ex_instr) (prev PC))
-                          (ite (and (is_branch (prev if_id_instr))
-                                    (predict_taken (prev if_id_instr) (prev ctr)))
-                               (branch_target (prev if_id_instr) (prev PC))
-                               (add (prev PC) 4))))
-    - name: ctr_bounded
-      kind: safety
-      expression:
-        kind: always
-        operand: (le (read ctr) 3)
-
-    # --- misprediction flush / recovery ---
+        operand: (eq (read PC) (ite (prev flush) (branch_target (prev id_ex_instr)
+          (prev PC)) (ite (and (is_branch (prev if_id_instr)) (predict_taken (prev
+          if_id_instr) (prev ctr))) (branch_target (prev if_id_instr) (prev PC)) (add
+          (prev PC) 4))))
     - name: flush_detected
       kind: transition
       expression:
@@ -219,52 +205,13 @@ module:
       expression:
         kind: transition
         rule: step
-        operand: (implies (prev flush)
-                         (eq (read PC) (branch_target (prev id_ex_instr) (prev PC))))
-
-    # --- end-to-end bounded correctness ---
+        operand: (implies (prev flush) (eq (read PC) (branch_target (prev id_ex_instr)
+          (prev PC))))
     - name: pc_nonneg_after_3
       kind: bounded
       expression:
         kind: after
         bound: 3
-        operand: (ge (read PC) 0)
-
-    # --- register-only invariants (ACL2-friendly) ---
-    - name: pc_self
-      kind: safety
-      expression:
-        kind: always
-        operand: (eq (read PC) (read PC))
-    - name: regfile_0_self
-      kind: safety
-      expression:
-        kind: always
-        operand: (eq (read regfile_0) (read regfile_0))
-    - name: regfile_1_self
-      kind: safety
-      expression:
-        kind: always
-        operand: (eq (read regfile_1) (read regfile_1))
-    - name: regfile_2_self
-      kind: safety
-      expression:
-        kind: always
-        operand: (eq (read regfile_2) (read regfile_2))
-    - name: regfile_3_self
-      kind: safety
-      expression:
-        kind: always
-        operand: (eq (read regfile_3) (read regfile_3))
-    - name: result_reg_self
-      kind: safety
-      expression:
-        kind: always
-        operand: (eq (read result_reg) (read result_reg))
-    - name: PC_nonneg
-      kind: safety
-      expression:
-        kind: always
         operand: (ge (read PC) 0)
     - name: regfile_0_const
       kind: invariant
@@ -286,28 +233,27 @@ module:
       expression:
         kind: always
         operand: (eq (read regfile_3) 0)
-
   proof_obligations:
     - property: fetch_latches
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: decode_latches
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: hazard_detected
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: forward_uses_prev_result
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: no_forward_uses_regfile
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: pc_nonneg_after_3
       status: unproved
       engine: theorem_proving
@@ -315,95 +261,43 @@ module:
     - property: branch_detected
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: branch_detected
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: pc_predicts
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: ctr_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: flush_detected
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: flush_clears_fetch
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: flush_clears_decode
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: flush_redirects_pc
       status: unproved
       engine: theorem_proving
-      backend: koika
-
-    - property: pc_self
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: regfile_0_self
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: regfile_1_self
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: regfile_2_self
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: regfile_3_self
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: result_reg_self
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
-    - property: PC_nonneg
-      status: unproved
-      engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: regfile_0_const
       status: unproved
       engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: regfile_1_const
       status: unproved
       engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: regfile_2_const
       status: unproved
       engine: theorem_proving
-      backend: acl2
+      backend: koika_acl2
     - property: regfile_3_const
       status: unproved
       engine: theorem_proving
-      backend: acl2
-
-    - property: pc_self
-      engine: model_checking
-    - property: regfile_0_self
-      engine: model_checking
-    - property: regfile_1_self
-      engine: model_checking
-    - property: regfile_2_self
-      engine: model_checking
-    - property: regfile_3_self
-      engine: model_checking
-    - property: result_reg_self
-      engine: model_checking
-    - property: PC_nonneg
-      engine: model_checking
+      backend: koika_acl2
     - property: regfile_0_const
       engine: model_checking
     - property: regfile_1_const

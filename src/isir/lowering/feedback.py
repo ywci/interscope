@@ -1,6 +1,6 @@
 # src/isir/lowering/feedback.py
 #
-# LLM consumption interface (Section 9) + Phase 2 feedback refinement (Stage 4):
+# LLM consumption interface + feedback refinement:
 #   - action_instruction : render a generation_action as an explicit instruction
 #   - assemble_prompt    : render the verified state as a generation prompt
 #   - FeedbackTracker    : retrieval tracking, usefulness review, attribution audit
@@ -13,7 +13,7 @@ from typing import Dict, List, Tuple
 from isir.dialects.evolving_spec import EvolvingSpec, Finding, GenerationAction
 
 
-# Section 9 "Generation action semantics": the explicit instruction per action.
+# "Generation action semantics": the explicit instruction per action.
 ACTION_INSTRUCTIONS: Dict[GenerationAction, str] = {
     GenerationAction.RE_TRANSLATE: "Re-run NL-to-spec translation; do not patch RTL",
     GenerationAction.BRANCH_ON_ALTERNATIVES: "Generate parallel candidates from the alternatives",
@@ -30,7 +30,7 @@ def action_instruction(action: GenerationAction) -> str:
 
 
 def assemble_prompt(verified: EvolvingSpec) -> str:
-    """Render the verified state as a generation prompt (Section 9): items and
+    """Render the verified state as a generation prompt : items and
     findings ordered by priority, each action rendered as an explicit instruction.
     """
     lines: List[str] = [f"# Round {verified.verification_round} verification feedback"]
@@ -52,7 +52,7 @@ def assemble_prompt(verified: EvolvingSpec) -> str:
 
 @dataclass
 class FeedbackTracker:
-    """Phase 2 (Stage 4) bookkeeping: retrieval, usefulness, attribution audit."""
+    """Bookkeeping: retrieval, usefulness, attribution audit."""
 
     retrievals: List[Tuple[str, str]] = field(default_factory=list)   # (request_id, evidence_ref)
     reviews: List[Tuple[str, bool]] = field(default_factory=list)     # (spec_item_id, useful)

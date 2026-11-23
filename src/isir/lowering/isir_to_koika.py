@@ -150,7 +150,7 @@ def _function_mul_bound_lemma(fname: str, body_parsed: Any, local_widths: Dict[s
     width = max(
         local_widths.get(a, 1) if isinstance(a, str) else 1,
         local_widths.get(b, 1) if isinstance(b, str) else 1,
-    )
+)
     bound = (2 ** width) - 1
     arg_binders = " ".join(f"({p['name']} : {_get_coq_type(p['type'])})" for p in params)
     # Hypotheses use `< 2^w` (matching the input-width bound the always lowering
@@ -163,7 +163,7 @@ def _function_mul_bound_lemma(fname: str, body_parsed: Any, local_widths: Dict[s
         f"apply Nat.mul_le_mono; lia. Qed.\n"
         f"Hint Resolve {fname}_bound : core.\n"
         f"Opaque {fname}."
-    )
+)
 
 
 def _expr_to_coq(expr: Any, state_types: Dict[str, str],
@@ -539,7 +539,7 @@ def _build_sequential_step(ordered_rules, registers, memories, state_types, inpu
                 raise ExprError(
                     f"Rule '{rule.rule_name}' has an invalid condition "
                     f"{rule.condition!r}: {e}"
-                ) from e
+) from e
         if cond_str != "True":
             conds.append(cond_str)
         updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var=current_var, function_types=function_types, widths=widths)
@@ -581,14 +581,14 @@ def _validate_no_unclosed_proofs(coq_content: str) -> List[str]:
         if proof_depth < 0:
             issues.append(
                 f"Line {line_no}: unmatched 'Qed.'/'Admitted.' without open 'Proof.'"
-            )
+)
             proof_depth = 0
 
     if proof_depth > 0:
         issues.append(
             f"Unclosed proof block(s): {proof_depth} 'Proof.' without matching "
             "'Qed.'/'Admitted.'"
-        )
+)
     return issues
 
 def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
@@ -654,7 +654,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 body_coq = _expr_to_coq(
                     body_parsed, state_types, input_types, memory_names,
                     as_prop=False, function_types=function_types, widths=widths, local_types=local_types, local_widths=local_widths
-                )
+)
             except ExprError as e:
                 logger.warning(f"Could not translate function body '{fname}': {e}")
                 continue
@@ -664,7 +664,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             is_widening = (
                 isinstance(body_parsed, list) and body_parsed
                 and body_parsed[0] == "mul_full"
-            )
+)
             if not f.get("recursive") and not is_widening:
                 unfold_names.append(fname)
             arg_binders = " ".join(f"({p['name']} : {_get_coq_type(p['type'])})" for p in params)
@@ -681,11 +681,11 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 rewritten_coq = _expr_to_coq(
                     rewritten, state_types, input_types, memory_names,
                     as_prop=False, function_types=function_types, widths=widths, local_types=local_types, local_widths=local_widths
-                )
+)
                 function_decls.append(
                     f"Fixpoint {fname} {full_binders} : {ret_type} := "
                     f"match fuel with 0 => {zero} | S fuel' => {rewritten_coq} end."
-                )
+)
             else:
                 function_decls.append(f"Definition {fname} {arg_binders} : {ret_type} := {body_coq}.")
                 # Lemma-share: a widening-product function gets the non-linear
@@ -710,7 +710,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             stmt_coq = _expr_to_coq(
                 stmt_parsed, state_types, input_types, memory_names,
                 as_prop=True, function_types=function_types, widths=widths
-            )
+)
         except ExprError as e:
             logger.warning(f"Could not translate axiom '{aname}': {e}")
             continue
@@ -730,7 +730,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             operand_coq = _expr_to_coq(
                 operand_parsed, state_types, input_types, memory_names,
                 as_prop=True, state_var="s", function_types=function_types, widths=widths
-            )
+)
         except ExprError as e:
             logger.warning(f"Could not translate invariant '{iname}': {e}")
             continue
@@ -780,7 +780,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 f"  - reflexivity.\n"
                 f"  - inversion Hstep; subst; simpl; auto.\n"
                 f"Qed."
-            )
+)
     for mem in memories:
         trivial_invariants.append(
             f"Lemma {mem.state_name}_nil : forall s, reachable s -> {mem.state_name} s = nil.\n"
@@ -789,7 +789,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             f"  - reflexivity.\n"
             f"  - inversion Hstep; subst; simpl; rewrite IH; reflexivity.\n"
             f"Qed."
-        )
+)
 
     schedule = spec_module.schedule_op
     # "parallel" schedules compose every rule into one atomic step (capturing
@@ -995,7 +995,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                     raise ExprError(
                         f"Rule '{rule.rule_name}' has an invalid condition "
                         f"{rule.condition!r}: {e}"
-                    ) from e
+) from e
             updates = _process_rule_actions(rule, state_types, input_types, memory_names, state_names, state_var="s", function_types=function_types, widths=widths)
             new_state = _mk_state_expr(registers, memories, updates, "s")
             ctor_name = f"step_{rule.rule_name}"
@@ -1014,7 +1014,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 f"  | {ctor_name} : forall s inputs,\n"
                 f"      {premise_str} ->\n"
                 f"      step s inputs ({new_state})"
-            )
+)
             rule_ops.append(koika.KoikaRuleOp(rule_name=rule.rule_name, condition=cond_str, actions=rule.actions))
             rule_info[rule.rule_name] = (cond_str, new_state)
 
@@ -1093,18 +1093,18 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 coq_operand = _expr_to_coq(
                     operand_parsed, state_types, input_types, memory_names, as_prop=True,
                     state_var=new_state, function_types=function_types, widths=widths, prev_state_var="s"
-                )
+)
                 theorem_name = f"{prop_name}_proved"
                 theorem_stmt = f"forall (s : state) (inputs : inputs), {cond_str} -> {coq_operand}"
             else:
                 coq_operand = _expr_to_coq(
                     operand_parsed, state_types, input_types, memory_names, as_prop=True, state_var="s'", function_types=function_types, widths=widths
-                )
+)
                 theorem_name = f"{prop_name}_proved"
                 theorem_stmt = (
                     f"forall (s : state) (inputs : inputs) (s' : state), "
                     f"step s inputs s' -> {coq_operand}"
-                )
+)
 
             if state_defs and state_defs[-1] != "":
                 state_defs.append("")
@@ -1138,13 +1138,13 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             lhs_coq = _expr_to_coq(operand_parsed, state_types, input_types, memory_names, as_prop=False, function_types=function_types, widths=widths)
             rhs_coq = _expr_to_coq(
                 operand_parsed, state_types, input_types, memory_names, as_prop=False, inputs_var="inputs'", function_types=function_types, widths=widths
-            )
+)
 
             theorem_name = f"{prop_name}_proved"
             agreement_str = " -> ".join(agreements)
             theorem_stmt = (
                 f"forall (inputs inputs' : inputs), {agreement_str} -> ({lhs_coq}) = ({rhs_coq})"
-            )
+)
 
             if state_defs and state_defs[-1] != "":
                 state_defs.append("")
@@ -1165,10 +1165,16 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
                 impl_parsed = parse_sexpr(impl_raw) if isinstance(impl_raw, str) else impl_raw
             except ExprError:
                 impl_parsed = None
-            try:
-                ref_parsed = parse_sexpr(ref_raw) if isinstance(ref_raw, str) else ref_raw
-            except ExprError:
-                ref_parsed = None
+            # the ISIR combinational reference uses LISP-style `t` for the
+            # boolean true; parse_sexpr only maps `true`/`false`, so handle `t`
+            # here before it is emitted as a bare Coq symbol.
+            if isinstance(ref_raw, str) and ref_raw.strip().lower() == "t":
+                ref_parsed = True
+            else:
+                try:
+                    ref_parsed = parse_sexpr(ref_raw) if isinstance(ref_raw, str) else ref_raw
+                except ExprError:
+                    ref_parsed = None
             if impl_parsed is None or ref_parsed is None:
                 logger.warning(f"Could not parse combinational expressions for '{prop_name}'")
                 continue
@@ -1233,7 +1239,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             coq_operand = _expr_to_coq(
                 operand_parsed, state_types, input_types, memory_names, as_prop=True,
                 state_var="s", function_types=function_types, widths=widths
-            )
+)
             theorem_name = f"{prop_name}_proved"
             theorem_stmt = f"forall (s : state), stepn {bound} initial_state s -> {coq_operand}"
 
@@ -1313,7 +1319,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         uses_inputs = _uses_inputs(operand_parsed) or any(
             _uses_inputs(parse_sexpr(a) if isinstance(a, str) else a)
             for a in assumptions
-        )
+)
         binders = "(s : state) (inputs : inputs)" if uses_inputs else "(s : state)"
         theorem_stmt = f"forall {binders}, reachable s -> {full_operand}"
         theorem_name = f"{prop_name}_proved"
@@ -1344,7 +1350,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             and operand_parsed[0] == "eq"
             and operand_parsed[1] == operand_parsed[2]
             and not assumption_hypotheses
-        )
+)
         if is_self_identity:
             state_defs.append("Proof. intros. reflexivity. Qed.")
         else:
@@ -1362,7 +1368,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             "Generated Coq file contains unclosed proof(s). "
             "This will cause 'Nested proofs are discouraged' errors. "
             "Check the trivial invariants and helper lemmas."
-        )
+)
 
     logger.debug("Generated Coq content:\n" + full_coq[:2000] + "\n...")
 
@@ -1375,7 +1381,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
         design_op=None,
         theorem_ops=[],
         metadata=spec_module.metadata
-    )
+)
     return koika_module
 
 

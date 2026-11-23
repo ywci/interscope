@@ -83,13 +83,13 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
         description=(
             "Prove proof obligations in a ISIR design using theorem provers, "
             "model checking, or PERF (Proof tree Exploration with Reflective Feedback)."
-        )
-    )
+)
+)
     parser.add_argument("input", type=str, help="Path to the .isir file")
     parser.add_argument(
         "--backend", "-b", choices=["koika", "acl2", "model_checking", "koika_acl2"], default=None,
         help="Override backend for all obligations (otherwise uses obligation's backend)"
-    )
+)
     parser.add_argument("--out-dir", "-o", type=str, default=None,
                         help="Output directory for generated proof artifacts (default: build/verify/<design>)")
     parser.add_argument("--max-attempts", type=int, default=None,
@@ -190,7 +190,7 @@ def _drive_inputs(assert_mod, spec_module) -> None:
         if getattr(inp, "name", ""):
             assert_mod.assumptions.append(
                 AssertAssumeOp(condition=inp.name, label=f"drive_{inp.name}")
-            )
+)
 
 
 def _force_inputs_rtl_str(content: str, spec_module) -> str:
@@ -219,7 +219,7 @@ def _inject_inline_assertions_str(content: str, assert_mod, signal_widths,
         signal_widths=signal_widths,
         signal_map=signal_map,
         reset_inverted=reset_inverted
-    )
+)
     idx = content.rfind("endmodule")
     if idx == -1:
         raise ValueError("No 'endmodule' found in RTL")
@@ -244,7 +244,7 @@ def _inject_inline_assertions(rtl_file: Path, assert_mod, signal_widths,
     names."""
     content = _inject_inline_assertions_str(
         rtl_file.read_text(), assert_mod, signal_widths, signal_map, reset_inverted
-    )
+)
     rtl_file.write_text(content, encoding="utf-8")
 
 
@@ -635,7 +635,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     "SAT gate: %d always obligation(s), %d gated (inductive pair), "
                     "coverage %.2f",
                     _gate_metrics.eligible_pre, gated, _gate_metrics.coverage(),
-                )
+)
             except Exception as e:  # noqa: BLE001
                 logger.warning("SAT gate pre-filter failed; falling through to the ITP: %s", e)
 
@@ -654,13 +654,13 @@ def verify_spec(args: argparse.Namespace) -> int:
                 if _gr.evidence_action is not None and _gr.evidence_action.value == "prove_step":
                     logger.info(
                         "SAT-gated '%s' (inductive pair UNSAT, T3): skipping ITP", prop_name,
-                    )
+)
                     results.append(ProofObligationResult(
                         property=prop_name,
                         status=Status.SAT_GATED,
                         backend="sat_gate",
                         error_message=None,
-                    ))
+))
                     continue
             logger.info(f"Proving '{prop_name}' with backend {canonical}")
 
@@ -677,7 +677,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         status=Status.ERROR,
                         backend=canonical,
                         error_message="Coq file missing"
-                    ))
+))
                     continue
                 po_context["coq_file_path"] = backend_files["koika"]
                 po_context["theorem_name"] = f"{prop_name}_proved"
@@ -689,7 +689,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         status=Status.ERROR,
                         backend=canonical,
                         error_message="ACL2 file missing"
-                    ))
+))
                     continue
                 po_context["acl2_file_path"] = backend_files["acl2"]
                 po_context["theorem_name"] = f"{prop_name}_correct"
@@ -702,13 +702,13 @@ def verify_spec(args: argparse.Namespace) -> int:
                     logger.info(
                         "Skipping inductive obligation '%s' (kind=always): "
                         "ACL2 cannot prove induction", prop_name,
-                    )
+)
                     results.append(ProofObligationResult(
                         property=prop_name,
                         status=Status.SKIPPED,
                         backend=canonical,
                         error_message="ACL2 cannot prove induction (skipped under single-backend ACL2)",
-                    ))
+))
                     continue
             else:  # koika_acl2 co-work
                 if "koika" not in backend_files or "acl2" not in backend_files:
@@ -718,7 +718,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         status=Status.ERROR,
                         backend=canonical,
                         error_message="Coq/ACL2 files missing"
-                    ))
+))
                     continue
                 po_context["coq_file_path"] = backend_files["koika"]
                 po_context["acl2_file_path"] = backend_files["acl2"]
@@ -740,7 +740,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     logger.info(
                         "Inductive property '%s' (kind=%s): proving with Koika only "
                         "(ACL2 cannot prove induction)", prop_name, prop_kind,
-                    )
+)
                     # Share the ACL2-proved transition step-identities into this
                     # induction so Koika can `Hint Resolve` them.
                     koika_ctx["shared_lemmas"] = list(shared_step_lemmas)
@@ -763,7 +763,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         lambda: proof_skill.prove({**po, "backend": "koika"}, koika_ctx),
                         _acl2_side,
                         timeout=60,
-                    )
+)
                     cowork_result = ProofResult(
                         success=cw.success,
                         proof_script=cw.proof_script,
@@ -772,7 +772,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         metadata=cw.metadata,
                         duration=time.time() - start_time,
                         backend="koika_acl2",
-                    )
+)
                     if not cw.success:
                         # Both backends failed on the same sub-goal: reflect (LLM
                         # proposes a complete Coq script) then re-dispatch + re-prove.
@@ -782,15 +782,15 @@ def verify_spec(args: argparse.Namespace) -> int:
                             lambda s: proof_skill._prove_linear(
                                 {**po, "backend": "koika"}, koika_ctx, "koika",
                                 initial_script=s,
-                            ),
-                        )
+),
+)
                         if retry is not None:
                             retry.metadata["cross_backend_reflection"] = retry.proof_script or ""
                             cowork_result = retry
                             logger.info(
                                 "Co-work reflection proved '%s' (neither backend alone could)",
                                 prop_name,
-                            )
+)
 
                     # Lemma-share: a proved transition step-identity is a reusable
                     # combinational lemma for later `always` inductions.
@@ -799,7 +799,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         logger.info(
                             "Shared step-identity '%s_proved' for later inductions",
                             prop_name,
-                        )
+)
 
             if cowork_result is not None:
                 result = cowork_result
@@ -814,7 +814,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         backend=canonical,
                         error_message=str(e),
                         duration=time.time() - start_time
-                    ))
+))
                     continue
 
             duration = time.time() - start_time
@@ -836,7 +836,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                 error_message=result.error_message,
                 duration=duration,
                 details=result.metadata
-            ))
+))
 
         if args.perf_stats:
             stats = proof_skill.get_last_perf_stats()
@@ -872,7 +872,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                         status=Status.ERROR,
                         backend="model_checking",
                         error_message=str(e)
-                    ))
+))
                 return _finish_summary(results, args)
 
         if not rtl_file or not rtl_file.exists():
@@ -884,7 +884,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     status=Status.ERROR,
                     backend="model_checking",
                     error_message="Verilog file not found"
-                ))
+))
             return _finish_summary(results, args)
 
         # Build the base assertion module + signal info once, then run the
@@ -922,7 +922,7 @@ def verify_spec(args: argparse.Namespace) -> int:
             try:
                 rtl_str = _inject_inline_assertions_str(
                     base_rtl_content, assert_mod, signal_widths, signal_map, reset_inverted
-                )
+)
                 rtl_str = _force_inputs_rtl_str(rtl_str, spec_module)
                 prop_rtl = mc_dir / "rtl" / f"{design_name}_{prop}.v"
                 prop_rtl.write_text(rtl_str, encoding="utf-8")
@@ -930,7 +930,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     rtl_path=prop_rtl,
                     assertions_path=None,
                     top_module=design_name
-                )
+)
             except Exception as e:
                 logger.error(f"Model checking failed for {prop}: {e}")
                 results.append(ProofObligationResult(
@@ -938,7 +938,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     status=Status.ERROR,
                     backend="model_checking",
                     error_message=str(e)
-                ))
+))
                 continue
 
             if mc_result.get("success"):
@@ -950,7 +950,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     backend="model_checking",
                     details={"engine": mc_result.get("details", {}).get("engine", "bmc")},
                     duration=mc_result.get("duration")
-                ))
+))
             else:
                 logger.error(f"  FAIL: {prop} (model checking): {mc_result.get('error') or 'Counterexample found'}")
                 results.append(ProofObligationResult(
@@ -959,7 +959,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     backend="model_checking",
                     error_message=mc_result.get("error"),
                     duration=mc_result.get("duration")
-                ))
+))
 
     return _finish_summary(results, args)
 
@@ -970,7 +970,7 @@ def _finish_summary(results: List[ProofObligationResult], args: argparse.Namespa
         design_name="",
         backend="",
         obligations=results,
-    )
+)
 
     if hasattr(args, 'input'):
         report.design_name = Path(args.input).stem
@@ -1019,7 +1019,7 @@ def _safe_register_evidence(spec_module, prop_name: str, backend: str, result: P
             engine="theorem_proving",
             status="proved",
             property_name=prop_name
-        )
+)
         add_evidence_to_registry(evidence, property_name=prop_name)
         logger.info(f"Evidence registered for {prop_name}")
     except Exception as e:
@@ -1045,7 +1045,7 @@ def _safe_register_mc_evidence(spec_module, prop_name: str, mc_result: Dict[str,
             engine="model_checking",
             status=status,
             property_name=prop_name
-        )
+)
         add_evidence_to_registry(evidence, property_name=prop_name)
         logger.info(f"Model‑checking evidence registered for {prop_name}")
     except Exception as e:

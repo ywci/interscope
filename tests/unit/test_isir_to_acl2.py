@@ -15,18 +15,18 @@ def create_basic_spec_module():
             kind="register",
             data_type="bits<8>",
             initial=0
-        ),
+),
         isir.SpecStateOp(
             state_name="flag",
             kind="register",
             data_type="bool",
             initial=False
-        ),
+),
         isir.SpecStateOp(
             state_name="mem",
             kind="memory",
             data_type={"type": "memory", "elem": "bits<32>", "depth": 8}
-        )
+)
     ]
 
     rule_ops = [
@@ -38,19 +38,19 @@ def create_basic_spec_module():
                 "(write flag true)",
             ],
             priority=10
-        ),
+),
         isir.SpecRuleOp(
             rule_name="reset_flag",
             condition="(read flag)",
             actions=["(write flag false)"],
             priority=5
-        ),
+),
         isir.SpecRuleOp(
             rule_name="noop",
             condition="true",
             actions=[],
             priority=0
-        )
+)
     ]
 
     property_ops = [
@@ -60,7 +60,7 @@ def create_basic_spec_module():
             expression={"kind": "always", "operand": "(le (read count) 255)"},
             assumes=["(not (read flag))"],
             guarantees=[]
-        )
+)
     ]
 
     proof_obligations = [
@@ -90,7 +90,7 @@ def create_basic_spec_module():
         outputs=outputs,
         clocks=[],
         resets=[]
-    )
+)
     return spec_mod
 
 
@@ -156,7 +156,7 @@ class TestSpecToAcl2Basic:
             outputs=[],
             clocks=[],
             resets=[]
-        )
+)
         acl2_mod = isir_to_acl2.convert(spec_mod)
         step_def = next(d for d in acl2_mod.defuns if d.func_name == "empty_step")
         # parallel merge with zero rules is still the identity (via let* st0)
@@ -264,7 +264,7 @@ class TestSingleCycleGaps:
             si or {}, [], inputs or ["a", "b"],
             widths or {"a": 4, "b": 4},
             state_types or {}, input_types or {"a": "bits<4>", "b": "bits<4>"},
-        )
+)
 
     def test_lshift_rshift_aliases(self):
         assert self._expr("(lshift a b)") == "(mod (ash a b) (expt 2 4))"
@@ -279,7 +279,7 @@ class TestSingleCycleGaps:
             inputs=[Interface(name="i", direction="input", data_type="bool")], outputs=[],
             functions=[{"name": "inc", "params": [{"name": "v", "type": "bits<4>"}], "return": "bits<4>",
                         "body": "(add v 1)"}], property_ops=[], proof_obligations=[],
-        )
+)
         km = isir_to_acl2.convert(spec)
         step = next(d for d in km.defuns if d.func_name == "f_step")
         # inc (read r) -> (mod (+ (nth 0 st) 1) (expt 2 4)) — inlined, no `inc` call
@@ -308,7 +308,7 @@ class TestSingleCycleGaps:
             inputs=[], outputs=[],
             functions=[{"name": "sigmoid", "params": [{"name": "v", "type": "bits<8>"}], "return": "bits<8>"}],
             property_ops=[], proof_obligations=[],
-        )
+)
         km = isir_to_acl2.convert(spec)
         assert any("(encapsulate" in f and "sigmoid" in f for f in km.raw_forms)
 
@@ -320,7 +320,7 @@ class TestSingleCycleGaps:
             inputs=[], outputs=[],
             axioms=[{"name": "r_nonneg", "statement": "(gte (read r) 0)"}],
             property_ops=[], proof_obligations=[],
-        )
+)
         km = isir_to_acl2.convert(spec)
         ax = next(t for t in km.defthms if t.thm_name == "r_nonneg")
         assert ax.axiom is True
@@ -346,7 +346,7 @@ class TestTemporalConstructs:
             parse_sexpr(s), {"x": 0}, [], ["a"],
             {"x": 4, "a": 4}, {"x": "bits<4>"}, {"a": "bits<4>"},
             trace_stepn="f_stepn" if trace else None, trace_ct="t" if trace else None,
-        )
+)
 
     def test_prev_next_in_trace(self):
         assert self._expr("(prev (read x))") == "(nth 0 (f_stepn (nfix (1- t)) st a))"
@@ -369,7 +369,7 @@ class TestTemporalConstructs:
             name="tr", state_ops=[SpecStateOp(state_name="r", kind="register", data_type="bits<4>")],
             rule_ops=[SpecRuleOp(rule_name="tick", condition="t", actions=["(write r (add (read r) 1))"])],
             inputs=[], outputs=[], property_ops=[], proof_obligations=[],
-        )
+)
         km = isir_to_acl2.convert(spec)
         stepn = next(d for d in km.defuns if d.func_name == "tr_stepn")
         assert stepn.args == ["n", "st"]
@@ -394,7 +394,7 @@ class TestTemporalConstructs:
             property_ops=[SpecPropertyOp(prop_name="r_reaches", kind="safety",
                           expression={"kind": "eventually", "bound": 5, "operand": "(eq (read r) 3)"})],
             proof_obligations=[{"property": "r_reaches", "backend": "acl2"}],
-        )
+)
         km = isir_to_acl2.convert(spec)
         ev = next(d for d in km.defuns if d.func_name == "r_reaches_eventually")
         assert "(if (zp n)" in ev.body and "(or" in ev.body
@@ -419,7 +419,7 @@ class TestUnboundedLiveness:
             ],
             proof_obligations=[{"property": "r_reaches_3", "backend": "acl2"}, {"property": "r_then_5", "backend": "acl2"}],
             fairness=[{"name": "r_fair", "type": "weak", "condition": "(lt (read r) 4)"}],
-        )
+)
 
     def test_unbounded_eventually_defunsk(self):
         km = isir_to_acl2.convert(self._spec())
@@ -470,7 +470,7 @@ class TestProofAutomation:
             property_ops=[SpecPropertyOp(prop_name="c_bound", kind="safety",
                           expression={"kind": "always", "operand": "(le (read c) 255)"})],
             proof_obligations=[{"property": "c_bound", "backend": "acl2"}],
-        )
+)
         km = isir_to_acl2.convert(spec)
         done = next(t for t in km.defthms if t.thm_name == "c_bound_correct")
         assert "st_stepn" in " ".join(done.hints)
@@ -519,7 +519,7 @@ class TestOperatorCoverage:
             parse_sexpr(s), si, mem or [], ["a", "b"],
             {"x": 4, "y": 4, "a": 4, "b": 4}, st, it,
             trace_stepn="f_stepn" if trace else None, trace_ct="t" if trace else None,
-        )
+)
 
     def test_arithmetic_wrapped(self):
         assert self._e("(add a b)") == "(mod (+ a b) (expt 2 4))"

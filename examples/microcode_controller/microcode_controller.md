@@ -25,5 +25,8 @@
 
 ## Properties
 
-- **pc_bounded** (safety): always, `pc` ≤ 15.
-- **pc_nonneg** (safety): always, `pc` ≥ 0.
+- **running_iff_program_active** (safety): always, `running` equals `pc` < 15.
+- **fetch_starts** (transition): after each step, `running` equals true and `pc` equals 0.
+- **opcode_decoded** (transition): after each step, `opcode_out` equals ucode_opcode.
+- **pc_increments** (transition): after each step, `pc` equals min(prev(pc) + 1, 15).
+- **program_finishes** (transition): after each step, `running` equals false.

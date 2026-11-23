@@ -65,7 +65,7 @@ def run_model_check(
         raise ModelCheckError(
             "SymbiYosys (sby) not found.  Install it or set "
             "'verification.model_checker.tool_path' in conf/config.yaml."
-        )
+)
 
     if depth is None:
         if engine == "bmc":
@@ -83,7 +83,7 @@ def run_model_check(
                 logger.warning(
                     "Yosys pre‑validation failed. Continuing with SymbiYosys anyway; "
                     "sby will provide more detailed error output."
-                )
+)
 
         sby_file = work_dir / "design.sby"
         _write_sby_file(
@@ -95,7 +95,7 @@ def run_model_check(
             depth=depth,
             timeout=timeout,
             harness_path=harness_path.resolve() if harness_path else None
-        )
+)
 
         cmd = [tool, "-f", str(sby_file)]
         if extra_args:
@@ -110,7 +110,7 @@ def run_model_check(
                 text=True,
                 timeout=timeout + 30,
                 cwd=str(work_dir)
-            )
+)
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
             return {
@@ -203,7 +203,7 @@ def _prevalidate_files(rtl_path: Path, assertions_path: Optional[Path], top_modu
             capture_output=True,
             text=True,
             timeout=60,
-        )
+)
         if result.returncode == 0:
             logger.info("Yosys pre‑validation succeeded.")
             return True
@@ -252,20 +252,20 @@ def _write_sby_file(
             f"read_verilog -sv {harness_path}\n"
             f"read_verilog -sv -formal {assertions_path}\n"
             f"prep -top {harness_top}"
-        )
+)
         files = f"{assertions_path}\n{rtl_path}\n{harness_path}"
     elif assertions_path is None:
         script = (
             f"read_verilog -sv -formal {rtl_path}\n"
             f"prep -top {top_module}"
-        )
+)
         files = f"{rtl_path}"
     else:
         script = (
             f"read_verilog -sv {rtl_path}\n"
             f"read_verilog -sv -formal {assertions_path}\n"
             f"prep -top {top_module}"
-        )
+)
         files = f"{assertions_path}\n{rtl_path}"
 
     content = f"""[options]
@@ -403,4 +403,4 @@ def run_mc_audit(
         engine=engine,
         depth=depth,
         timeout=timeout,
-    )
+)

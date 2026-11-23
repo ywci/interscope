@@ -1,9 +1,8 @@
 # src/isir/verification/sat_gate/assumptions.py
 #
-# Activation-literal clause gating (§11.2).  The correct encoding gates a
+# Activation-literal clause gating. The correct encoding gates a
 # multi-literal clause under activation ``a`` as ONE clause
 # ``(¬a ∨ l1 ∨ … ∨ ln)`` — never the unit conjunction ``(¬a∨l1) ∧ …``.
-"""Activation-literal clause gating."""
 
 from typing import List, Sequence
 
@@ -23,7 +22,7 @@ def gate_clause_set(activation: int, clauses: Sequence[Sequence[int]]) -> List[L
 
 
 class AssumptionCapExceeded(Exception):
-    """Raised when the activation-literal cap is reached (§11.3: rebuild epoch)."""
+    """Raised when the activation-literal cap is reached."""
 
 
 class AssumptionRegistry:
@@ -49,7 +48,7 @@ class AssumptionRegistry:
             raise AssumptionCapExceeded(
                 f"activation-literal cap {self.max_assumption_vars} reached; "
                 f"rebuild epoch"
-            )
+)
         lit = self._next_lit
         self._next_lit += 1
         self._group_to_lit[group_id] = lit

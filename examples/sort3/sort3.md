@@ -23,8 +23,8 @@
 
 ## Properties
 
-- **sorted** (safety): always, `lo` ≤ `mid` and `mid` ≤ `hi`.
-- **permutation_sum** (transition): after each step, `lo` + `mid` + `hi` equals a_in + b_in + c_in.
-- **lo_min3** (transition): after each step, `lo` equals min3(a_in, b_in, c_in).
-- **mid_mid3** (transition): after each step, `mid` equals mid3(a_in, b_in, c_in).
-- **hi_max3** (transition): after each step, `hi` equals max3(a_in, b_in, c_in).
+- **sorted** (safety): always, lo ≤ mid and mid ≤ hi.
+- **permutation_sum** (transition): after each step, lo + mid + hi equals a_in + b_in + c_in.
+- **lo_min3** (transition): after each step, lo equals min3(a_in, b_in, c_in).
+- **mid_mid3** (transition): after each step, mid equals mid3(a_in, b_in, c_in).
+- **hi_max3** (transition): after each step, hi equals max3(a_in, b_in, c_in).

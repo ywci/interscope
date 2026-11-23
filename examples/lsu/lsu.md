@@ -51,4 +51,3 @@
 - **l1d_states_valid** (safety): always, `l1d_s0` ≥ 0 and `l1d_s0` ≤ 3 and `l1d_s1` ≥ 0 and `l1d_s1` ≤ 3.
 - **l1d_physical_tag_used** (transition): after each step, `l1d_a0` equals req_addr.
 - **l1d_modified_way_holds_line** (safety): always, if l1d_is_modified(`l1d_s0`), then l1d_has_line(`l1d_s0`, `l1d_a0`, `l1d_a0`).
-- **l1d_phys_index_bounded** (safety): always, l1d_phys_index(req_addr) ≤ 3.

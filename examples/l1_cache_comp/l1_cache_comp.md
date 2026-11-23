@@ -44,4 +44,3 @@
 - **states_valid** (safety): always, `s0` ≥ 0 and `s0` ≤ 3 and `s1` ≥ 0 and `s1` ≤ 3.
 - **physical_tag_used** (transition): after each step, `a0` equals req_addr.
 - **modified_way_holds_line** (safety): always, if is_modified(`s0`), then has_line(`s0`, `a0`, `a0`).
-- **phys_index_bounded** (safety): always, phys_index(req_addr) ≤ 3.

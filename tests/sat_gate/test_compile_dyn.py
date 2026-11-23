@@ -1,8 +1,6 @@
 # tests/sat_gate/test_compile_dyn.py
-"""Dynamic obligation compiler: predicate lowering + BASE_ENTAIL."""
 
 from sat_helper import dpll_sat, vars_of
-
 from isir.verification.sat_gate.bitblast import BitBlaster
 from isir.verification.sat_gate.compile_dyn import (
     compile_base_entail, compile_ind_step, lower_pred,
@@ -52,7 +50,7 @@ def test_ind_step_saturating_invariant_is_inductive():
         "(le (read count) 8)",
         {"count": "(ite (lt (read count) 8) (add (read count) 1) (read count))"},
         {"count": 4},
-    )
+)
     assert not _sat(blaster)
 
 
@@ -63,5 +61,5 @@ def test_ind_step_non_inductive_has_cti():
         "(le (read count) 7)",
         {"count": "(add (read count) 1)"},
         {"count": 4},
-    )
+)
     assert _sat(blaster)

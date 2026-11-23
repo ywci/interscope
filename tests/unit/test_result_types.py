@@ -55,7 +55,7 @@ class TestBackendResult:
             duration=1.5,
             output_file="out.lisp",
             metadata={"lemmas": 3},
-        )
+)
         assert r.error_message == "boom"
         assert r.duration == 1.5
         assert r.output_file == "out.lisp"
@@ -69,7 +69,7 @@ class TestBackendResult:
             duration=1.5,
             output_file="out.lisp",
             metadata={"lemmas": 3},
-        )
+)
         assert r.to_dict() == {
             "backend": "acl2",
             "success": False,
@@ -108,7 +108,7 @@ class TestCompilationReport:
                 BackendResult("koika", True),
                 BackendResult("acl2", False),
             ],
-        )
+)
         assert cr.overall_success() is False
         assert cr.success_rate() == 0.5
 
@@ -117,7 +117,7 @@ class TestCompilationReport:
             design_name="d",
             input_file="f",
             results=[BackendResult("koika", True)],
-        )
+)
         assert cr.overall_success() is True
         assert cr.success_rate() == 1.0
 
@@ -126,7 +126,7 @@ class TestCompilationReport:
             design_name="d",
             input_file="f",
             results=[BackendResult("koika", True)],
-        )
+)
         d = cr.to_dict()
         assert d["design_name"] == "d"
         assert d["input_file"] == "f"
@@ -158,7 +158,7 @@ class TestProofObligationResult:
             error_message="e",
             duration=0.5,
             details={"lemmas_used": ["x"]},
-        )
+)
         d = po.to_dict()
         assert d["property"] == "p"
         assert d["status"] == "FAIL"
@@ -256,7 +256,7 @@ class TestSimulationReport:
             error_message="e",
             duration=1.0,
             metadata={"m": 1},
-        )
+)
         assert sr.cycles == 100
         assert sr.coverage == 0.9
         assert sr.vcd_path == "t.vcd"
@@ -274,7 +274,7 @@ class TestSimulationReport:
             error_message="e",
             duration=1.0,
             metadata={"m": 1},
-        )
+)
         assert sr.to_dict() == {
             "design_name": "d",
             "success": False,

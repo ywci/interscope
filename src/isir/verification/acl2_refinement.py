@@ -201,7 +201,7 @@ def run_acl2_lowering_refinement(spec, num_cases: int = 20, seed: int = 0,
     from isir.verification.lowering_refinement import (
         RefinementReport, RefinementItemResult, LoweringRefinementStatus,
         _is_core_fragment_expr, _write_evidence,
-    )
+)
     from isir.utils.expr import parse_sexpr, unfold_user_functions
 
     dr = run_acl2_differential(spec, num_cases=num_cases, seed=seed)
@@ -242,6 +242,6 @@ def run_acl2_lowering_refinement(spec, num_cases: int = 20, seed: int = 0,
                 mode=mode,
                 evidence_id=ev_id,
                 counterexample=counterexample,
-            ))
+))
 
     return report

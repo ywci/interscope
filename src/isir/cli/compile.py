@@ -29,7 +29,7 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir compile",
         description="Compile a ISIR specification to various backends."
-    )
+)
     parser.add_argument("input", type=str, help="Path to the .isir file")
     parser.add_argument("--out-dir", "-o", type=str, default=None,
                         help="Output directory (default: build/<design_name>/ under project root)")
@@ -84,7 +84,7 @@ def _timed_backend_compile(backend_name: str, func, *args, **kwargs) -> BackendR
             success=success,
             duration=duration,
             error_message=None if success else "Compilation failed (see logs)"
-        )
+)
     except Exception as e:
         duration = time.time() - start
         logger.error("Backend %s compilation error: %s", backend_name, e)
@@ -93,7 +93,7 @@ def _timed_backend_compile(backend_name: str, func, *args, **kwargs) -> BackendR
             success=False,
             duration=duration,
             error_message=str(e)
-        )
+)
 
 
 def compile_spec(args: argparse.Namespace) -> int:
@@ -149,7 +149,7 @@ def compile_spec(args: argparse.Namespace) -> int:
     report = CompilationReport(
         design_name=design_name,
         input_file=str(input_path)
-    )
+)
 
     logger.info(f"Compiling '{design_name}' → {args.backend} (output: {out_dir})")
 
@@ -208,7 +208,7 @@ def _run_simulation(spec_module, out_dir, args, config) -> int:
             config=config,
             verilator_path=args.verilator_path,
             koika_path=args.koika_path
-        )
+)
         logger.info(f"Simulation complete. VCD: {vcd_file}")
         logger.info(f"Next: isir lift {vcd_file} --mapping {out_dir / 'rtl' / 'mapping.json'}")
         return 0
@@ -239,7 +239,7 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
             success=True,
             duration=time.time() - start,
             output_file=str(coq_file)
-        ))
+))
     except Exception as e:
         logger.error(f"Failed to write Coq file: {e}")
         results.append(BackendResult(
@@ -247,7 +247,7 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
             success=False,
             duration=time.time() - start,
             error_message=str(e)
-        ))
+))
         return results  # No RTL if Coq failed
 
     if not args.no_rtl:
@@ -260,13 +260,13 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
                 spec_module,
                 rtl_dir,
                 koika_path=args.koika_path,
-            )
+)
             results.append(BackendResult(
                 backend="rtl",
                 success=True,
                 duration=time.time() - start,
                 output_file=str(rtl_dir / f"{spec_module.name}.v")
-            ))
+))
         except Exception as e:
             logger.error(f"RTL generation failed: {e}")
             results.append(BackendResult(
@@ -274,7 +274,7 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
                 success=False,
                 duration=time.time() - start,
                 error_message=str(e)
-            ))
+))
 
     if getattr(args, "rtl_direct", False):
         logger.info("Lowering ISIR → RTL (direct path, independent)...")
@@ -288,13 +288,13 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
                 success=True,
                 duration=time.time() - start,
                 output_file=str(rtl_path)
-            ))
+))
             results.append(BackendResult(
                 backend="rtl_direct_mapping",
                 success=True,
                 duration=time.time() - start,
                 output_file=str(mapping_path)
-            ))
+))
         except Exception as e:
             logger.error(f"Direct RTL generation failed: {e}")
             results.append(BackendResult(
@@ -302,7 +302,7 @@ def _compile_koika(spec_module, out_dir, args, config) -> List[BackendResult]:
                 success=False,
                 duration=time.time() - start,
                 error_message=str(e)
-            ))
+))
 
     return results
 
@@ -323,13 +323,13 @@ def _compile_direct(spec_module, out_dir, args) -> List[BackendResult]:
             success=True,
             duration=time.time() - start,
             output_file=str(rtl_path)
-        ))
+))
         results.append(BackendResult(
             backend="direct_mapping",
             success=True,
             duration=time.time() - start,
             output_file=str(mapping_path)
-        ))
+))
     except Exception as e:
         logger.error(f"Direct RTL generation failed: {e}")
         results.append(BackendResult(
@@ -337,7 +337,7 @@ def _compile_direct(spec_module, out_dir, args) -> List[BackendResult]:
             success=False,
             duration=time.time() - start,
             error_message=str(e)
-        ))
+))
     return results
 
 
@@ -383,7 +383,7 @@ def _run_differential(spec_module, out_dir, args) -> int:
 def _run_refinement_gate(spec_module, out_dir, report: CompilationReport) -> None:
     from isir.verification.lowering_refinement import (
         LoweringRefinementStatus, run_lowering_refinement,
-    )
+)
     from isir.evidence.registry import EvidenceRegistry
 
     logger.info("Running lowering-refinement check...")
@@ -399,7 +399,7 @@ def _run_refinement_gate(spec_module, out_dir, report: CompilationReport) -> Non
             success=False,
             duration=time.time() - start,
             error_message=str(e),
-        ))
+))
         return
 
     duration = time.time() - start
@@ -429,7 +429,7 @@ def _run_refinement_gate(spec_module, out_dir, report: CompilationReport) -> Non
         metadata={"bounded_pass": n_pass, "bounded_fail": n_fail,
                   "proof_out_of_scope": n_skip, "blocked": blocked,
                   "attribution": by_cat},
-    ))
+))
     if blocked:
         logger.error("Lowering refinement found %d bounded_fail item(s); blocking pipeline.", n_fail)
 
@@ -452,7 +452,7 @@ def _compile_acl2(spec_module, out_dir, args) -> List[BackendResult]:
             success=True,
             duration=time.time() - start,
             output_file=str(acl2_file)
-        )]
+)]
     except Exception as e:
         logger.error(f"Failed to write ACL2 file: {e}")
         return [BackendResult(
@@ -460,7 +460,7 @@ def _compile_acl2(spec_module, out_dir, args) -> List[BackendResult]:
             success=False,
             duration=time.time() - start,
             error_message=str(e)
-        )]
+)]
 
 
 def _compile_assert(spec_module, out_dir, args) -> List[BackendResult]:
@@ -481,7 +481,7 @@ def _compile_assert(spec_module, out_dir, args) -> List[BackendResult]:
             success=False,
             duration=time.time() - start,
             error_message=str(e)
-        )]
+)]
 
     signal_widths: Dict[str, int] = {}
     for state_op in spec_module.state_ops:
@@ -539,7 +539,7 @@ def _compile_assert(spec_module, out_dir, args) -> List[BackendResult]:
             duration=time.time() - start_gen,
             output_file=str(out_file),
             metadata={"inline_file": str(inline_file)} if inline_file else {}
-        )]
+)]
     except Exception as e:
         logger.error(f"Assertion generation failed: {e}")
         return [BackendResult(
@@ -547,7 +547,7 @@ def _compile_assert(spec_module, out_dir, args) -> List[BackendResult]:
             success=False,
             duration=time.time() - start_gen,
             error_message=str(e)
-        )]
+)]
 
 
 def _generate_coq_from_module(koika_mod) -> str:

@@ -1,6 +1,6 @@
 # tests/unit/test_evolving_lowering.py
 #
-# Phase 1 lowering: confirmed_projection (Section 4) + the ast->evolving
+# Lowering: confirmed_projection + the ast->evolving
 # preservation pass (Candidate/OneOf bridging).
 
 from isir.dialects.evolving_spec import EvolvingItem, EvolvingSpec
@@ -47,7 +47,7 @@ class TestAstToEvolving:
                      action=[OneOf(alternatives=["(write count (add (read count) 1))",
                                                  "(write count (read count))"])]),
             ],
-        )
+)
         ev = ast_to_evolving(m)
         item = ev.item("rule_write")
         assert item is not None

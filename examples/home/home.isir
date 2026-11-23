@@ -49,50 +49,68 @@ module:
       initial: 0
   functions:
     - name: has_line
-      params: [{name: s, type: "bits<2>"}, {name: a, type: "bits<4>"}, {name: ra, type: "bits<4>"}]
+      params:
+        - name: s
+          type: "bits<2>"
+        - name: a
+          type: "bits<4>"
+        - name: ra
+          type: "bits<4>"
       return: "bool"
       body: (and (neq s 0) (eq a ra))
     - name: is_modified
-      params: [{name: s, type: "bits<2>"}]
+      params:
+        - name: s
+          type: "bits<2>"
       return: "bool"
       body: (eq s 3)
     - name: is_exclusive
-      params: [{name: s, type: "bits<2>"}]
+      params:
+        - name: s
+          type: "bits<2>"
       return: "bool"
       body: (eq s 2)
   rules:
     - name: write0
       condition: (and (eq req_core 0) req_write)
       action:
-        - (write c1_state (ite (and (has_line (read c1_state) (read c1_addr) req_addr) (neq 1 0)) 0 (read c1_state)))
+        - (write c1_state (ite (and (has_line (read c1_state) (read c1_addr) req_addr)
+          (neq 1 0)) 0 (read c1_state)))
         - (write c0_state 3)
         - (write c0_addr req_addr)
         - (write c0_data req_data)
     - name: write1
       condition: (and (eq req_core 1) req_write)
       action:
-        - (write c0_state (ite (and (has_line (read c0_state) (read c0_addr) req_addr) (neq 0 1)) 0 (read c0_state)))
+        - (write c0_state (ite (and (has_line (read c0_state) (read c0_addr) req_addr)
+          (neq 0 1)) 0 (read c0_state)))
         - (write c1_state 3)
         - (write c1_addr req_addr)
         - (write c1_data req_data)
     - name: read_hit0
-      condition: (and (and (eq req_core 0) (not req_write)) (has_line (read c0_state) (read c0_addr) req_addr))
+      condition: (and (and (eq req_core 0) (not req_write)) (has_line (read c0_state)
+        (read c0_addr) req_addr))
       action:
         - (write c0_state (read c0_state))
     - name: read_hit1
-      condition: (and (and (eq req_core 1) (not req_write)) (has_line (read c1_state) (read c1_addr) req_addr))
+      condition: (and (and (eq req_core 1) (not req_write)) (has_line (read c1_state)
+        (read c1_addr) req_addr))
       action:
         - (write c1_state (read c1_state))
     - name: read_miss0
-      condition: (and (and (eq req_core 0) (not req_write)) (not (has_line (read c0_state) (read c0_addr) req_addr)))
+      condition: (and (and (eq req_core 0) (not req_write)) (not (has_line (read c0_state)
+        (read c0_addr) req_addr)))
       action:
-        - (write c1_state (ite (and (has_line (read c1_state) (read c1_addr) req_addr) (neq 1 0)) 1 (read c1_state)))
+        - (write c1_state (ite (and (has_line (read c1_state) (read c1_addr) req_addr)
+          (neq 1 0)) 1 (read c1_state)))
         - (write c0_state 1)
         - (write c0_addr req_addr)
     - name: read_miss1
-      condition: (and (and (eq req_core 1) (not req_write)) (not (has_line (read c1_state) (read c1_addr) req_addr)))
+      condition: (and (and (eq req_core 1) (not req_write)) (not (has_line (read c1_state)
+        (read c1_addr) req_addr)))
       action:
-        - (write c0_state (ite (and (has_line (read c0_state) (read c0_addr) req_addr) (neq 0 1)) 1 (read c0_state)))
+        - (write c0_state (ite (and (has_line (read c0_state) (read c0_addr) req_addr)
+          (neq 0 1)) 1 (read c0_state)))
         - (write c1_state 1)
         - (write c1_addr req_addr)
   properties:
@@ -101,31 +119,99 @@ module:
       expression:
         kind: always
         operand: (not (and (and (is_modified (read c0_state)) (is_modified (read c1_state)))
-                          (eq (read c0_addr) (read c1_addr))))
+          (eq (read c0_addr) (read c1_addr))))
     - name: m_exclusive
       kind: safety
       expression:
         kind: always
-        operand: (and
-                   (not (and (is_modified (read c0_state)) (has_line (read c1_state) (read c1_addr) (read c0_addr))))
-                   (not (and (is_modified (read c1_state)) (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
+        operand: (and (not (and (is_modified (read c0_state)) (has_line (read c1_state)
+          (read c1_addr) (read c0_addr)))) (not (and (is_modified (read c1_state))
+          (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
     - name: e_exclusive
       kind: safety
       expression:
         kind: always
-        operand: (and
-                   (not (and (is_exclusive (read c0_state)) (has_line (read c1_state) (read c1_addr) (read c0_addr))))
-                   (not (and (is_exclusive (read c1_state)) (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
+        operand: (and (not (and (is_exclusive (read c0_state)) (has_line (read c1_state)
+          (read c1_addr) (read c0_addr)))) (not (and (is_exclusive (read c1_state))
+          (has_line (read c0_state) (read c0_addr) (read c1_addr)))))
+    - name: core0_write_fills_modified
+      kind: transition
+      expression:
+        kind: transition
+        rule: write0
+        operand: (and (eq (read c1_state) (ite (and (has_line (prev c1_state) (prev
+          c1_addr) req_addr) (neq 1 0)) 0 (prev c1_state))) (and (eq (read c0_state)
+          3) (and (eq (read c0_addr) req_addr) (eq (read c0_data) req_data))))
+    - name: core1_write_fills_modified
+      kind: transition
+      expression:
+        kind: transition
+        rule: write1
+        operand: (and (eq (read c0_state) (ite (and (has_line (prev c0_state) (prev
+          c0_addr) req_addr) (neq 0 1)) 0 (prev c0_state))) (and (eq (read c1_state)
+          3) (and (eq (read c1_addr) req_addr) (eq (read c1_data) req_data))))
+    - name: core0_read_hit_keeps_state
+      kind: transition
+      expression:
+        kind: transition
+        rule: read_hit0
+        operand: (eq (read c0_state) (prev c0_state))
+    - name: core1_read_hit_keeps_state
+      kind: transition
+      expression:
+        kind: transition
+        rule: read_hit1
+        operand: (eq (read c1_state) (prev c1_state))
+    - name: core0_read_miss_fills_shared
+      kind: transition
+      expression:
+        kind: transition
+        rule: read_miss0
+        operand: (and (eq (read c1_state) (ite (and (has_line (prev c1_state) (prev
+          c1_addr) req_addr) (neq 1 0)) 1 (prev c1_state))) (and (eq (read c0_state)
+          1) (eq (read c0_addr) req_addr)))
+    - name: core1_read_miss_fills_shared
+      kind: transition
+      expression:
+        kind: transition
+        rule: read_miss1
+        operand: (and (eq (read c0_state) (ite (and (has_line (prev c0_state) (prev
+          c0_addr) req_addr) (neq 0 1)) 1 (prev c0_state))) (and (eq (read c1_state)
+          1) (eq (read c1_addr) req_addr)))
   proof_obligations:
+    - property: core0_write_fills_modified
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: core1_write_fills_modified
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: core0_read_hit_keeps_state
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: core1_read_hit_keeps_state
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: core0_read_miss_fills_shared
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
+    - property: core1_read_miss_fills_shared
+      status: unproved
+      engine: theorem_proving
+      backend: koika_acl2
     - property: single_writer
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: m_exclusive
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: e_exclusive
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

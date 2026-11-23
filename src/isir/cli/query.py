@@ -19,7 +19,7 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="isir query",
         description="Query the evidence registry for verification artifacts."
-    )
+)
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
 
     list_parser = subparsers.add_parser("list", help="List evidence entries (default)")
@@ -153,14 +153,14 @@ def query_evidence(args: argparse.Namespace) -> int:
                 design=args.design,
                 backend=args.backend,
                 status=args.status,
-            )
+)
         else:
             registry.export_to_json(
                 filepath,
                 design=args.design,
                 backend=args.backend,
                 status=args.status,
-            )
+)
         logger.info(f"Evidence exported to {filepath}")
         return 0
 
@@ -172,7 +172,7 @@ def query_evidence(args: argparse.Namespace) -> int:
             property_name=args.property,
             evidence_type=args.type,
             limit=args.limit,
-        )
+)
         if args.output_format == "json":
             print(json.dumps(entries, indent=2, default=str))
         else:
@@ -195,7 +195,7 @@ def query_evidence(args: argparse.Namespace) -> int:
             engine=args.engine,
             design_name=args.design,
             limit=100
-        )
+)
         if args.output_format == "json":
             print(json.dumps(entries, indent=2, default=str))
         else:

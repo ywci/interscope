@@ -1,13 +1,11 @@
 # src/isir/verification/sat_gate/budget.py
 #
-# Conflict budgets calibrated to wall-clock (§14.2).  The terminator sets the
+# Conflict budgets calibrated to wall-clock. The terminator sets the
 # solver's conflict limit; a budget hit yields None (unknown), never a wrong
 # SAT/UNSAT.
-"""Wall-clock-calibrated conflict budgets + terminator."""
 
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
-
 from isir.verification.sat_gate.solver_cadical import IncrementalSolver
 
 

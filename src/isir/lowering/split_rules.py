@@ -70,7 +70,7 @@ def split_rules(
         spec_module.name,
         len(new_rules),
         split_attribute
-    )
+)
     return new_mod
 
 
@@ -94,7 +94,7 @@ def _copy_module_structure(mod: SpecModule) -> SpecModule:
         schedule_op=copy.deepcopy(mod.schedule_op) if mod.schedule_op else None,
         proof_obligations=list(mod.proof_obligations),
         metadata=dict(mod.metadata)
-    )
+)
 
 
 def _make_conflict_free_for_split_rules(
@@ -126,7 +126,7 @@ def _make_conflict_free_for_split_rules(
             "Original schedule is sequential; switching to conflict_free "
             "for split rules.  Rule order within a conflict set is not "
             "specified – verify behaviour."
-        )
+)
 
     prev_sets: list[list[str]] = list(existing.conflict_sets) if existing.conflict_sets else []
 
@@ -137,7 +137,7 @@ def _make_conflict_free_for_split_rules(
         kind="conflict_free",
         rule_order=[],
         conflict_sets=prev_sets
-    )
+)
 
 
 def _original_rule_name(name: str) -> str:
@@ -163,7 +163,7 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
                 "Rule '%s': action '%s' cannot be parsed – not splitting.",
                 rule.rule_name,
                 action_str
-            )
+)
             return None
         parsed_actions.append(parsed)
 
@@ -184,7 +184,7 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
                 f"Rule '{rule.rule_name}' contains multiple independent `ite` "
                 "expressions.  Automatic splitting is not supported for this "
                 "case.  Please refactor the rule manually."
-            )
+)
 
     # Flatten the `ite` chain in the chosen action
     action_to_split = parsed_actions[split_idx]
@@ -202,7 +202,7 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
         new_actions.append(_serialise_action(branch_body))
         new_actions.extend(
             _serialise_action(act) for act in parsed_actions[split_idx + 1:]
-        )
+)
 
         combined_cond = _conjoin_conditions(rule.condition, branch_cond)
 
@@ -212,7 +212,7 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
             actions=new_actions,
             priority=rule.priority,
             rule_attributes=list(rule.rule_attributes)
-        )
+)
         new_rules.append(new_rule)
 
     if default_body is not None:
@@ -222,7 +222,7 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
         new_actions.append(_serialise_action(default_body))
         new_actions.extend(
             _serialise_action(act) for act in parsed_actions[split_idx + 1:]
-        )
+)
 
         neg_cond = _negate_disjunction(conditions)
         combined_cond = _conjoin_conditions(rule.condition, neg_cond)
@@ -233,7 +233,7 @@ def _try_split_rule(rule: SpecRuleOp) -> Optional[List[SpecRuleOp]]:
             actions=new_actions,
             priority=rule.priority,
             rule_attributes=list(rule.rule_attributes)
-        )
+)
         new_rules.append(new_rule)
 
     return new_rules

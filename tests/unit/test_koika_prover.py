@@ -310,7 +310,7 @@ class TestProofGen:
             previous_attempts=[
                 {"script": "Proof. auto. Qed.", "error": "auto failed"}
             ],
-        )
+)
         assert "Theorem no_overflow" in prompt
         assert "forall st, reachable st" in prompt
         assert "Previous attempts" in prompt
@@ -361,7 +361,7 @@ class TestRepair:
             error_message="Error: cannot prove",
             llm_client=mock_llm_client,
             max_attempts=2
-        )
+)
         assert success is True
         assert "induction x" in repaired
 
@@ -371,7 +371,7 @@ class TestRepair:
             error_message="Error: cannot prove",
             llm_client=mock_llm_client,
             max_attempts=1
-        )
+)
         assert success is True
         assert "Admitted." in repaired
 
@@ -382,7 +382,7 @@ class TestRepair:
             error_message="Error",
             llm_client=mock_llm_client,
             max_attempts=1
-        )
+)
         assert success is False
         assert repaired == "Proof. auto. Qed."
 

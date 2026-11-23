@@ -97,10 +97,17 @@ run_all_tests() {
     (
         eval "$(opam env 2>/dev/null)"
         export PATH="$SCRIPT_DIR/.venv/bin:$PATH"
-        PYTHONPATH=src .venv/bin/python -m pytest tests/unit tests/integration -v \
+        PYTHONPATH=src .venv/bin/python -m pytest tests/unit tests/integration tests/sat_gate -v \
             -o "markers=${MARKER_DEF}" \
             -W ignore::pytest.PytestUnknownMarkWarning
     )
+}
+
+run_sat_gate_tests() {
+    log_info "Running SAT-gating tests..."
+    PYTHONPATH=src .venv/bin/python -m pytest tests/sat_gate -v \
+        -o "markers=${MARKER_DEF}" \
+        -W ignore::pytest.PytestUnknownMarkWarning
 }
 
 run_clean() {
@@ -353,7 +360,7 @@ ${BOLD}Global options:${RESET}
   --debug                      Enable debug logging
 
 ${BOLD}Commands:${RESET}
-  --test unit|integration|all   Run tests
+  --test unit|integration|sat_gate|all   Run tests
   --verify-examples [flags]     Verify all examples/ (backend: koika by default; also acl2, model_checking, koika_acl2)
   --verify-semantics            Type-check the ISIR Coq semantics
   --verify-acl2                Verify ISIR -> ACL2 (books, lowering, differential, examples)
@@ -431,14 +438,15 @@ case "${1:-}" in
     --test)
         check_uv
         if [[ $# -lt 2 ]]; then
-            log_error "--test requires an argument (unit, integration, or all)"
+            log_error "--test requires an argument (unit, integration, sat_gate, or all)"
         fi
         case "$2" in
             unit)        run_unit_tests ;;
             integration) run_integration_tests ;;
+            sat_gate)    run_sat_gate_tests ;;
             all)         run_all_tests ;;
             *)
-                log_error "Unknown test type '$2'. Use 'unit', 'integration', or 'all'."
+                log_error "Unknown test type '$2'. Use 'unit', 'integration', 'sat_gate', or 'all'."
                 ;;
         esac
         ;;

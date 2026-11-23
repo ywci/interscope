@@ -202,17 +202,17 @@ def convert(
     for cycle_data in trace_module.cycles:
         state_vals = _reconstruct_state(
             spec_module.state_ops, annotation_map, cycle_data, unmapped_states
-        )
+)
         fired = _reconstruct_fired_rules(
             spec_module.rule_ops, rule_cond_signals, cycle_data, unmapped_rules
-        )
+)
 
         inputs_vals = _reconstruct_io(
             spec_module.inputs, "inputs", io_signals, cycle_data
-        )
+)
         outputs_vals = _reconstruct_io(
             spec_module.outputs, "outputs", io_signals, cycle_data
-        )
+)
 
         cycles.append({
             "cycle": cycle_data.cycle,
@@ -230,7 +230,7 @@ def convert(
         raise ValueError(
             f"Unmapped elements – states: {sorted(unmapped_states)}, "
             f"rules: {sorted(unmapped_rules)}"
-        )
+)
 
     return {"trace": {"cycles": cycles}}
 

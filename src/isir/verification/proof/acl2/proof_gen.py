@@ -83,7 +83,7 @@ def build_acl2_proof_prompt(
         ":hints section.  The hints should be a proper ACL2 hint list, e.g.\n"
         '  :hints (("Goal" :induct t) ("Subgoal *1/2" :expand ((foo x))))\n'
         "Return ONLY the defthm form without any additional text or commentary."
-    )
+)
 
     if previous_attempts:
         recent = previous_attempts[-3:]
@@ -129,7 +129,7 @@ def build_acl2_hint_prompt(
         '  (("Goal" :induct t) ("Subgoal *1/2" :expand ((foo x))))\n\n'
         "Return ONLY the hint list as a single s-expression, without any "
         "extra text."
-    )
+)
 
 
 def build_acl2_reflection_prompt(
@@ -160,7 +160,7 @@ def build_acl2_reflection_prompt(
         attempts_str = "\n".join(
             f"Attempt {i+1}: hints={att.get('script', '?')} error={att.get('error', '?')}"
             for i, att in enumerate(recent)
-        )
+)
 
     return (
         "You are an expert in ACL2 hardware verification.\n\n"
@@ -177,7 +177,7 @@ def build_acl2_reflection_prompt(
         '  (("Goal" :induct t) ("Subgoal *1/2" :expand ((foo x))))\n\n'
         "Return ONLY the hint list as a single s-expression, without any "
         "extra text."
-    )
+)
 
 
 def generate_acl2_proof(
@@ -210,7 +210,7 @@ def generate_acl2_proof(
         hint_classes=hint_classes,
         assumptions=assumptions,
         previous_attempts=previous_attempts
-    )
+)
     original_max = llm_client.max_tokens
     llm_client.max_tokens = max_tokens
     try:
@@ -248,7 +248,7 @@ def generate_acl2_hints(
         error_message=error_message,
         old_hints=old_hints,
         context=context
-    )
+)
     original_max = llm_client.max_tokens
     llm_client.max_tokens = max_tokens
     try:
@@ -362,7 +362,7 @@ def generate_acl2_proof_variants(
             llm_client, theorem_name, theorem_statement, num_variants,
             context, hint_classes, assumptions, temperature, max_tokens,
             previous_attempts, diversity_tags,
-        )
+)
 
     # Original behaviour (non‑repair)
     variants = []
@@ -386,7 +386,7 @@ def generate_acl2_proof_variants(
             hint_classes=hint_classes,
             assumptions=assumptions,
             previous_attempts=previous_attempts,
-        )
+)
 
         # Inject diversity tag if available
         tag = None
@@ -420,7 +420,7 @@ def generate_acl2_proof_variants(
                     context=context,
                     hint_classes=["induct"],
                     assumptions=assumptions,
-                )
+)
                 if tag:
                     skeleton_prompt += f"\n\n**Strategy hint:** {tag}"
                 response2 = llm_client.generate(skeleton_prompt, max_tokens=max_tokens)
@@ -432,14 +432,14 @@ def generate_acl2_proof_variants(
                         f"(defthm {theorem_name}\n"
                         f"  {theorem_statement}\n"
                         f"  :hints ((\"Goal\" :induct t)))"
-                    )
+)
         except Exception as e:
             logger.warning("Variant %d generation failed: %s", i, e)
             variants.append(
                 f"(defthm {theorem_name}\n"
                 f"  {theorem_statement}\n"
                 f"  :hints ((\"Goal\" :induct t)))"
-            )
+)
 
     llm_client.temperature = original_temp
     while len(variants) < num_variants:
@@ -447,7 +447,7 @@ def generate_acl2_proof_variants(
             f"(defthm {theorem_name}\n"
             f"  {theorem_statement}\n"
             f"  :hints ((\"Goal\" :induct t)))"
-        )
+)
     return variants[:num_variants]
 
 
@@ -473,7 +473,7 @@ def _generate_acl2_with_repair(
         hint_classes=hint_classes,
         assumptions=assumptions,
         previous_attempts=previous_attempts
-    )
+)
 
     n_extra = max(1, num_variants - 1)
     prompt += (
@@ -487,7 +487,7 @@ def _generate_acl2_with_repair(
         "(defthm ...)\n\n"
         f"... up to VARIANT {n_extra}\n\n"
         "Return ONLY the sections described above, without any extra commentary."
-    )
+)
 
     if diversity_tags and n_extra > 0:
         tags = []
@@ -513,7 +513,7 @@ def _generate_acl2_with_repair(
             f"(defthm {theorem_name}\n"
             f"  {theorem_statement}\n"
             f"  :hints ((\"Goal\" :induct t)))"
-        )
+)
     return scripts[:num_variants]
 
 

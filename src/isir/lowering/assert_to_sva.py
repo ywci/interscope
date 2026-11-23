@@ -53,7 +53,7 @@ def _collect_signals_robust(assert_module: asserts.AssertModule) -> Set[str]:
         assert_module.always_checks +
         assert_module.properties +
         assert_module.covers
-    )
+)
     for op in ops:
         for attr in ("condition", "operand", "left", "right"):
             expr_str = getattr(op, attr, None)
@@ -462,7 +462,7 @@ def convert(assert_module: asserts.AssertModule,
                 "Temporal property '%s' (kind=%s) not supported in procedural mode; skipping.",
                 getattr(p, 'label', '?'),
                 p.kind,
-            )
+)
 
     for cv in assert_module.covers:
         _try_append_assertion(_label_comment(cv), cv.condition, "cover", kind="cover")
@@ -560,7 +560,7 @@ def convert(assert_module: asserts.AssertModule,
         raise ValueError(
             f"Generated SVA module header contains bracket characters. "
             f"Header: ...{header[max(0,len(header)-100):]}..."
-        )
+)
 
     return generated
 
@@ -623,7 +623,7 @@ def convert_inline(assert_module: asserts.AssertModule,
                     "Temporal property '%s' (kind=%s) not supported; skipping.",
                     getattr(p, 'label', '?'),
                     p.kind,
-                )
+)
         for cv in assert_module.covers:
             _try_append(_label_comment(cv), cv.condition, "cover", kind="cover")
 

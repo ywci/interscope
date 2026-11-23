@@ -221,7 +221,7 @@ class TraceModule:
         self,
         property_name: str,
         window: int = 5
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         """
         Extract a window of cycles around a failure for PERF reflection.
 
@@ -390,7 +390,7 @@ class TraceModule:
         property_name: str,
         window_size: int = 5,
         relevant_signals: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
         """
         Convenience method: extract a failing window and optionally filter signals.
 

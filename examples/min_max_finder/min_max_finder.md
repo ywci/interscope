@@ -22,5 +22,6 @@
 
 ## Properties
 
-- **min_le_max** (safety): always, `min_val` ≤ `max_val`.
-- **count_nonneg** (safety): always, `count` ≥ 0.
+- **min_le_max** (safety): always, min_val ≤ max_val.
+- **min_leq_max** (safety): always, min_val ≤ max_val.
+- **running_min_max_updated** (transition): after each step, min_val equals if prev(first), then data, otherwise if data < prev(min_val), then data, otherwise prev(min_val) and max_val equals if prev(first), then data, otherwise if data > prev(max_val), then data, otherwise prev(max_val) and `count` equals prev(count) + 1 and `first` equals false.

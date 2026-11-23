@@ -1,8 +1,6 @@
 # tests/sat_gate/test_fail_closed.py
-"""Fail-closed: out-of-fragment inputs yield UNKNOWN, never SAT/UNSAT (§10.2)."""
 
 import pytest
-
 from isir.verification.sat_gate.obligation import classify_predicate
 from isir.verification.sat_gate.compile_dyn import lower_pred, lower_term
 from isir.verification.sat_gate.bitblast import BitBlaster
@@ -12,7 +10,6 @@ def test_classify_flags_excluded_ops():
     assert classify_predicate("(rshift a 2)") == "variable_shift"
     assert classify_predicate("(forall x p)") == "quantifier"
     assert classify_predicate("(add a b)") is None
-    # mul/div/mod are now SMT-route-supported (not fail-closed flags).
     assert classify_predicate("(mul a b)") is None
     assert classify_predicate("(div a b)") is None
     assert classify_predicate("(mod a b)") is None

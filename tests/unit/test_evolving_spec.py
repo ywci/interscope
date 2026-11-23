@@ -1,6 +1,6 @@
 # tests/unit/test_evolving_spec.py
 #
-# Phase 1 of the Evolving Specification plan: the schema (dialect), the
+# The Evolving Specification: the schema (dialect), the
 # priority/tie-breaker, the prompt serialization, and the consistency rules.
 
 from isir.dialects.evolving_spec import (

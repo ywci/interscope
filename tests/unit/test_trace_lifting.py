@@ -47,7 +47,7 @@ def mock_spec_module():
         rule_ops=rule_ops,
         inputs=inputs,
         outputs=outputs
-    )
+)
     return spec_mod
 
 
@@ -92,7 +92,7 @@ def test_reconstruct_state(mock_trace_module, mock_spec_module):
         annotation_map,
         cycle_data,
         unmapped
-    )
+)
     assert state_vals.get("head") == 1
     assert state_vals.get("full") == 0
 
@@ -112,7 +112,7 @@ def test_reconstruct_fired_rules(mock_trace_module, mock_spec_module):
         rule_cond_signals,
         cycle_data,
         unmapped
-    )
+)
     assert "enqueue" in fired
     assert "dequeue" not in fired
 
@@ -122,7 +122,7 @@ def test_reconstruct_fired_rules(mock_trace_module, mock_spec_module):
         rule_cond_signals,
         cycle_data2,
         unmapped
-    )
+)
     assert "enqueue" not in fired2
 
 
@@ -156,7 +156,7 @@ def test_reconstruct_io(mock_trace_module, mock_spec_module):
         signal_name="enq_in",
         isir_ref="module.inputs[name=enqueue]",
         kind="input"
-    )
+)
     mock_trace_module.annotations.append(ann)
 
     io_signals = {}
@@ -174,5 +174,5 @@ def test_reconstruct_io(mock_trace_module, mock_spec_module):
         "inputs",
         io_signals,
         mock_trace_module.cycles[0]
-    )
+)
     assert io_vals.get("enqueue") == 1

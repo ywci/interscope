@@ -132,7 +132,7 @@ class TestReusablePatterns:
             "  simpl.\n"
             "  auto.\n"
             "Qed."
-        )
+)
         tactics = ProofPatternCache.extract_reusable_tactics(proof)
         assert "induction Hreach as [| s' s'' inputs' Hreach' IH Hstep]." in tactics
         assert "inversion Hstep; subst; clear Hstep; simpl." in tactics
@@ -152,7 +152,7 @@ class TestReusablePatterns:
         c = ProofPatternCache(cache_path)
         c.store_successful_proof(
             "alu", "overflow_implies", "Proof.\n  intros H.\n  simpl.\nQed."
-        )
+)
         pats = c.get_reusable_patterns("overflow_implies", design_name="alu")
         assert "intros H." in pats
         assert "simpl." in pats

@@ -92,7 +92,7 @@ class TestACL2Prover(unittest.TestCase):
             theorem_name="test-thm",
             statement="(equal 1 1)",
             hints=["((" "Goal" ":induct t))"]
-        )
+)
 
         self.assertIsInstance(result, ProofResult)
         self.assertTrue(result.success)
@@ -101,7 +101,7 @@ class TestACL2Prover(unittest.TestCase):
         mock_client.save_checkpoint.assert_called_once_with("pre_test-thm")
         mock_client.defthm.assert_called_once_with(
             "test-thm", "(equal 1 1)", ["((" "Goal" ":induct t))"]
-        )
+)
         mock_client.restore_checkpoint.assert_not_called()
 
     def test_prove_theorem_failure_then_repair_success(self):
@@ -123,7 +123,7 @@ class TestACL2Prover(unittest.TestCase):
             theorem_name="test-thm",
             statement="(implies (full st) (not (enqueue st)))",
             hints=[]
-        )
+)
 
         self.assertTrue(result.success)
         self.assertIn("defthm test-thm", result.proof_script)
@@ -147,7 +147,7 @@ class TestACL2Prover(unittest.TestCase):
             theorem_name="test-thm",
             statement="(implies (full st) (not (enqueue st)))",
             hints=[]
-        )
+)
 
         self.assertFalse(result.success)
         self.assertIn("ACL2 proof failed after", result.error_message)
@@ -172,7 +172,7 @@ class TestACL2Prover(unittest.TestCase):
             theorem_name="test-thm",
             statement="(implies (full st) (not (enqueue st)))",
             hints=[]
-        )
+)
 
         self.assertFalse(result.success)
         self.assertEqual(mock_client.defthm.call_count, 3)
@@ -187,7 +187,7 @@ class TestACL2Prover(unittest.TestCase):
             theorem_name="test-thm",
             statement=None,
             hints=[]
-        )
+)
         self.assertTrue(result.success)
         mock_client.send.assert_called_with("(verify (test-thm))")
 
@@ -200,7 +200,7 @@ class TestACL2Prover(unittest.TestCase):
             statement="(implies (full st) (not (enqueue st)))",
             old_hints=["((" "Goal" ":induct nil))"],
             error="Proof failed"
-        )
+)
         self.assertEqual(hints, ['(("Goal" :induct t))'])
         mock_llm.generate.assert_called_once()
 

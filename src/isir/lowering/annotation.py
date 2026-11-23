@@ -1,7 +1,6 @@
 # src/isir/lowering/annotation.py
 #
-# Offline annotation (Section 8 of the Evolving Specification plan): the five
-# ordered steps that drive the `pending` state to the `verified` state.
+# Offline annotation: the five ordered steps that drive the `pending` state to the `verified` state.
 
 from __future__ import annotations
 
@@ -22,8 +21,6 @@ from isir.dialects.evolving_spec import (
 )
 
 
-# Step 1 attribution + action, derived from the evidence record (the
-# placeholder-COI guard routes placeholder reads to unresolved_placeholder).
 def record_to_finding(record: RawEvidenceRecord) -> Finding:
     mode = record.verification_mode
     ec = record.error_class
@@ -61,7 +58,7 @@ def record_to_finding(record: RawEvidenceRecord) -> Finding:
         related_spec_item_ids=list(record.related_spec_item_ids),
         evidence_ref=record.evidence_ref,
         evidence_hash=record.evidence_hash,
-    )
+)
 
 
 def _template_note(record: RawEvidenceRecord) -> str:
@@ -107,7 +104,7 @@ def annotate(
     cap: int = 3,
     note_generator: Optional[Callable[[Finding], str]] = None,
 ) -> Tuple[EvolvingSpec, Set[str]]:
-    """Drive the `pending` state to the `verified` state (Section 8, five steps).
+    """Drive the `pending` state to the `verified` state.
 
     Returns `(verified_spec, pinned_evidence_refs)`.  Records referenced by a
     finding that entered the verified state are pinned; the caller unpins any
@@ -119,10 +116,10 @@ def annotate(
     # Step 1: filter + attribute + inject synthetic deferred findings.
     for record in evidence:
         if record.primary_spec_item_id not in item_by_id:
-            continue  # unlocalizable (Stage 1.1)
+            continue  # unlocalizable 
         finding = record_to_finding(record)
         if finding.issue_attribution is IssueAttribution.UNDETERMINED:
-            continue  # Stage 2.8 drop
+            continue  # drop
         by_item[record.primary_spec_item_id].append(finding)
 
     for item in evolving.items:
@@ -145,7 +142,7 @@ def annotate(
                     back_indexed_from=item.spec_item_id,
                     evidence_ref=f.evidence_ref,
                     evidence_hash=f.evidence_hash,
-                ))
+))
 
     # Step 3: dedup by error_class + cap at `cap` by priority.
     for item in evolving.items:
@@ -184,7 +181,7 @@ def annotate(
             nl_anchor=item.nl_anchor,
             verification_round=round_num,
             findings=fs,
-        ))
+))
         for f in fs:
             if f.evidence_ref != "static_defer":
                 pinned.add(f.evidence_ref)

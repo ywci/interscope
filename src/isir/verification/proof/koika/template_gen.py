@@ -147,7 +147,7 @@ def generate_coq_proof_variants_template(
                 "          { simpl. reflexivity. }\n"
                 "          { simpl. reflexivity. } } } } }\n"
                 "Qed."
-            )
+)
             variants.append(template_two_ctors)
 
             # Variant using `auto` in execute branch.
@@ -163,7 +163,7 @@ def generate_coq_proof_variants_template(
                 "      destruct (op_reg s' =? 2) eqn:Hop2; simpl; auto. }\n"
                 "  }\n"
                 "Qed."
-            )
+)
             variants.append(template_two_ctors_auto)
 
             # Overflow-specific template: use lia in execute, handle load_inputs
@@ -187,7 +187,7 @@ def generate_coq_proof_variants_template(
                     "          { simpl in *. lia. }\n"
                     "          { simpl in *. lia. } } } } }\n"
                     "Qed."
-                )
+)
                 variants.append(template_overflow)
 
         if analysis.has_nested_ite and analysis.max_ite_depth >= 3:
@@ -202,7 +202,7 @@ def generate_coq_proof_variants_template(
                 f"    {destruct_chain}\n"
                 "  }\n"
                 "Qed."
-            )
+)
             # Insert only if we don't already have two-constructor variants.
             if not (analysis.num_step_constructors == 2 and analysis.step_constructor_names):
                 variants.insert(0, template_nested_ite)
@@ -222,7 +222,7 @@ def generate_coq_proof_variants_template(
                 "            end).\n"
                 "    auto; try lia; try nia. }\n"
                 "Qed."
-            )
+)
             variants.append(template_nested_ite_simple)
 
     template_pool = [
@@ -305,7 +305,7 @@ Qed.""",
                 template = template.replace(
                     "Qed.",
                     f"  (* variant {len(variants)+1} *) Qed."
-                )
+)
             variants.append(template)
 
     valid_variants = [
@@ -317,7 +317,7 @@ Qed.""",
         logger.debug(
             "Filtered out %d structurally invalid or deprecated template(s).",
             len(variants) - len(valid_variants),
-        )
+)
         # Fill any remaining slots with known-valid generic templates.
         for template in template_pool:
             if len(valid_variants) >= num_variants:
@@ -330,7 +330,7 @@ Qed.""",
         logger.warning(
             "Could only produce %d valid template variants out of %d requested.",
             len(valid_variants), num_variants,
-        )
+)
         return valid_variants
 
     logger.debug(
@@ -339,6 +339,6 @@ Qed.""",
         theorem_name,
         analysis is not None,
         is_overflow_like,
-    )
+)
 
     return valid_variants[:num_variants]

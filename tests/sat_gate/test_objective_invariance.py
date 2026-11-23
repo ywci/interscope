@@ -1,5 +1,4 @@
 # tests/sat_gate/test_objective_invariance.py
-"""Objective invariance (P8 / §6.6): objective never changes the evidence action."""
 
 from isir.verification.sat_gate.policy import (
     CertState, CertTier, EvidenceAction, Objective, Status, disposition,

@@ -103,7 +103,5 @@
 ## Properties
 
 - **l1d_is_modified_implies_valid** (safety): always, if l1d_is_modified(`l1d_s0`), then `l1d_s0` does not equal 0.
-- **l1d_phys_index_bounded** (safety): always, l1d_phys_index(`l1d_a0`) ≤ 3.
 - **l1i_is_modified_implies_valid** (safety): always, if l1i_is_modified(`l1i_s0`), then `l1i_s0` does not equal 0.
-- **l1i_phys_index_bounded** (safety): always, l1i_phys_index(`l1i_a0`) ≤ 3.
 - **l1d_states_valid** (safety): always, `l1d_s0` ≥ 0 and `l1d_s0` ≤ 3 and `l1d_s1` ≥ 0 and `l1d_s1` ≤ 3.

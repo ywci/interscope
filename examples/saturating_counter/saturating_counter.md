@@ -20,6 +20,6 @@
 
 ## Properties
 
+- **inc_saturates_at_8** (transition): after each step, count equals if prev(count) < 8, then prev(count) + 1, otherwise prev(count).
+- **dec_saturates_at_0** (transition): after each step, count equals if prev(count) > 0, then prev(count) − 1, otherwise prev(count).
 - **count_in_range** (safety): always, `count` ≥ 0 and `count` ≤ 8.
-- **inc_saturates_at_8** (transition): after each step, `count` equals if prev(count) < 8, then prev(count) + 1, otherwise prev(count).
-- **dec_saturates_at_0** (transition): after each step, `count` equals if prev(count) > 0, then prev(count) − 1, otherwise prev(count).

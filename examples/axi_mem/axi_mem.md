@@ -29,3 +29,6 @@
 
 - **rvalid_bool** (safety): always, `rvalid` equals true or `rvalid` equals false.
 - **bvalid_bool** (safety): always, `bvalid` equals true or `bvalid` equals false.
+- **read_returns_data** (transition): after each step, `rvalid` equals true.
+- **write_acknowledges** (transition): after each step, `bvalid` equals true.
+- **read_returns_data** (transition): after each step, `rdata` equals mem_read(mem, araddr).

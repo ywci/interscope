@@ -179,7 +179,7 @@ class PERFStats:
             return
         self.error_signature_counts[error_signature] = (
             self.error_signature_counts.get(error_signature, 0) + 1
-        )
+)
 
     @property
     def top_error_signatures(self) -> List[Dict[str, Any]]:
@@ -196,7 +196,7 @@ class PERFStats:
                 self.error_signature_counts.items(),
                 key=lambda item: item[1],
                 reverse=True
-            )
+)
         ]
 
     def record_beam_collapse(self) -> None:
@@ -215,7 +215,7 @@ class PERFStats:
         experience_penalty_used: bool = False,
         noise_used: bool = False,
         force_regeneration_used: bool = False,
-    ) -> None:
+) -> None:
         """
         Record which scoring enhancements were active during the most recent backtrack.
 
@@ -453,7 +453,7 @@ class PERFStats:
                     f"  Backtrack #{rec['backtrack_num']}: quality={rec['quality']:.2f}, "
                     f"delta={rec['delta']:.2f}, pre_best={rec['pre_best_primary']:.3f}, "
                     f"post_best={rec['post_best_primary']:.3f}"
-                )
+)
 
         # Depth breakdown
         if self.depth_stats:
@@ -463,7 +463,7 @@ class PERFStats:
                 lines.append(
                     f"  Depth {ds['depth']}: {ds['nodes']} nodes, "
                     f"beam {ds['beam']}, pruned {ds['pruned']}"
-                )
+)
 
         return "\n".join(lines)
 

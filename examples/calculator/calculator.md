@@ -21,7 +21,6 @@
 
 ## Properties
 
-- **sp_in_range** (safety): always, `sp` ≥ 0 and `sp` ≤ 8.
-- **error_is_bool** (safety): always, `error` equals true or `error` equals false.
-- **error_on_push_full** (transition): after each step, if opcode equals 0 and prev(sp) equals 8, then `error` equals true.
-- **error_on_pop_empty** (transition): after each step, if opcode equals 3 and prev(sp) equals 0, then `error` equals true.
+- **error_iff_invalid_op** (safety): always, error equals opcode equals 0 and `sp` equals 8 or opcode equals 3 and `sp` equals 0 or opcode equals 1 or opcode equals 2 and `sp` < 2.
+- **error_on_push_full** (transition): after each step, if opcode equals 0 and prev(sp) equals 8, then error equals true.
+- **error_on_pop_empty** (transition): after each step, if opcode equals 3 and prev(sp) equals 0, then error equals true.

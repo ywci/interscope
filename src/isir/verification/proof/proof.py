@@ -65,7 +65,7 @@ class ProofResult:
                 "passed": sum(1 for r in results if r.success),
                 "failed": sum(1 for r in results if not r.success)
             }
-        )
+)
 
 
 class ProofSkill(ABC):

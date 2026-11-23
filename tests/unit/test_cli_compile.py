@@ -28,7 +28,7 @@ def _make_args(tmp_path, backend="koika", output_format="text",
         koika_path=None,
         output_format=output_format,
         debug=False,
-    )
+)
 
 
 def _make_spec_module(name="my_design"):
@@ -70,12 +70,12 @@ class TestArgumentParser:
     def test_assert_lang_choices(self):
         args = _setup_arg_parser().parse_args(
             ["in.isir", "--backend", "assert", "--assert-lang", "vhdl"]
-        )
+)
         assert args.assert_lang == "vhdl"
         with pytest.raises(SystemExit):
             _setup_arg_parser().parse_args(
                 ["in.isir", "--backend", "assert", "--assert-lang", "bogus"]
-            )
+)
 
     def test_all_optional_arguments(self):
         args = _setup_arg_parser().parse_args([
@@ -261,6 +261,6 @@ class TestCompileSpec:
         report = CompilationReport(
             design_name="d", input_file="d.isir",
             results=[BackendResult(backend="koika", success=True)],
-        )
+)
         assert report.overall_success() is True
         assert isinstance(report, CompilationReport)

@@ -139,7 +139,7 @@ def test_defun_with_guard_and_mode():
         client.defun(
             "f", ["x"], "(+ x 1)",
             guard="(natp x)", mode=":program", verify_guards=False,
-        )
+)
     form = mock_send.call_args[0][0]
     assert ":guard (natp x)" in form
     assert ":verify-guards nil" in form
@@ -160,7 +160,7 @@ def test_defthm_returns_run_async_result():
             patch.object(
                 client, "_run_async",
                 return_value={"success": True, "output": "Q.E.D."},
-            ) as mock_run:
+) as mock_run:
         result = client.defthm("t", "stmt", ['("Goal" :induct t)'])
     assert result == {"success": True, "output": "Q.E.D."}
     mock_defthm.assert_called_once_with("t", "stmt", ['("Goal" :induct t)'])
@@ -227,7 +227,7 @@ def test_send_async_returns_text():
     assert out == "hello"
     session.call_tool.assert_awaited_once_with(
         "evaluate", arguments={"form": "(foo)"}
-    )
+)
 
 
 def test_send_async_wraps_exception():
@@ -248,7 +248,7 @@ def test_call_tool_parses_json():
     session = AsyncMock()
     session.call_tool = AsyncMock(return_value=_make_tool_result(
         json.dumps({"success": True, "output": "done", "error": None})
-    ))
+))
     client.session = session
 
     result = asyncio.run(client._call_tool("prove", {"a": 1}))
@@ -314,16 +314,16 @@ def test_defthm_async_success_via_prove_tool():
     with patch.object(
         client, "_call_tool",
         new=AsyncMock(return_value={"success": True, "output": "Q.E.D."}),
-    ) as mock_call:
+) as mock_call:
         result = asyncio.run(
             client._defthm_async("t", "(equal 1 1)", ['("Goal" :induct t)'])
-        )
+)
 
     assert result == {"success": True, "output": "Q.E.D."}
     mock_call.assert_awaited_once_with(
         "prove",
         {"theorem": "(equal 1 1)", "name": "t", "hints": ['("Goal" :induct t)']},
-    )
+)
 
 
 def test_defthm_async_omits_hints_when_none():
@@ -331,7 +331,7 @@ def test_defthm_async_omits_hints_when_none():
     with patch.object(
         client, "_call_tool",
         new=AsyncMock(return_value={"success": True, "output": "Q.E.D."}),
-    ) as mock_call:
+) as mock_call:
         asyncio.run(client._defthm_async("t", "(equal 1 1)", None))
 
     assert mock_call.await_args_list[0].args[1] == {
@@ -347,7 +347,7 @@ def test_defthm_async_falls_back_to_evaluate_on_failure():
             {"success": False, "output": "", "error": "prove failed"},
             {"success": True, "output": "Q.E.D.", "error": None},
         ]),
-    ) as mock_call:
+) as mock_call:
         result = asyncio.run(client._defthm_async("t", "(equal 1 1)", None))
 
     assert result["success"] is True
@@ -361,7 +361,7 @@ def test_save_checkpoint_async():
     client = ACL2Client()
     with patch.object(
         client, "_call_tool", new=AsyncMock(return_value={"success": True})
-    ) as mock_call:
+) as mock_call:
         result = asyncio.run(client._save_checkpoint_async("cp"))
 
     assert result == {"success": True}
@@ -372,7 +372,7 @@ def test_restore_checkpoint_async():
     client = ACL2Client()
     with patch.object(
         client, "_call_tool", new=AsyncMock(return_value={"success": True})
-    ) as mock_call:
+) as mock_call:
         result = asyncio.run(client._restore_checkpoint_async("cp"))
 
     assert result == {"success": True}
@@ -404,7 +404,7 @@ def test_start_and_stop_with_mocked_transport():
             session.initialize.assert_awaited_once()
             session.call_tool.assert_awaited_once_with(
                 "evaluate", arguments={"form": "(set-ignore-ok t)"}
-            )
+)
         finally:
             client.stop()
 

@@ -134,7 +134,7 @@ class PERFConfig:
         "2) After inversion on the step hypothesis, destruct the nested conditionals (op_reg, etc.) "
         "   rather than applying the induction hypothesis directly. "
         "3) Use distinct case analysis for each branch of the operation."
-    )
+)
 
     # On‑demand backtracking triggers
     backtracking_on_demand_enabled: bool = False
@@ -178,7 +178,7 @@ class PERFConfig:
             if dim not in VALID_DIMENSIONS:
                 raise ValueError(
                     f"Invalid dimension '{dim}'. Valid dimensions: {sorted(VALID_DIMENSIONS)}"
-                )
+)
 
         # Beam robustness and repair persistence
         if self.min_beam_size < 2:
@@ -186,7 +186,7 @@ class PERFConfig:
         if self.perf_light_repair_attempts < 2:
             raise ValueError(
                 f"perf_light_repair_attempts must be at least 2, got {self.perf_light_repair_attempts}"
-            )
+)
 
         # Scoring settings
         if self.scoring_tournament_size < 1:
@@ -194,7 +194,7 @@ class PERFConfig:
         if not 0.0 <= self.generation_temperature <= 1.0:
             raise ValueError(
                 f"generation_temperature must be between 0.0 and 1.0, got {self.generation_temperature}"
-            )
+)
 
         # Verification settings
         if self.max_workers < 1:
@@ -206,21 +206,21 @@ class PERFConfig:
         if not 0.0 <= self.trace_alignment_weight <= 1.0:
             raise ValueError(
                 f"trace_alignment_weight must be between 0.0 and 1.0, got {self.trace_alignment_weight}"
-            )
+)
 
         # Temperature scheduling
         if not 0.0 <= self.temperature_decay <= 1.0:
             raise ValueError(
                 f"temperature_decay must be between 0.0 and 1.0, got {self.temperature_decay}"
-            )
+)
         if not 0.0 <= self.temperature_min <= 1.0:
             raise ValueError(
                 f"temperature_min must be between 0.0 and 1.0, got {self.temperature_min}"
-            )
+)
         if self.temperature_decay > 0 and self.temperature_min >= self.generation_temperature:
             raise ValueError(
                 "temperature_min must be less than generation_temperature when decay is active"
-            )
+)
 
         # Early stopping
         if self.early_stop_patience < 0:
@@ -232,7 +232,7 @@ class PERFConfig:
         if self.max_tool_failures_before_fallback < 0:
             raise ValueError(
                 f"max_tool_failures_before_fallback must be >= 0, got {self.max_tool_failures_before_fallback}"
-            )
+)
         if self.coqc_timeout < 1:
             raise ValueError(f"coqc_timeout must be >= 1, got {self.coqc_timeout}")
 
@@ -249,7 +249,7 @@ class PERFConfig:
         if self.error_history_max_entries < 1:
             raise ValueError(
                 f"error_history_max_entries must be >= 1, got {self.error_history_max_entries}"
-            )
+)
 
         # NEW: Adaptive branching validation
         if not isinstance(self.adaptive_branching_enabled, bool):
@@ -257,12 +257,12 @@ class PERFConfig:
         if self.min_branches_for_hard_obligations < 1:
             raise ValueError(
                 f"min_branches_for_hard_obligations must be >= 1, got {self.min_branches_for_hard_obligations}"
-            )
+)
         if self.max_branches_for_hard_obligations < self.min_branches_for_hard_obligations:
             raise ValueError(
                 f"max_branches_for_hard_obligations ({self.max_branches_for_hard_obligations}) must be >= "
                 f"min_branches_for_hard_obligations ({self.min_branches_for_hard_obligations})"
-            )
+)
 
         # NEW: MC guided prompt validation
         if not isinstance(self.mc_guided_prompt_enabled, bool):
@@ -272,81 +272,81 @@ class PERFConfig:
         if not isinstance(self.proof_pattern_cache_path, str):
             raise ValueError(
                 f"proof_pattern_cache_path must be a string, got {type(self.proof_pattern_cache_path)}"
-            )
+)
 
         # Backtracking settings validation
         if self.backtracking_stagnation_depth < 1:
             raise ValueError(
                 f"backtracking_stagnation_depth must be >= 1, got {self.backtracking_stagnation_depth}"
-            )
+)
         if self.backtracking_max_restarts < 0:
             raise ValueError(
                 f"backtracking_max_restarts must be >= 0, got {self.backtracking_max_restarts}"
-            )
+)
         if self.backtracking_max_backtrack_depth < 0:
             raise ValueError(
                 f"backtracking_max_backtrack_depth must be >= 0, got {self.backtracking_max_backtrack_depth}"
-            )
+)
         if self.backtracking_restore_beam_size < 1:
             raise ValueError(
                 f"backtracking_restore_beam_size must be >= 1, got {self.backtracking_restore_beam_size}"
-            )
+)
 
         # Backtracking scoring enhancements validation
         if not 0.0 <= self.backtracking_diversity_weight <= 1.0:
             raise ValueError(
                 f"backtracking_diversity_weight must be in [0.0, 1.0], got {self.backtracking_diversity_weight}"
-            )
+)
         if self.backtracking_scoring_noise_std < 0.0:
             raise ValueError(
                 f"backtracking_scoring_noise_std must be >= 0.0, got {self.backtracking_scoring_noise_std}"
-            )
+)
         for dim in self.backtracking_diversity_dimensions:
             if dim not in VALID_DIMENSIONS:
                 raise ValueError(
                     f"Invalid diversity dimension '{dim}'. Valid dimensions: {sorted(VALID_DIMENSIONS)}"
-                )
+)
         if self.backtracking_alternate_primary_dimension:
             if self.backtracking_alternate_primary_dimension not in VALID_DIMENSIONS:
                 raise ValueError(
                     f"alternate_primary_dimension must be a valid dimension, "
                     f"got '{self.backtracking_alternate_primary_dimension}'"
-                )
+)
 
         # Forced regeneration validation
         if self.backtracking_regeneration_temperature_boost < 0.0:
             raise ValueError(
                 f"backtracking_regeneration_temperature_boost must be >= 0.0, "
                 f"got {self.backtracking_regeneration_temperature_boost}"
-            )
+)
 
         # On‑demand backtracking triggers validation
         if self.backtracking_on_demand_force_every < 0:
             raise ValueError(
                 f"backtracking_on_demand_force_every must be >= 0, got {self.backtracking_on_demand_force_every}"
-            )
+)
         if self.backtracking_on_demand_time_limit < 0.0:
             raise ValueError(
                 f"backtracking_on_demand_time_limit must be >= 0.0, got {self.backtracking_on_demand_time_limit}"
-            )
+)
         if self.backtracking_on_demand_max_same_error < 0:
             raise ValueError(
                 f"backtracking_on_demand_max_same_error must be >= 0, got {self.backtracking_on_demand_max_same_error}"
-            )
+)
 
         # Reflection quality assessment validation
         if self.reflection_quality_window < 1:
             raise ValueError(
                 f"reflection_quality_window must be >= 1, got {self.reflection_quality_window}"
-            )
+)
         if not 0.0 <= self.min_reflection_quality <= 1.0:
             raise ValueError(
                 f"min_reflection_quality must be between 0.0 and 1.0, got {self.min_reflection_quality}"
-            )
+)
         if self.max_reflection_retries < 0:
             raise ValueError(
                 f"max_reflection_retries must be >= 0, got {self.max_reflection_retries}"
-            )
+)
 
         # Reflection quality weights
         if not isinstance(self.reflection_quality_weights, dict):
@@ -363,7 +363,7 @@ class PERFConfig:
             raise ValueError(
                 f"backtrack_diversity_boost_after_stagnation must be in [0.0, 1.0], "
                 f"got {self.backtrack_diversity_boost_after_stagnation}"
-            )
+)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the configuration to a flat dictionary for serialization."""
@@ -450,7 +450,7 @@ class PERFConfig:
             logger.warning(
                 "PERF is enabled but use_proof_library is also true. "
                 "PERF will disable the proof library to prevent cache bypass."
-            )
+)
 
         diversity = perf_cfg.get("diversity_strategies", None)
         if diversity is None:
@@ -462,10 +462,10 @@ class PERFConfig:
         if isinstance(error_history_cfg, dict):
             error_history_enabled = error_history_cfg.get(
                 "enabled", perf_cfg.get("error_history_enabled", True)
-            )
+)
             error_history_max_entries = error_history_cfg.get(
                 "max_entries", perf_cfg.get("error_history_max_entries", 200)
-            )
+)
         else:
             error_history_enabled = perf_cfg.get("error_history_enabled", True)
             error_history_max_entries = perf_cfg.get("error_history_max_entries", 200)
@@ -474,15 +474,15 @@ class PERFConfig:
         if isinstance(adaptive_cfg, dict):
             adaptive_enabled = adaptive_cfg.get(
                 "enabled", perf_cfg.get("adaptive_branching_enabled", True)
-            )
+)
             min_branches_hard = adaptive_cfg.get(
                 "min_branches_for_hard_obligations",
                 perf_cfg.get("min_branches_for_hard_obligations", 6),
-            )
+)
             max_branches_hard = adaptive_cfg.get(
                 "max_branches_for_hard_obligations",
                 perf_cfg.get("max_branches_for_hard_obligations", 12),
-            )
+)
         else:
             adaptive_enabled = perf_cfg.get("adaptive_branching_enabled", True)
             min_branches_hard = perf_cfg.get("min_branches_for_hard_obligations", 6)
@@ -491,7 +491,7 @@ class PERFConfig:
         mc_guided_prompt_enabled = perf_cfg.get("mc_guided_prompt_enabled", False)
         proof_pattern_cache_path = perf_cfg.get(
             "proof_pattern_cache_path", "build/perf_proof_patterns.json"
-        )
+)
 
         bt_cfg = perf_cfg.get("backtracking", {})
         on_demand_cfg = bt_cfg.get("on_demand", {})
@@ -571,8 +571,8 @@ class PERFConfig:
                     "2) After inversion on the step hypothesis, destruct the nested conditionals (op_reg, etc.) "
                     "   rather than applying the induction hypothesis directly. "
                     "3) Use distinct case analysis for each branch of the operation."
-                ),
-            ),
+),
+),
             backtracking_on_demand_enabled=on_demand_cfg.get("enabled", False),
             backtracking_on_demand_force_every=on_demand_cfg.get("force_every", 0),
             backtracking_on_demand_time_limit=on_demand_cfg.get("time_limit", 0.0),
@@ -585,15 +585,15 @@ class PERFConfig:
             backtrack_force_strategy_switch=perf_cfg.get("backtrack_force_strategy_switch", False),
             backtrack_diversity_boost_after_stagnation=perf_cfg.get(
                 "backtrack_diversity_boost_after_stagnation", 0.2
-            ),
-        )
+),
+)
 
     @classmethod
     def from_obligation_metadata(
         cls,
         global_config: "PERFConfig",
         obligation_metadata: Dict[str, Any]
-    ) -> "PERFConfig":
+) -> "PERFConfig":
         """Merge obligation‑level metadata overrides into the global PERF config."""
         perf_override = obligation_metadata.get("perf", {})
         kwargs = global_config.to_dict()
@@ -637,7 +637,7 @@ def validate_perf_against_config(config: Dict[str, Any]) -> None:
             "To fix:\n"
             "  - Set 'proof.perf.enabled: false' to disable PERF, OR\n"
             "  - Set 'provers.koika.use_proof_library: false' to enable PERF with library bypass."
-        )
+)
 
 
 def get_perf_config(config: Optional[Dict[str, Any]] = None) -> PERFConfig:

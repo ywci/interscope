@@ -292,14 +292,14 @@ def simulate_design(
     if spec_module.inputs:
         tb_path = _generate_input_testbench(
             design_name, output_dir, spec_module.inputs, cycles, params
-        )
+)
     else:
         verilator_sim.generate_testbench(
             top_module=design_name,
             output_path=tb_path,
             vcd_filename="sim.vcd",
             cycles=cycles
-        )
+)
 
     # 4. Run Verilator (with coverage if requested)
     vcd_file = output_dir / "traces" / f"{design_name}.vcd"
@@ -322,7 +322,7 @@ def simulate_design(
             verilator_path=verilator_path or config.get("verification", {}).get("verilator_path"),
             testbench_path=tb_path,
             extra_verilator_args=extra_args,
-        )
+)
     except Exception as e:
         raise SimulationError(f"Verilator simulation failed: {e}") from e
 
@@ -343,4 +343,4 @@ def simulate_design(
         coverage=coverage_pct,
         vcd_path=str(vcd_result),
         metadata={"simulation_tool": "verilator"},
-    )
+)

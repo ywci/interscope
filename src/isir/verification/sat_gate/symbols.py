@@ -1,9 +1,8 @@
 # src/isir/verification/sat_gate/symbols.py
 #
-# Symbol table: name -> variable -> name round-trip for named feedback (§14.1).
-"""Symbol table with injective name <-> variable round-trip."""
+# Symbol table: name -> variable -> name round-trip for named feedback.
 
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 
 class SymbolTable:

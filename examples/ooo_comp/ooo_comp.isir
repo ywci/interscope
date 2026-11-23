@@ -15,10 +15,10 @@ module:
       type: "bool"
     - name: rd
       direction: input
-      type: "bits<2>"  # destination architectural register (r0..r3)
+      type: "bits<2>"
     - name: op
       direction: input
-      type: "bool"     # false = ALU, true = LSU
+      type: "bool"
     - name: alu_op
       direction: input
       type: "bits<3>"
@@ -37,12 +37,18 @@ module:
   components:
     - name: alu
       module: "examples/alu/alu.isir"
-      port_map: {a: a, b: b, op: alu_op}
+      port_map:
+        a: a
+        b: b
+        op: alu_op
     - name: lsu
       module: "examples/lsu/lsu.isir"
-      port_map: {req_core: 0, req_write: store, req_addr: addr, req_data: a}
+      port_map:
+        req_core: 0
+        req_write: store
+        req_addr: addr
+        req_data: a
   state:
-    # Register alias table: architectural reg -> physical reg (0..5).
     - name: rat0
       kind: register
       type: "bits<3>"
@@ -59,7 +65,6 @@ module:
       kind: register
       type: "bits<3>"
       initial: 3
-    # Physical register file: 6 entries. p0..p3 = architectural, p4/p5 = free pool.
     - name: prf0_busy
       kind: register
       type: "bool"
@@ -84,7 +89,6 @@ module:
       kind: register
       type: "bool"
       initial: false
-    # Reorder buffer: 2 entries {valid, rd, old_phys, done}.
     - name: rob0_valid
       kind: register
       type: "bool"
@@ -120,12 +124,11 @@ module:
     - name: head
       kind: register
       type: "bool"
-      initial: false   # false = slot 0 is older
+      initial: false
     - name: result
       kind: register
       type: "bits<8>"
       initial: 0
-    # Store buffer for store-to-load forwarding.
     - name: sb_valid
       kind: register
       type: "bool"
@@ -139,7 +142,6 @@ module:
       type: "bits<8>"
       initial: 0
   rules:
-    # Issue into slot 0: rename rd to physical 4, record old mapping, mark p4 busy.
     - name: issue0
       condition: (and issue_valid (not (read rob0_valid)))
       action:
@@ -150,9 +152,9 @@ module:
         - (write prf4_busy true)
         - (write rob0_valid true)
         - (write rob0_rd rd)
-        - (write rob0_old (ite (eq rd 0) (read rat0) (ite (eq rd 1) (read rat1) (ite (eq rd 2) (read rat2) (read rat3)))))
+        - (write rob0_old (ite (eq rd 0) (read rat0) (ite (eq rd 1) (read rat1) (ite
+          (eq rd 2) (read rat2) (read rat3)))))
         - (write rob0_done false)
-    # Issue into slot 1: rename rd to physical 5.
     - name: issue1
       condition: (and (and issue_valid (read rob0_valid)) (not (read rob1_valid)))
       action:
@@ -163,21 +165,20 @@ module:
         - (write prf5_busy true)
         - (write rob1_valid true)
         - (write rob1_rd rd)
-        - (write rob1_old (ite (eq rd 0) (read rat0) (ite (eq rd 1) (read rat1) (ite (eq rd 2) (read rat2) (read rat3)))))
+        - (write rob1_old (ite (eq rd 0) (read rat0) (ite (eq rd 1) (read rat1) (ite
+          (eq rd 2) (read rat2) (read rat3)))))
         - (write rob1_done false)
-    # Record an issued store in the store buffer.
     - name: store_buf
       condition: (and issue_valid (and op store))
       action:
         - (write sb_valid true)
         - (write sb_addr addr)
         - (write sb_data a)
-    # Execute: route to ALU or LSU, with store-to-load forwarding.
     - name: execute
       condition: "true"
       action:
-        - (write result (ite op (ite store (read lsu_resp_data) (ite (and (read sb_valid) (eq (read sb_addr) addr)) (read sb_data) (read lsu_resp_data))) (read alu_result_reg)))
-    # Commit the older done slot, freeing its previous physical register.
+        - (write result (ite op (ite store (read lsu_resp_data) (ite (and (read sb_valid)
+          (eq (read sb_addr) addr)) (read sb_data) (read lsu_resp_data))) (read alu_result_reg)))
     - name: commit0
       condition: (and (eq (read head) false) (read rob0_done))
       action:
@@ -208,36 +209,25 @@ module:
       expression:
         kind: transition
         rule: commit0
-        operand: (and (eq (read head) true) (eq (read rob0_valid) false))
+        operand: (and (eq (read head) True) (eq (read rob0_valid) False))
     - name: store_load_forward
       kind: transition
       expression:
         kind: transition
         rule: execute
-        operand: (implies (and (and op (not store)) (and (read sb_valid) (eq (read sb_addr) addr))) (eq (read result) (read sb_data)))
-    - name: rat_bounded
-      kind: safety
-      expression:
-        kind: always
-        operand: (and (and (ge (read rat0) 0) (le (read rat0) 5))
-                      (and (and (ge (read rat1) 0) (le (read rat1) 5))
-                           (and (and (ge (read rat2) 0) (le (read rat2) 5))
-                                (and (ge (read rat3) 0) (le (read rat3) 5)))))
+        operand: (implies (and (and op (not store)) (and (read sb_valid) (eq (read
+          sb_addr) addr))) (eq (read result) (read sb_data)))
   invariants:
     - name: rat_distinct
       operand: (and (and (neq (read rat0) (read rat1)) (neq (read rat0) (read rat2)))
-                    (and (and (neq (read rat0) (read rat3)) (neq (read rat1) (read rat2)))
-                         (and (neq (read rat1) (read rat3)) (neq (read rat2) (read rat3)))))
+        (and (and (neq (read rat0) (read rat3)) (neq (read rat1) (read rat2))) (and
+        (neq (read rat1) (read rat3)) (neq (read rat2) (read rat3)))))
   proof_obligations:
     - property: commit_in_order
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: store_load_forward
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: rat_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

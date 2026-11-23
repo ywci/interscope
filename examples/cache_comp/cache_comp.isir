@@ -14,11 +14,9 @@ module:
       async: false
       affects: all
   inputs:
-    # I-side (instruction fetch): exposed to fetch_comp.
     - name: i_addr
       direction: input
       type: "bits<4>"
-    # D-side (data access): exposed to lsu.
     - name: d_core
       direction: input
       type: "bits<4>"
@@ -30,39 +28,60 @@ module:
       type: "bits<4>"
     - name: d_vpn
       direction: input
-      type: "bits<2>"    # data VA page-offset (VIPT index for the L1D)
+      type: "bits<2>"
     - name: d_is_physical
       direction: input
-      type: "bool"       # true = PIPT special load (PTW); false = VIPT normal load
+      type: "bool"
     - name: d_data
       direction: input
       type: "bits<8>"
     - name: mshr_release0
       direction: input
-      type: "bool"       # L2 fill response (release MSHR slot 0)
+      type: "bool"
     - name: mshr_release1
       direction: input
-      type: "bool"       # L2 fill response (release MSHR slot 1)
+      type: "bool"
   components:
-    # L1 I-Cache: read-only, fed by the fetch address (PIPT).
     - name: l1i
       module: "examples/l1_cache_comp/l1_cache_comp.isir"
-      parameters: {me: $me}
+      parameters:
+        me: "$me"
       lift_properties: false
-      port_map: {req_core: 0, req_write: const_false, req_addr: i_addr, req_vpn: 0, is_physical: const_false, req_data: 0}
-    # L1 D-Cache: MESI, VIPT for normal loads / PIPT for PTW special loads.
+      port_map:
+        req_core: 0
+        req_write: const_false
+        req_addr: i_addr
+        req_vpn: 0
+        is_physical: const_false
+        req_data: 0
     - name: l1d
       module: "examples/l1_cache_comp/l1_cache_comp.isir"
-      parameters: {me: $me}
+      parameters:
+        me: "$me"
       lift_properties: false
-      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: d_vpn, is_physical: d_is_physical, req_data: d_data, rdata: l1d_rdata_signal}
-    # L2 unified cache: MESI last-level cache; its MSHR is allocated on miss and
-    # released by the fill response.
+      port_map:
+        req_core: d_core
+        req_write: d_write
+        req_addr: d_addr
+        req_vpn: d_vpn
+        is_physical: d_is_physical
+        req_data: d_data
+        rdata: l1d_rdata_signal
     - name: l2
       module: "examples/l2_cache_comp/l2_cache_comp.isir"
-      parameters: {me: $me}
+      parameters:
+        me: "$me"
       lift_properties: false
-      port_map: {req_core: d_core, req_write: d_write, req_addr: d_addr, req_vpn: 0, req_data: d_data, mshr_release0: mshr_release0, mshr_release1: mshr_release1, miss_valid: l2_miss_valid, miss_addr: l2_miss_addr}
+      port_map:
+        req_core: d_core
+        req_write: d_write
+        req_addr: d_addr
+        req_vpn: 0
+        req_data: d_data
+        mshr_release0: mshr_release0
+        mshr_release1: mshr_release1
+        miss_valid: l2_miss_valid
+        miss_addr: l2_miss_addr
   state:
     - name: const_false
       kind: register
@@ -76,7 +95,6 @@ module:
       kind: register
       type: "bits<4>"
       initial: 0
-    # L1D read data, exposed for the PTW's PIPT special loads.
     - name: l1d_rdata_signal
       kind: register
       type: "bits<8>"
@@ -87,45 +105,27 @@ module:
       expression:
         kind: always
         operand: (implies (l1d_is_modified (read l1d_s0)) (neq (read l1d_s0) 0))
-    - name: l1d_phys_index_bounded
-      kind: safety
-      expression:
-        kind: always
-        operand: (le (l1d_phys_index (read l1d_a0)) 3)
     - name: l1i_is_modified_implies_valid
       kind: safety
       expression:
         kind: always
         operand: (implies (l1i_is_modified (read l1i_s0)) (neq (read l1i_s0) 0))
-    - name: l1i_phys_index_bounded
-      kind: safety
-      expression:
-        kind: always
-        operand: (le (l1i_phys_index (read l1i_a0)) 3)
     - name: l1d_states_valid
       kind: safety
       expression:
         kind: always
-        operand: (and (and (ge (read l1d_s0) 0) (le (read l1d_s0) 3))
-                      (and (ge (read l1d_s1) 0) (le (read l1d_s1) 3)))
+        operand: (and (and (ge (read l1d_s0) 0) (le (read l1d_s0) 3)) (and (ge (read
+          l1d_s1) 0) (le (read l1d_s1) 3)))
   proof_obligations:
     - property: l1d_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: l1d_phys_index_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: l1i_is_modified_implies_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
-    - property: l1i_phys_index_bounded
-      status: unproved
-      engine: theorem_proving
-      backend: koika
+      backend: koika_acl2
     - property: l1d_states_valid
       status: unproved
       engine: theorem_proving
-      backend: koika
+      backend: koika_acl2

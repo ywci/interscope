@@ -85,10 +85,10 @@ class ProofPatternCache:
             config = get_config()
             cache_path_str = config.get("proof", {}).get(
                 "perf", {}
-            ).get(
+).get(
                 "proof_pattern_cache_path",
                 "build/perf_proof_patterns.json",
-            )
+)
             cache_path = Path(cache_path_str)
 
         self._cache_path = Path(cache_path)
@@ -124,11 +124,11 @@ class ProofPatternCache:
                     "Loaded proof pattern cache from %s (%d designs)",
                     self._cache_path,
                     len(self._cache),
-                )
+)
             else:
                 logger.warning(
                     "Proof pattern cache file is not a valid dict; starting empty."
-                )
+)
         except json.JSONDecodeError as e:
             logger.error("Failed to parse proof pattern cache: %s", e)
         except Exception as e:
@@ -146,7 +146,7 @@ class ProofPatternCache:
                 "Saved proof pattern cache to %s (%d designs)",
                 self._cache_path,
                 len(self._cache),
-            )
+)
         except Exception as e:
             logger.error("Failed to save proof pattern cache: %s", e)
 
@@ -155,7 +155,7 @@ class ProofPatternCache:
         design_name: str,
         property_name: str,
         proof_script: str,
-    ) -> None:
+) -> None:
         """
         Store a successful proof script for a design/property.
 
@@ -177,14 +177,14 @@ class ProofPatternCache:
                 "Stored successful proof for '%s/%s' in pattern cache.",
                 design_name,
                 property_name,
-            )
+)
             self._save()
 
     def get_successful_proof(
         self,
         design_name: str,
         property_name: str,
-    ) -> Optional[str]:
+) -> Optional[str]:
         """
         Return the stored proof script for a design/property, or None.
         """
@@ -195,7 +195,7 @@ class ProofPatternCache:
         self,
         property_name: str,
         design_name: Optional[str] = None,
-    ) -> List[str]:
+) -> List[str]:
         """
         Extract reusable tactic patterns from successful proofs.
 
@@ -242,7 +242,7 @@ class ProofPatternCache:
                 logger.info(
                     "Using similar property for reusable patterns (prefix len %d).",
                     best_prefix_len,
-                )
+)
                 return self.extract_reusable_tactics(best_match)
 
             return []
@@ -346,7 +346,7 @@ def get_proof_pattern_cache(config: Optional[Dict[str, Any]] = None) -> ProofPat
             if config is not None:
                 cache_path_str = config.get("proof", {}).get(
                     "perf", {}
-                ).get("proof_pattern_cache_path", "build/perf_proof_patterns.json")
+).get("proof_pattern_cache_path", "build/perf_proof_patterns.json")
                 cache_path = Path(cache_path_str)
                 _cache_instance = ProofPatternCache(cache_path)
             else:

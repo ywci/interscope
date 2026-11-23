@@ -38,7 +38,7 @@ def _compilation_reports():
                 BackendResult(backend="koika", success=True, duration=2.0),
                 BackendResult(backend="acl2", success=False, duration=4.0),
             ],
-        ),
+),
         CompilationReport(
             design_name="d2",
             input_file="b.isir",
@@ -46,9 +46,9 @@ def _compilation_reports():
                 BackendResult(backend="koika", success=True, duration=6.0),
                 BackendResult(
                     backend="verilog_ovl", success=True, duration=None
-                ),
+),
             ],
-        ),
+),
     ]
 
 
@@ -105,13 +105,13 @@ class TestAggregateVerification:
                     ProofObligationResult(
                         property="p1", status=Status.PASS, backend="koika",
                         iterations=10, duration=1.0,
-                    ),
+),
                     ProofObligationResult(
                         property="p2", status=Status.FAIL, backend="koika",
                         iterations=20, duration=2.0,
-                    ),
+),
                 ],
-            ),
+),
             VerificationReport(
                 design_name="d2",
                 backend="acl2",
@@ -119,9 +119,9 @@ class TestAggregateVerification:
                     ProofObligationResult(
                         property="p3", status=Status.PASS, backend="acl2",
                         iterations=None, duration=None,
-                    ),
+),
                 ],
-            ),
+),
         ]
 
         result = aggregate_verification_reports(reports)
@@ -155,11 +155,11 @@ class TestAggregateSimulation:
             SimulationReport(
                 design_name="d1", success=True, cycles=100,
                 coverage=85.0, duration=1.5,
-            ),
+),
             SimulationReport(
                 design_name="d2", success=False, cycles=None,
                 coverage=None, duration=2.5,
-            ),
+),
         ]
 
         result = aggregate_simulation_reports(reports)
@@ -223,7 +223,7 @@ class TestCompilationCsv:
             design_name="d",
             input_file="x.isir",
             results=[BackendResult(backend="koika", success=True)],
-        )
+)
         rows = _flatten_compilation([report])
         assert rows[0]["error_message"] == ""
         assert rows[0]["duration_s"] == ""
@@ -240,13 +240,13 @@ class TestVerificationCsv:
                     property="p1", status=Status.PASS, backend="koika",
                     iterations=5, duration=0.5,
                     details={"automation": "skeleton", "lemmas_used": ["l1", "l2"]},
-                ),
+),
                 ProofObligationResult(
                     property="p2", status=Status.TIMEOUT, backend="koika",
                     error_message="timed out",
-                ),
+),
             ],
-        )
+)
         out = tmp_path / "verification.csv"
         write_verification_csv([report], out)
 
@@ -278,9 +278,9 @@ class TestVerificationCsv:
             obligations=[
                 ProofObligationResult(
                     property="p", status=Status.PASS, backend="koika"
-                )
+)
             ],
-        )
+)
         rows = _flatten_verification([report])
         assert rows[0]["automation"] == ""
         assert rows[0]["lemmas_used"] == ""
@@ -292,11 +292,11 @@ class TestSimulationCsv:
             SimulationReport(
                 design_name="d1", success=True, cycles=42,
                 coverage=99.5, vcd_path="/tmp/t.vcd", duration=1.1,
-            ),
+),
             SimulationReport(
                 design_name="d2", success=False,
                 error_message="mismatch",
-            ),
+),
         ]
         out = tmp_path / "simulation.csv"
         write_simulation_csv(reports, out)

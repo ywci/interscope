@@ -79,10 +79,10 @@ ISSUE_ATTRIBUTION_PRIORITY: Dict[IssueAttribution, int] = {
     IssueAttribution.CROSS_RULE_CONFLICT: 4,
     IssueAttribution.RTL_IMPLEMENTATION_ERROR: 5,
     IssueAttribution.MISSING_PREMISE: 6,
-    IssueAttribution.UNDETERMINED: 7,   # dropped at Stage 2.8; completeness entry
+    IssueAttribution.UNDETERMINED: 7
 }
 
-# The one explicit attribution -> action rule (Stage 2.9).
+# The one explicit attribution -> action rule.
 ATTRIBUTION_TO_ACTION: Dict[IssueAttribution, GenerationAction] = {
     IssueAttribution.CROSS_RULE_CONFLICT: GenerationAction.RESOLVE_SCHEDULE_CONFLICT,
 }
@@ -102,7 +102,7 @@ def attribution_priority(attribution: IssueAttribution) -> int:
 
 @dataclass
 class Finding:
-    """One evidence-derived finding (Section 6)."""
+    """One evidence-derived finding."""
     error_class: ErrorClass
     issue_attribution: IssueAttribution
     verification_mode: VerificationMode
@@ -121,15 +121,15 @@ class Finding:
         self.generation_action = _as(self.generation_action, GenerationAction)
 
     def sort_key(self) -> tuple:
-        """Stage 2.9/3.15 tie-breaker: priority, primary-first, shorter note."""
+        """Tie-breaker: priority, primary-first, shorter note."""
         return (
             attribution_priority(self.issue_attribution),
             0 if self.back_indexed_from is None else 1,
             len(self.evidence_note),
-        )
+)
 
     def to_prompt_dict(self) -> Dict[str, Any]:
-        """Canonical -> prompt-serialized (Section 9); ev_ref/ev_hash omitted."""
+        """Canonical -> prompt-serialized ; ev_ref/ev_hash omitted."""
         d: Dict[str, Any] = {
             "error_class": _v(self.error_class),
             "issue_attribution": _v(self.issue_attribution),
@@ -148,7 +148,7 @@ class Finding:
 
 @dataclass
 class EvolvingItem:
-    """Per-item view: uncertainty + lifecycle state + findings (Section 6)."""
+    """Per-item view: uncertainty + lifecycle state + findings."""
     spec_item_id: str
     verification_status: VerificationStatus = VerificationStatus.PENDING
     provenance: Optional[str] = None
@@ -164,7 +164,7 @@ class EvolvingItem:
         self.findings = [f if isinstance(f, Finding) else Finding(**f) for f in self.findings]
 
     def validate(self) -> List[str]:
-        """Return the Section-6 consistency-constraint violations."""
+        """Return the consistency-constraint violations."""
         errs: List[str] = []
         tag = self.spec_item_id
         if self.verification_status is VerificationStatus.PENDING:
@@ -249,14 +249,14 @@ class RawEvidenceRecord:
 
 
 def evict_findings(findings: List[Finding], cap: int = 3) -> List[Finding]:
-    """Stage 2.9 / 3.15: keep the highest-priority `cap` findings."""
+    """Keep the highest-priority `cap` findings."""
     if len(findings) <= cap:
         return list(findings)
     return sorted(findings, key=Finding.sort_key)[:cap]
 
 
 def synthetic_deferred_finding() -> Finding:
-    """Section 8 Step 1: the deterministic synthetic finding for a deferred item."""
+    """The deterministic synthetic finding for a deferred item."""
     return Finding(
         error_class=ErrorClass.DEFERRED_PLACEHOLDER,
         issue_attribution=IssueAttribution.UNRESOLVED_PLACEHOLDER,
@@ -265,4 +265,4 @@ def synthetic_deferred_finding() -> Finding:
         evidence_note="Verification deferred; stage generation around partial_spec",
         evidence_ref="static_defer",
         evidence_hash="static_defer",
-    )
+)

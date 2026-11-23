@@ -66,7 +66,7 @@ def repair_acl2_hints(
     """
     prompt = _build_hint_repair_prompt(
         statement, error_message, previous_hints, context
-    )
+)
 
     checkpoint_name = None
     if use_checkpoints:
@@ -86,7 +86,7 @@ def repair_acl2_hints(
             logger.warning("LLM returned no usable hints")
             prompt = _append_failure_to_prompt(
                 prompt, None, "No valid hints generated."
-            )
+)
             continue
 
         # 2. Try the new hints
@@ -107,7 +107,7 @@ def repair_acl2_hints(
                 backend="acl2",
                 iterations=attempt + 1,
                 metadata={"automation": "llm_repair", "hints": new_hints}
-            )
+)
 
         # 3. Failure – capture error and feed back to LLM
         new_error = result.get("output", "ACL2 proof failed")
@@ -121,7 +121,7 @@ def repair_acl2_hints(
         backend="acl2",
         iterations=max_attempts,
         metadata={"automation": "llm_repair_exhausted"}
-    )
+)
 
 
 def repair_acl2_defun(
@@ -158,7 +158,7 @@ def repair_acl2_defun(
     """
     prompt = _build_defun_repair_prompt(
         func_name, args, body, guard, error_message
-    )
+)
 
     checkpoint_name = None
     if use_checkpoints:
@@ -172,7 +172,7 @@ def repair_acl2_defun(
         logger.info(
             "ACL2 defun repair attempt %d/%d for '%s'",
             attempt + 1, max_attempts, func_name
-        )
+)
 
         # 1. Get repaired body from LLM
         try:
@@ -181,7 +181,7 @@ def repair_acl2_defun(
             logger.error("LLM call failed during defun repair: %s", e)
             prompt = _append_defun_failure_to_prompt(
                 prompt, "<LLM call failed>", str(e)
-            )
+)
             continue
 
         repaired_body = _extract_defun_body(raw_response)
@@ -189,7 +189,7 @@ def repair_acl2_defun(
             logger.warning("Could not extract a valid body from LLM response")
             prompt = _append_defun_failure_to_prompt(
                 prompt, raw_response, "No valid body extracted."
-            )
+)
             continue
 
         # 2. Validate with ACL2
@@ -210,7 +210,7 @@ def repair_acl2_defun(
                 backend="acl2",
                 iterations=attempt + 1,
                 metadata={"automation": "llm_repair_defun"},
-            )
+)
 
         new_error = result.get("output", "defun failed")
         logger.debug("Defun attempt failed: %s", new_error[:200])
@@ -223,7 +223,7 @@ def repair_acl2_defun(
         backend="acl2",
         iterations=max_attempts,
         metadata={"automation": "llm_repair_exhausted"}
-    )
+)
 
 
 def _build_hint_repair_prompt(
@@ -238,7 +238,7 @@ def _build_hint_repair_prompt(
         error_message=error_message,
         old_hints=previous_hints,
         context=context
-    )
+)
 
 
 def _build_defun_repair_prompt(
@@ -259,7 +259,7 @@ def _build_defun_repair_prompt(
         f"BODY:\n{body}{guard_str}\n\n"
         f"ERROR:\n{error_message}\n\n"
         "Provide a corrected function body. Return ONLY the body expression."
-    )
+)
 
 
 def _append_failure_to_prompt(
@@ -274,7 +274,7 @@ def _append_failure_to_prompt(
         f"The attempt with hints:\n{hints_str}\n"
         f"Failed with error:\n{new_error}\n"
         f"Please provide a different set of hints."
-    )
+)
 
 
 def _append_defun_failure_to_prompt(
@@ -288,7 +288,7 @@ def _append_defun_failure_to_prompt(
         f"The attempt with body:\n{attempted_body}\n"
         f"Failed with error:\n{new_error}\n"
         f"Please provide a corrected body."
-    )
+)
 
 
 def _generate_hints_from_llm(
@@ -393,7 +393,7 @@ def _build_defthm_string(
             f"(defthm {theorem_name}\n"
             f"  {statement}\n"
             f"  :hints ({hints_str}))"
-        )
+)
     return f"(defthm {theorem_name}\n  {statement})"
 
 
@@ -407,5 +407,5 @@ def _build_defun_string(
             f"(defun {func_name} ({args_str})\n"
             f"  (declare (xargs :guard {guard}))\n"
             f"  {body})"
-        )
+)
     return f"(defun {func_name} ({args_str})\n  {body})"

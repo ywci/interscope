@@ -1,7 +1,7 @@
 # src/isir/lowering/evolving.py
 #
-# Phase 1 lowering for the Evolving Specification:
-#   - `confirmed_projection`  : pending state -> Confirmed specification (Section 4)
+# Lowering for the Evolving Specification:
+# - `confirmed_projection`  : pending state -> Confirmed specification 
 #   - `ast_to_evolving`       : preservation pass bridging ast.py's Candidate/OneOf
 #                               uncertainty wrappers into the pending state.
 
@@ -19,7 +19,7 @@ from isir.parser.ast import Candidate, Module, OneOf
 class ConfirmedSpec:
     """The Confirmed specification: the spec body plus the placeholder record.
 
-    Section 4: unresolved placeholders are *lowered* by default (the existing
+    : unresolved placeholders are *lowered* by default (the existing
     lowering emits uninterpreted functions / stubbed rules) or *deferred* when
     the owning item carries `defer_verification: true`.
     """
@@ -29,7 +29,7 @@ class ConfirmedSpec:
 
 
 def confirmed_projection(evolving: EvolvingSpec, spec_module: SpecModule) -> ConfirmedSpec:
-    """Project the `pending` state to the Confirmed specification (Section 4).
+    """Project the `pending` state to the Confirmed specification.
 
     Bodyless functions are ISIR's partial-spec placeholders.  A placeholder whose
     `spec_item_id` is marked `defer_verification` is carried; all others are
@@ -80,7 +80,7 @@ def _item_from(name: str, fields: List[Any]) -> EvolvingItem:
         provenance=sources[0] if sources else None,
         alternatives=alternatives,
         partial_spec={"unresolved": True} if unresolved else None,
-    )
+)
 
 
 def ast_to_evolving(module: Module) -> EvolvingSpec:
@@ -116,13 +116,13 @@ def ast_to_evolving(module: Module) -> EvolvingSpec:
             items.append(EvolvingItem(
                 spec_item_id=fn.name,
                 partial_spec={"unresolved": True},
-            ))
+))
 
     return EvolvingSpec(name=module.name, items=items)
 
 
 def reset_round(verified: EvolvingSpec, modified_spec_items: set, modified_rtl_items: set) -> EvolvingSpec:
-    """Section 6 Round Reset Rule: verified Round k -> pending Round k+1.
+    """ Round Reset Rule: verified Round k -> pending Round k+1.
 
     Items reset to `pending` (empty findings, no round) when (1) their spec
     fields changed, (2) their Candidate RTL span changed, or (3) they hold a
@@ -160,7 +160,7 @@ def reset_round(verified: EvolvingSpec, modified_spec_items: set, modified_rtl_i
                 nl_anchor=item.nl_anchor,
                 verification_round=None,
                 findings=[],
-            ))
+))
         else:
             new_items.append(item)
     return EvolvingSpec(name=verified.name, items=new_items)

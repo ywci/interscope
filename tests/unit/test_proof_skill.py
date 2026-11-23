@@ -87,7 +87,7 @@ class TestProofSkillACL2(unittest.TestCase):
         }
         self.mock_prover.prove_theorem.return_value = ProofResult(
             success=True, proof_script="(defthm no_overflow_correct ...)"
-        )
+)
         result = self.skill._prove_acl2(obligation, context)
         self.assertTrue(result.success)
         self.assertEqual(result.proof_script, "(defthm no_overflow_correct ...)")
@@ -96,7 +96,7 @@ class TestProofSkillACL2(unittest.TestCase):
             statement="(implies (full st) (not (enqueue st)))",
             hints=["((Goal:induct t))"],
             initial_script=None,
-        )
+)
 
     def test_prove_acl2_without_statement(self):
         obligation = {"property": "no_overflow"}
@@ -109,7 +109,7 @@ class TestProofSkillACL2(unittest.TestCase):
             statement=None,
             hints=None,
             initial_script=None,
-        )
+)
 
     def test_prove_acl2_missing_file_path(self):
         obligation = {"property": "no_overflow"}
@@ -130,7 +130,7 @@ class TestProofSkillACL2(unittest.TestCase):
         context = {"acl2_file_path": "/path/file.lisp", "theorem_name": "no_overflow_correct"}
         self.mock_prover.prove_theorem.return_value = ProofResult(
             success=False, error_message="induction error"
-        )
+)
         result = self.skill._prove_acl2(obligation, context)
         self.assertFalse(result.success)
         self.assertIn("induction error", result.error_message)
@@ -169,7 +169,7 @@ class TestProofSkillKoika(unittest.TestCase):
         context = {"coq_file_path": "/path/file.v", "theorem_name": "my_prop_proved"}
         self.mock_prover.prove_theorem.return_value = ProofResult(
             success=True, proof_script="Proof. trivial. Qed."
-        )
+)
         result = self.skill._prove_koika(obligation, context)
         self.assertTrue(result.success)
         self.assertEqual(result.metadata["backend"], "koika")
@@ -180,7 +180,7 @@ class TestProofSkillKoika(unittest.TestCase):
             tactic_hints=None,
             initial_script=None,
             shared_lemmas=None,
-        )
+)
 
     def test_prove_koika_missing_coq_file(self):
         obligation = {"property": "my_prop"}

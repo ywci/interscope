@@ -1,5 +1,4 @@
 # tests/sat_gate/test_smt_array_backend.py
-"""SMT array backend capability matrix + memory helpers (§17)."""
 
 from isir.verification.sat_gate.smt_array_backend import (
     SmtArrayCapability, probe_capability, smt_mem_decl, smt_mem_read, smt_mem_write,
@@ -15,11 +14,11 @@ def test_ind_step_memory_is_supported():
     assert cap.cert_tier is CertTier.T1
 
 
-def test_base_entail_is_unsupported_in_phase2():
+def test_base_entail_is_unsupported():
     assert probe_capability(QueryKind.BASE_ENTAIL, has_memory=False) is None
 
 
-def test_falsify_init_is_unsupported_in_phase2():
+def test_falsify_init_is_unsupported():
     assert probe_capability(QueryKind.FALSIFY_INIT, has_memory=False) is None
 
 
