@@ -45,7 +45,7 @@ class AssertSequenceOp(Operation):
 class AssertPropertyOp(Operation):
     """Temporal property (always, eventually, until) with optional bound."""
     name: str = "assert.property"
-    kind: str = "always"              # always, eventually, until
+    kind: str = "always"              # always, eventually, until, after
     operand: Optional[str] = None     # for always/eventually
     left: Optional[str] = None        # for until
     right: Optional[str] = None       # for until

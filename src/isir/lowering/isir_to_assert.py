@@ -69,6 +69,10 @@ def _convert_temporal_expr(expr: dict, functions=None) -> asserts.AssertProperty
         return asserts.AssertPropertyOp(kind="eventually", operand=operand, bound=bound)
     elif kind == "until":
         return asserts.AssertPropertyOp(kind="until", left=left, right=right, bound=bound)
+    elif kind == "after":
+        # Bounded `after k` property: the operand holds exactly k cycles after
+        # the property evaluation point.
+        return asserts.AssertPropertyOp(kind="after", operand=operand, bound=bound)
     else:
         raise ValueError(f"Unknown temporal kind: {kind}")
 

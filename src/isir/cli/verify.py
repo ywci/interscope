@@ -453,6 +453,7 @@ def verify_spec(args: argparse.Namespace) -> int:
                     filtered.append(po)
         if not filtered:
             logger.warning(f"No proof obligations match backend '{args.backend}'.")
+            print(f"SKIPPED: no proof obligations match backend '{args.backend}'.")
             return 0
         obligations = filtered
 

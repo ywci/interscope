@@ -80,3 +80,11 @@ class TestSelfIdentityAutoProof:
         m = re.search(r"Theorem x_self_proved : .*?\n(Proof\..*?Qed\.|Admitted\.)", code, re.DOTALL)
         assert m and "Qed." in m.group(1), code[-500:]
         assert "Admitted." not in m.group(1)
+
+
+def test_admitted_lemmas_reported():
+    """`Lemma … Admitted.` leaves are axiom-closure dependencies too."""
+    from isir.lowering.coq_verify import find_admitted
+    text = ("Lemma foo : True.\nProof. Admitted.\n"
+            "Theorem bar : True.\nProof. exact I. Qed.\n")
+    assert find_admitted(text) == ["foo"]

@@ -244,43 +244,37 @@ run_verify_examples() {
     log_info "Verifying ${total} example(s) with backend '${backend}'..."
     echo ""
 
+    local skipped=0
     for f in "${examples[@]}"; do
         name="$(basename "$f" .isir)"
-        if [[ $quiet -eq 1 ]]; then
-            if env PYTHONPATH=src .venv/bin/python -m isir.cli.verify \
-                    "$f" --backend "$backend" "${pass_args[@]}" >/dev/null 2>&1; then
-                ok=1
-            else
-                ok=0
-            fi
-        else
+        local out rc
+        out=$(env PYTHONPATH=src .venv/bin/python -m isir.cli.verify \
+                "$f" --backend "$backend" "${pass_args[@]+"${pass_args[@]}"}" 2>&1) && rc=0 || rc=$?
+        if [[ $quiet -eq 0 ]]; then
             echo ""
             log_info "--- ${name} ---"
-            if env PYTHONPATH=src .venv/bin/python -m isir.cli.verify \
-                    "$f" --backend "$backend" "${pass_args[@]}"; then
-                ok=1
-            else
-                ok=0
-            fi
+            echo "$out"
         fi
-
-        if [[ $ok -eq 1 ]]; then
-            passed=$((passed + 1))
-            echo "  ${GREEN}${BOLD}[PASS]${RESET} ${name}"
-        else
+        if [[ $rc -ne 0 ]]; then
             failed=$((failed + 1))
             failed_names+=("${name}")
             echo "  ${RED}${BOLD}[FAIL]${RESET} ${name}"
+        elif [[ "$out" == *"SKIPPED: no proof obligations"* ]]; then
+            skipped=$((skipped + 1))
+            echo "  ${YELLOW}${BOLD}[SKIP]${RESET} ${name}"
+        else
+            passed=$((passed + 1))
+            echo "  ${GREEN}${BOLD}[PASS]${RESET} ${name}"
         fi
     done
 
     echo ""
-    echo "${BOLD}===== Examples: ${passed} passed, ${failed} failed =====${RESET}"
+    echo "${BOLD}===== Examples: ${passed} passed, ${failed} failed, ${skipped} skipped =====${RESET}"
     if [[ $failed -gt 0 ]]; then
         echo "  Failed: ${failed_names[*]}"
         return 1
     fi
-    log_success "All ${total} examples passed."
+    log_success "All ${total} examples passed (${skipped} skipped)."
 }
 
 run_verify_semantics() {

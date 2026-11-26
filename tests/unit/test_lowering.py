@@ -101,6 +101,47 @@ def test_isir_to_assert_eventually_property():
     assert assert_mod.properties[0].bound == 10
 
 
+def test_isir_to_assert_after_property():
+    """Bounded `after k` properties lower to AssertPropertyOp kind=after."""
+    spec_mod = isir.SpecModule(
+        name="test",
+        clocks=[{"name": "clk", "edge": "posedge"}],
+        resets=[],
+    )
+    prop_op = isir.SpecPropertyOp(
+        prop_name="pc_nonneg_after_3",
+        kind="bounded",
+        expression={"kind": "after", "operand": "(ge (read PC) 0)", "bound": 3},
+    )
+    spec_mod.property_ops = [prop_op]
+    spec_mod.directive_ops = []
+
+    assert_mod = isir_to_assert.convert(spec_mod)
+    assert len(assert_mod.properties) == 1
+    assert assert_mod.properties[0].kind == "after"
+    assert assert_mod.properties[0].bound == 3
+
+
+def test_assert_to_vhdl_with_after():
+    """The VHDL backend emits PSL `next_e[bound]` for after properties."""
+    spec_mod = isir.SpecModule(
+        name="test",
+        clocks=[{"name": "clk", "edge": "posedge"}],
+        resets=[],
+    )
+    prop_op = isir.SpecPropertyOp(
+        prop_name="pc_nonneg_after_3",
+        kind="bounded",
+        expression={"kind": "after", "operand": "(ge (read PC) 0)", "bound": 3},
+    )
+    spec_mod.property_ops = [prop_op]
+    spec_mod.directive_ops = []
+
+    assert_mod = isir_to_assert.convert(spec_mod)
+    vhdl_code = assert_to_vhdl.convert(assert_mod)
+    assert "next_e[3]" in vhdl_code
+
+
 def test_assert_to_sva_basic():
     spec_mod = create_test_spec_module()
     assert_mod = isir_to_assert.convert(spec_mod)

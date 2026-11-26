@@ -15,10 +15,11 @@ from typing import Iterable, List
 
 
 def find_admitted(coq_text: str) -> List[str]:
-    """Return the names of theorems that are still `Admitted` (no `Qed.`).
+    """Return the names of theorems/lemmas that are still `Admitted` (no `Qed.`).
 
-    Tracks the most recent `Theorem NAME :` and reports it if it is followed by
-    an `Admitted.` without an intervening `Qed.` (or a new theorem/axiom).
+    Tracks the most recent `Theorem NAME :` / `Lemma NAME :` and reports it if
+    it is followed by an `Admitted.` without an intervening `Qed.` (or a new
+    declaration).
     """
     admitted: List[str] = []
     current: str | None = None
@@ -27,11 +28,12 @@ def find_admitted(coq_text: str) -> List[str]:
 
     for line in coq_text.splitlines():
         thm = re.match(r"\s*Theorem\s+([A-Za-z0-9_']+)\s*:", line)
-        ax = re.match(r"\s*(?:Axiom|Parameter|Definition|Lemma|Fixpoint)\s+([A-Za-z0-9_']+)", line)
-        if thm or ax:
+        lem = re.match(r"\s*Lemma\s+([A-Za-z0-9_']+)\s*:", line)
+        ax = re.match(r"\s*(?:Axiom|Parameter|Definition|Fixpoint)\s+([A-Za-z0-9_']+)", line)
+        if thm or lem or ax:
             if current is not None and seen_admitted and not seen_qed:
                 admitted.append(current)
-            current = thm.group(1) if thm else None
+            current = thm.group(1) if thm else (lem.group(1) if lem else None)
             seen_admitted = False
             seen_qed = False
             continue

@@ -216,3 +216,21 @@ class TestConvert:
         mod = self._make_mod()
         with pytest.raises(subprocess.TimeoutExpired, match="cmd"):
             convert(mod, Path("/tmp/output"))
+
+
+def test_try_find_koika_coq_path_rejects_nonexistent_dir():
+    """A missing Koika dir must yield (None, None) without invoking coqc.
+
+    coqc only warns about a missing `-Q` directory and can still return rc=0
+    when the opam switch provides the Koika libs, which used to report a
+    phantom library path.
+    """
+    from isir.lowering.koika_to_rtl import _try_find_koika_coq_path
+    assert _try_find_koika_coq_path("/nonexistent/koika/root") == (None, None)
+
+
+def test_find_or_build_raises_actionable_error_for_missing_dir():
+    """A missing Koika checkout must raise guidance, not a shell failure."""
+    from isir.lowering.koika_to_rtl import _find_or_build_koika_coq_path
+    with pytest.raises(KoikaToRTLError, match="does not exist"):
+        _find_or_build_koika_coq_path("/nonexistent/koika/root")

@@ -249,6 +249,13 @@ def _find_or_build_koika_coq_path(koika_dir: str) -> Tuple[str, str]:
     if path is not None:
         return path, flag
 
+    if not Path(koika_dir).is_dir():
+        raise KoikaToRTLError(
+            f"Kōika source directory '{koika_dir}' does not exist. "
+            "Run './install.sh' (external mode) to clone and build Kōika, "
+            "or set KOIKA_DIR to an existing Kōika checkout."
+        )
+
     logger.info("Kōika Coq libraries not found; building and installing them now...")
     # `make configure` needs GNU make 4; macOS ships make 3.81, which fails
     # with "commands commence before first target".  install.sh uses empty
@@ -280,6 +287,12 @@ def _try_find_koika_coq_path(koika_dir: str) -> Tuple[Optional[str], Optional[st
         (koika_root / "coq", "Koika")
     ]
     for path, logical in candidates:
+        if not path.is_dir():
+            # Skip nonexistent paths: coqc merely warns about a missing `-Q`
+            # directory and can still return rc=0 when the opam switch
+            # provides the Koika libs — which would silently report a
+            # phantom library path.
+            continue
         for flag in ("-Q", "-R"):
             if _test_coq_import(path, logical, flag):
                 logger.info("Using Coq library path: %s with %s", path, flag)
@@ -289,6 +302,8 @@ def _try_find_koika_coq_path(koika_dir: str) -> Tuple[Optional[str], Optional[st
 
 def _test_coq_import(path: Path, logical: str, flag: str) -> bool:
     """Check coqc can import Koika.Frontend using a temporary file."""
+    if not path.is_dir():
+        return False
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test_import.v"

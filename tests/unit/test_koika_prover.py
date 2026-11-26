@@ -548,3 +548,21 @@ def test_extract_preservation_seed():
         assert prover._extract_preservation_seed(st2) is None
     finally:
         prover.close()
+
+
+def test_closure_metadata_reports_admitted_lemmas(tmp_path):
+    """Closed proofs must carry the Admitted leaves their closure depends on."""
+    from isir.verification.proof.koika.prover import KoikaProver
+    f = tmp_path / "t.v"
+    f.write_text(
+        "Lemma mc_lemma : True.\nProof. Admitted.\n"
+        "Theorem t : True.\nProof. exact I. Qed.\n"
+    )
+    prover = KoikaProver.__new__(KoikaProver)  # skip LLM/client init
+    meta = prover._closure_metadata(f, {"automation": "recursive_skeleton"})
+    assert meta["admitted_deps"] == ["mc_lemma"]
+    assert meta["automation"] == "recursive_skeleton"
+
+    f.write_text("Theorem t : True.\nProof. exact I. Qed.\n")
+    meta = prover._closure_metadata(f, {"automation": "recursive_skeleton"})
+    assert "admitted_deps" not in meta

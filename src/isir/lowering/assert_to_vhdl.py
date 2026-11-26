@@ -234,6 +234,10 @@ def _property_to_vhdl(prop: asserts.AssertPropertyOp,
         left = _vhdl_expr(prop.left, "property") if prop.left else "true"
         right = _vhdl_expr(prop.right, "property") if prop.right else "true"
         return f"{comment}assert always {left} until {right}{abort_clause};"
+    elif prop.kind == "after":
+        expr = _vhdl_expr(prop.operand, "property") if prop.operand else "true"
+        bound = int(prop.bound) if prop.bound is not None else 1
+        return f"{comment}assert always next_e[{bound}]({expr}){abort_clause};"
     else:
         raise ValueError(f"Unknown property kind: {prop.kind}")
 

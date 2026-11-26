@@ -730,7 +730,7 @@ class KoikaProver:
                 proof_script=self._extract_proof_from_file(coq_file, theorem_name),
                 duration=duration,
                 backend="koika",
-                metadata={"automation": "pre-proven"}
+                metadata=self._closure_metadata(coq_file, {"automation": "pre-proven"})
 )
 
         # 1. Initial script (if provided)
@@ -745,7 +745,7 @@ class KoikaProver:
                     proof_script=result.get("proof_script", initial_script),
                     duration=duration,
                     backend="koika",
-                    metadata={"automation": "initial_script"}
+                    metadata=self._closure_metadata(coq_file, {"automation": "initial_script"})
 )
 
         # 2. Proof library
@@ -759,7 +759,7 @@ class KoikaProver:
                     proof_script=proof_script,
                     duration=duration,
                     backend="koika",
-                    metadata={"automation": "library"}
+                    metadata=self._closure_metadata(coq_file, {"automation": "library"})
 )
 
         # 3. Interactive proof (skeleton, reflection, LLM loop) – only if enabled
@@ -776,7 +776,7 @@ class KoikaProver:
                     duration=duration,
                     backend="koika",
                     iterations=result.get("iterations"),
-                    metadata={"automation": automation}
+                    metadata=self._closure_metadata(coq_file, {"automation": automation})
 )
         else:
             logger.info("rocq-mcp disabled or broken; skipping interactive proof.")
@@ -793,7 +793,7 @@ class KoikaProver:
                 proof_script=result.get("proof_script", ""),
                 duration=duration,
                 backend="koika",
-                metadata={"automation": "coqc_verify"}
+                metadata=self._closure_metadata(coq_file, {"automation": "coqc_verify"})
 )
 
         # 4.5. Deterministic skeleton proof (reachable induction + `eauto` over
@@ -812,7 +812,7 @@ class KoikaProver:
                 proof_script=recursive,
                 duration=duration,
                 backend="koika",
-                metadata={"automation": "recursive_skeleton"}
+                metadata=self._closure_metadata(coq_file, {"automation": "recursive_skeleton"})
 )
 
         # 5. LLM full-proof generation (with structural hints, coqc validation)
@@ -829,7 +829,7 @@ class KoikaProver:
                     proof_script=recursive,
                     duration=duration,
                     backend="koika",
-                    metadata={"automation": "llm_invariant"}
+                    metadata=self._closure_metadata(coq_file, {"automation": "llm_invariant"})
 )
 
         llm_result = self._attempt_llm_proof_generation(
@@ -843,11 +843,11 @@ class KoikaProver:
                 proof_script=proof_script,
                 duration=duration,
                 backend="koika",
-                metadata={
+                metadata=self._closure_metadata(coq_file, {
                     "automation": "llm_full",
                     "llm_attempts": attempts_used,
                     "max_attempts": self.max_repair,
-                }
+                })
 )
 
         duration = time.time() - start_time
@@ -863,6 +863,31 @@ class KoikaProver:
                 "max_attempts": self.max_repair,
             }
 )
+
+    @staticmethod
+    def _admitted_closure(coq_file: Path) -> List[str]:
+        """Admitted `Theorem`/`Lemma` names remaining in the file.
+
+        A closed proof whose file still carries `Admitted` leaves (e.g. the
+        MC-justified `*_mc` lemmas, or other obligations' placeholders) is
+        kernel-checked but axiom-dependent — the D5-strong closure status.
+        """
+        try:
+            from isir.lowering.coq_verify import find_admitted
+            return find_admitted(coq_file.read_text())
+        except Exception:
+            return []
+
+    @classmethod
+    def _closure_metadata(cls, coq_file: Path, base: Dict[str, Any]) -> Dict[str, Any]:
+        """Attach the admitted-leaf list to proof metadata when non-empty."""
+        admitted = cls._admitted_closure(coq_file)
+        if admitted:
+            base["admitted_deps"] = admitted
+            logger.warning(
+                "Axiom closure: proof depends on Admitted leaves: %s", admitted
+            )
+        return base
 
     def _try_initial_script(
         self,

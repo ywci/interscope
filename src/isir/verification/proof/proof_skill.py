@@ -792,10 +792,12 @@ class LLMProofSkill(ProofSkill):
                         design_name = getattr(context["spec_module"], "name", None)
                     if prop_name and design_name:
                         self._store_successful_proof(design_name, prop_name, skeleton_script)
+                    meta = KoikaProver._closure_metadata(
+                        Path(coq_file), {"backend": "koika", "skeleton": True})
                     return ProofResult(
                         success=True,
                         proof_script=skeleton_script,
-                        metadata={"backend": "koika", "skeleton": True}
+                        metadata=meta
 )
 
         # Deterministic proof strategies (domain extensions, no LLM) — tried
