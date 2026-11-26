@@ -763,6 +763,11 @@ class LLMProofSkill(ProofSkill):
                         temp_prover.set_structural_hints(hints_str)
                 if context.get("spec_module"):
                     temp_prover.spec_module = context["spec_module"]
+                # MC lemma injection (arm M): when enabled, registry-sourced
+                # IC3/induction evidence becomes `{prop}_mc` lemmas so the
+                # skeleton's one-line `exact` can reuse model-checking proofs.
+                if temp_prover.use_mc_lemmas:
+                    temp_prover.inject_mc_lemmas(Path(coq_file), theorem_name)
 
                 skeleton_script = temp_prover._recursive_skeleton_proof(
                     Path(coq_file), theorem_name,

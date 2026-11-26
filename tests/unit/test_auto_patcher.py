@@ -11,16 +11,16 @@ from isir.verification.proof.koika.auto_patcher import (
 )
 
 
-def test_patch_deprecated_notations_keeps_nat_mod_add():
+def test_patch_deprecated_notations_modernizes_nat_mod_add():
     script = "rewrite <- (Nat.mod_add x 1 4)."
     patched = patch_deprecated_notations(script)
-    assert patched == script
+    assert patched == "rewrite <- (Nat.Div0.mod_add x 1 4)."
 
 
-def test_patch_deprecated_notations_keeps_multiple():
+def test_patch_deprecated_notations_modernizes_multiple():
     script = "Nat.mod_add x y = Nat.mod_mul x y z"
     patched = patch_deprecated_notations(script)
-    assert patched == script
+    assert patched == "Nat.Div0.mod_add x y = Nat.Div0.mod_mul x y z"
 
 
 def test_patch_deprecated_notations_does_not_touch_unrelated_words():
@@ -32,7 +32,7 @@ def test_patch_deprecated_notations_does_not_touch_unrelated_words():
 def test_patch_deprecated_notations_keeps_word_boundaries():
     script = "Nat.mod_add x = Nat.mod_add"
     patched = patch_deprecated_notations(script)
-    assert patched == script
+    assert patched == "Nat.Div0.mod_add x = Nat.Div0.mod_add"
 
 
 def test_patch_discriminate_on_bool_with_error_message():
@@ -135,8 +135,8 @@ Qed."""
 
     patched = auto_patch(script, error_msg)
 
-    assert "Nat.mod_add" in patched
-    assert "Div0.mod_add" not in patched
+    assert "Nat.Div0.mod_add" in patched
+    assert "rewrite <- (Nat.mod_add" not in patched
 
     assert "discriminate Hop." not in patched
     assert "inversion Hop." in patched

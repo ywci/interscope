@@ -9,7 +9,7 @@ The project provides:
 - **Dual proof backends** (Kōika/Coq + ACL2) with LLM‑assisted proof generation and iterative repair, plus a **co‑work backend** (`koika_acl2`) that proves hard sub‑goals concurrently in both assistants.
 - **Model checking** of generated assertions using SymbiYosys (sby).
 - **Trace lifting** from Verilator VCD simulations back to abstract ISIR traces.
-- **Two independent ISIR→RTL lowering paths** — a self-contained *direct* (short) path and the *Kōika* (long) path — plus a **differential harness** that replays both and reports agreement, and a **reference interpreter** that cross-checks the direct path semantically (currently 76/76 example designs agree).
+- **Two independent ISIR→RTL lowering paths** — a self-contained *direct* (short) path and the *Kōika* (long) path — plus a **differential harness** that replays both and reports agreement, and a **reference interpreter** that cross-checks the direct path semantically (76/76 example designs agree as of the upstream snapshot).
 - **Evidence registry** for tracking proven theorems, counterexamples, and coverage.
 - A **user‑customisable proof library** (`src/lib/koika/assist.py`) that can be extended with new theorems.
 - **PERF (Proof tree Exploration with Reflective Feedback)** – an advanced test‑time proof search that uses tree exploration, Pareto pruning, and LLM reflection to tackle hard proof obligations, with explicit integration of model‑checking counterexamples. PERF is the utilization of ISIR for proof suspension and advanced proof search.
@@ -390,7 +390,7 @@ SAT-gating is an optional bounded-SAT pre-filter that runs before the expensive 
 - **harvests lemma hints** from unreachable counterexamples-to-induction (CTIs) via core-driven generalization, screens them with a cheap pre-check, and routes them to the provers with provenance and usage tracking;
 - **caches** certified results, SAT queries, and hints across epochs, and always reports the coverage/firing-rate metrics pair to catch silent no-ops.
 
-On the bundled 76-example corpus the gate short-circuits 95 inductive obligations, cuts verification wall time by about 50% (6669.7 s → 3307.0 s), and recovers 9 examples that previously timed out (see [`docs/ARCH.md`](docs/ARCH.md)). The live gate is opt-in and defaults to off; `tests/sat_gate/` exercises the machinery without an LLM:
+On the bundled example corpus (76 designs at measurement time) the gate short-circuits 95 inductive obligations, cuts verification wall time by about 50% (6669.7 s → 3307.0 s), and recovers 9 examples that previously timed out (see [`docs/ARCH.md`](docs/ARCH.md)). The live gate is opt-in and defaults to off; `tests/sat_gate/` exercises the machinery without an LLM:
 
 ```bash
 ./run.sh --test sat_gate
@@ -480,7 +480,7 @@ The differential classifies each design as:
 - `divergent_long_short` — a genuine semantic divergence.
 - `error` — a path failed to generate or compile.
 
-The direct path is additionally cross-checked against a Python **reference interpreter** (`src/isir/verification/reference_semantics.py` via `src/isir/lowering/verify_direct.py`) that evaluates the ISIR expression semantics directly. As of this checkout, all 76 example designs agree (`verify_direct`) and the Kōika differential reports `41 agreed / 35 unsupported / 0 divergent / 0 error`.
+The direct path is additionally cross-checked against a Python **reference interpreter** (`src/isir/verification/reference_semantics.py` via `src/isir/lowering/verify_direct.py`) that evaluates the ISIR expression semantics directly. All 76 upstream example designs agree (`verify_direct`); the 2 newer regression designs (`fsm_done`, `ashr`) are pending re-verification. The Kōika differential reports `41 agreed / 35 unsupported / 0 divergent / 0 error`.
 
 ---
 

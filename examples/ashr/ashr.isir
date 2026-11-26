@@ -1,6 +1,6 @@
 isir_version: "0.1"
 module:
-  name: ashr_test
+  name: ashr
   clocks:
     - name: clk
       edge: posedge

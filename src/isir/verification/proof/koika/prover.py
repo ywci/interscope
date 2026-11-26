@@ -561,13 +561,15 @@ class KoikaProver:
 
         registry = EvidenceRegistry()
         design_name = self.spec_module.name
-        mc_entries = registry.list_evidence(
-            evidence_type="inductive_invariant",
-            status="proved",
-            design_name=design_name,
-            engine="IC3",
-            limit=1000,
-)
+        mc_entries = []
+        for eng in ("IC3", "induction"):
+            mc_entries.extend(registry.list_evidence(
+                evidence_type="inductive_invariant",
+                status="proved",
+                design_name=design_name,
+                engine=eng,
+                limit=1000,
+            ))
         if not mc_entries:
             logger.info("No MC-proved lemmas to inject for design '%s'.", design_name)
             return
@@ -599,6 +601,11 @@ class KoikaProver:
             return
 
         insert_pos = match.start()
+        stmt_match = re.search(
+            rf"Theorem\s+{re.escape(theorem_name)}\s*:\s*([^\n]*)\.",
+            content
+        )
+        theorem_has_inputs = bool(stmt_match and "(inputs : inputs)" in stmt_match.group(1))
         lemmas_added = 0
 
         for entry in mc_entries:
@@ -631,8 +638,12 @@ class KoikaProver:
                 # Already injected by an earlier obligation (the same MC lemma is
                 # shared across every Koika-side theorem of the design).
                 continue
+            # Match the target theorem's binder shape: always-theorems whose
+            # operand only references state drop the redundant `inputs` binder,
+            # so the injected lemma must too (otherwise `exact` cannot apply).
+            binders = "(s : state) (inputs : inputs)" if theorem_has_inputs else "(s : state)"
             lemma_text = (
-                f"Lemma {lemma_name} : forall (s : state) (inputs : inputs), "
+                f"Lemma {lemma_name} : forall {binders}, "
                 f"reachable s -> ({coq_stmt}).\n"
                 f"Proof. Admitted.  (* proved by model checking *)\n"
 )
@@ -1917,6 +1928,10 @@ class KoikaProver:
             name for name in self._find_invariant_lemmas(coq_file)
             if name.endswith("_const")
         ]
+        mc_lemmas = [
+            name for name in self._find_invariant_lemmas(coq_file)
+            if name.endswith("_mc")
+        ]
         # Combinational-equivalence theorems quantify only over `inputs`
         # (no `reachable`/`step`), so they get a pure `skel` body rather than
         # the reachability induction.
@@ -1952,6 +1967,28 @@ class KoikaProver:
                 "Qed."
 )
         else:
+            # MC-proved lemma reuse: when the same property was proved by
+            # model checking and injected as `{prop}_mc`, close the obligation
+            # with a one-line `exact`.  NOTE: the `_mc` lemma is `Admitted` in
+            # Coq (justified by external MC evidence), so this proof's
+            # dependency closure contains that axiom — see `_inject_mc_lemmas`.
+            if theorem_name.endswith("_proved") and f"{theorem_name[:-7]}_mc" in mc_lemmas:
+                # Shape the one-liner to the theorem's binders (the generator
+                # drops the `inputs` binder for state-only operands).
+                if "(inputs : inputs)" in match.group(0):
+                    candidates.append(
+                        "Proof.\n"
+                        "  intros s inputs Hreach.\n"
+                        f"  exact ({theorem_name[:-7]}_mc s inputs Hreach). (* closed via model checking *)\n"
+                        "Qed."
+)
+                else:
+                    candidates.append(
+                        "Proof.\n"
+                        "  intros s Hreach.\n"
+                        f"  exact ({theorem_name[:-7]}_mc s Hreach). (* closed via model checking *)\n"
+                        "Qed."
+)
             # Generic always/safety induction: induction on `reachable`, invert
             # the step, destruct the conjunction premise, then `eauto` (which
             # applies `Hint Resolve` lemmas like the widening-product bound).

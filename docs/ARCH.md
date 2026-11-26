@@ -161,7 +161,7 @@ expensive LLM/prover call and harvests lemma hints for the rest.
 - **Live hook**: `proof_skill._try_sat_gate` (config `sat_gating_enabled`) plus
   `record_downstream_failure` whitelist and the `HintRouter` hint lifecycle.
 
-**Measured** over the 76‑example corpus: the gate short‑circuits **95** inductive
+**Measured** over the example corpus (76 designs at measurement time): the gate short‑circuits **95** inductive
 obligations, cuts wall time **−50.4%** (6669.7 s → 3307.0 s), and recovers **9**
 examples that the ungated pipeline timed out on.  The D5‑strong axiom‑closure
 status is 87% (55/63 closed proofs depend on an unproved `Axiom`/`Admitted`

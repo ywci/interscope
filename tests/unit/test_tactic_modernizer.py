@@ -42,19 +42,19 @@ class TestModernizeTactics:
     def test_nat_mod_replaced_when_enabled(self):
         assert (
             modernize_tactics("rewrite Nat.mod_add.", replace_nat_mod_add=True)
-            == "rewrite Div0.mod_add."
+            == "rewrite Nat.Div0.mod_add."
 )
 
     def test_nat_add_mod_replaced_when_enabled(self):
         assert (
             modernize_tactics("rewrite Nat.add_mod.", replace_nat_mod_add=True)
-            == "rewrite Div0.add_mod."
+            == "rewrite Nat.Div0.add_mod."
 )
 
     def test_nat_div_replaced_when_enabled(self):
         assert (
             modernize_tactics("apply Nat.div_same.", replace_nat_mod_add=True)
-            == "apply Div0.div_same."
+            == "apply Nat.Div0.div_same."
 )
 
     def test_nat_mod_word_boundary_when_enabled(self):

@@ -9,7 +9,7 @@
 # before compilation or before passing a script to the repair loop.
 #
 # Supported patches:
-#   1. Replacement of deprecated notations (e.g., Nat.mod_add → Div0.mod_add).
+#   1. Replacement of deprecated notations (e.g., Nat.mod_add → Nat.Div0.mod_add).
 #   2. Correction of `discriminate` on boolean equalities, which often
 #      appear as hypotheses like `(op_reg s =? 0) = true`.
 #   3. Removal of orphan bullet lines (lines that consist solely of a bullet
@@ -25,12 +25,27 @@ from isir.verification.proof.structural_validator import validate_structure
 logger = get_logger(__name__)
 
 DEPRECATED_NOTATIONS: Dict[str, str] = {
-    # NOTE: we deliberately keep the deprecated `Nat.mod_*` / `Nat.div_*`
-    # lemmas as-is rather than rewriting them to `Div0.*`.  `Arith.Div0` is not
-    # importable in the supported Coq 8.18 toolchain, so the rewrite produced
-    # proofs referencing a non-existent module ("The reference Div0.div_1_r was
-    # not found").  The `Nat.*` lemmas still work (they merely emit deprecation
-    # warnings), so no replacement is safer than a broken one.
+    # The deprecated `Nat.mod_*` / `Nat.div_*` names are notations for the
+    # canonical `Nat.Div0.*` lemmas, which are in scope via `Arith.PeanoNat`
+    # (imported by every generated base file).  Rewriting to bare `Div0.*` is
+    # wrong — that module is not importable — but `Nat.Div0.*` always is.
+    "Nat.mod_add": "Nat.Div0.mod_add",
+    "Nat.mod_mul": "Nat.Div0.mod_mul",
+    "Nat.mod_mod": "Nat.Div0.mod_mod",
+    "Nat.mod_same": "Nat.Div0.mod_same",
+    "Nat.mod_1_l": "Nat.Div0.mod_1_l",
+    "Nat.mod_1_r": "Nat.Div0.mod_1_r",
+    "Nat.mod_0_l": "Nat.Div0.mod_0_l",
+    "Nat.mod_0_r": "Nat.Div0.mod_0_r",
+    "Nat.add_mod": "Nat.Div0.add_mod",
+    "Nat.mul_mod": "Nat.Div0.mul_mod",
+    "Nat.sub_mod": "Nat.Div0.sub_mod",
+    "Nat.div_add": "Nat.Div0.div_add",
+    "Nat.div_mul": "Nat.Div0.div_mul",
+    "Nat.div_div": "Nat.Div0.div_div",
+    "Nat.div_same": "Nat.Div0.div_same",
+    "Nat.div_1_r": "Nat.Div0.div_1_r",
+    "Nat.div_1_l": "Nat.Div0.div_1_l",
 }
 
 
@@ -38,15 +53,16 @@ def patch_deprecated_notations(script: str) -> str:
     """
     Replace deprecated lemma names with their modern equivalents.
 
-    Currently a no-op: the `Div0.*` replacements are intentionally disabled
-    because `Arith.Div0` is not importable in the supported Coq toolchain (see
-    ``DEPRECATED_NOTATIONS``).  The deprecated `Nat.*` lemmas are left intact.
+    Rewrites the deprecated `Nat.mod_*` / `Nat.div_*` names to the canonical
+    `Nat.Div0.*` lemmas (Coq ≥ 8.17).  The target names are verified against
+    the pinned Coq 8.18 toolchain, where they are in scope via
+    ``Arith.PeanoNat``.
 
     Args:
         script: Coq proof script.
 
     Returns:
-        The script unchanged.
+        The script with deprecated notation names modernised.
     """
     if not script:
         return script
