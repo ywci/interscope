@@ -241,6 +241,19 @@ class RtlDirectEmitter:
             return f"((! {self._lower(args[0], 1)}) || {self._lower(args[1], 1)})"
         if op in _BIN_CMP:
             return f"({self._lower(args[0], width)} {_BIN_CMP[op]} {self._lower(args[1], width)})"
+        if op == "ashr":
+            a = self._lower(args[0], width)
+            b = self._lower(args[1], width)
+            op_w = self._operand_width(expr)
+            # Arithmetic shift right: reinterpret the operand as signed at the
+            # operand width, otherwise Verilog's `>>>` on unsigned regs degrades
+            # to a logical shift.  Then truncate to the wrapping width.
+            if op_w:
+                result = f"($signed({op_w}'({a})) >>> {b})"
+                result = f"({result} & {op_w}'d{(1 << op_w) - 1})"
+            else:
+                result = f"($signed({a}) >>> {b})"
+            return result
         if op in _BIN_ARITH:
             a = self._lower(args[0], width)
             b = self._lower(args[1], width)

@@ -39,7 +39,7 @@ def _capitalize(name: str) -> str:
 
 
 # Operators the LONG path (koika_to_rtl._has_unsupported_ops) silently drops.
-_LONG_PATH_UNSUPPORTED = ("mem_read", "mem_write", "slice", "mul", "div", "mod")
+_LONG_PATH_UNSUPPORTED = ("mem_read", "mem_write", "slice", "mul", "div", "mod", "ashr")
 
 
 def _long_path_skips(spec: SpecModule) -> List[str]:

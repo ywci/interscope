@@ -250,12 +250,14 @@ def _find_or_build_koika_coq_path(koika_dir: str) -> Tuple[str, str]:
         return path, flag
 
     logger.info("Kōika Coq libraries not found; building and installing them now...")
-    # `make configure` regenerates the per-directory `dune.inc` files that
-    # examples/dune and tests/dune `(include ...)`; they are gitignored, so a
-    # fresh clone lacks them and `dune build @install` would otherwise fail with
-    # "File examples/dune.inc doesn't exist".
+    # `make configure` needs GNU make 4; macOS ships make 3.81, which fails
+    # with "commands commence before first target".  install.sh uses empty
+    # dune.inc stubs instead — mirror that here.
     _run_in_opam_env(
-        f"cd {koika_dir} && make configure && dune build @install && dune install",
+        f"cd {koika_dir} && "
+        "for d in examples tests; do "
+        "[ -f \"$d/dune\" ] && [ ! -f \"$d/dune.inc\" ] && touch \"$d/dune.inc\"; "
+        "done && dune build @install && dune install",
         timeout=600
 )
 
@@ -366,7 +368,7 @@ def _has_unsupported_ops(expr: Any) -> bool:
     """Return True if the expression contains operators that cannot be lowered."""
     if isinstance(expr, list) and len(expr) > 0:
         op = expr[0]
-        if op in ("mem_read", "mem_write", "slice", "mul", "mul_full", "div", "mod"):
+        if op in ("mem_read", "mem_write", "slice", "mul", "mul_full", "div", "mod", "ashr"):
             return True
         if op in _MULTIARG_BLACKBOXES:
             return True

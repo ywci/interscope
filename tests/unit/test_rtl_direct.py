@@ -75,3 +75,13 @@ class TestEmitConsistency:
         m = json.loads(em.emit_mapping("x.v", "x.isir"))
         state_item = next(i for i in m["items"] if i["spec_item_id"] == "a/b")
         assert state_item["rtl_signals"] == ["a_b", "next_a_b"]
+
+
+def test_ashr_emits_signed_arithmetic_shift():
+    """`ashr` lowers to a signed `>>>` so Verilog sign-extends (plain regs
+    are unsigned, where `>>>` would degrade to a logical shift)."""
+    em = _emitter([("x", "bits<8>")], [])
+    out = em._lower(["ashr", "x", 1], 8)
+    assert "$signed" in out
+    assert ">>>" in out
+    assert "8'd255" in out  # wrap-back mask at the operand width

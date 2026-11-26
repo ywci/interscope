@@ -198,7 +198,7 @@ def _eval_internal(expr: Any,
         b = _eval_internal(args[1], state, inputs, memories, previous_state, next_state, width, widths)
         return a * b
 
-    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max', 'shl', 'shr', 'lshift', 'rshift'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max', 'shl', 'shr', 'lshift', 'rshift', 'ashr'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments, got {len(args)}")
         a = _eval_internal(args[0], state, inputs, memories, previous_state, next_state, width, widths)
@@ -216,8 +216,9 @@ def _eval_internal(expr: Any,
             _walk(e)
             return w
 
+        op_w = max(_expr_width(args[0]), _expr_width(args[1])) if widths else width
+
         def _wrap(v):
-            op_w = max(_expr_width(args[0]), _expr_width(args[1])) if widths else width
             return (int(v) & ((1 << op_w) - 1)) if op_w else v
 
         if op == 'add':
@@ -237,6 +238,12 @@ def _eval_internal(expr: Any,
         elif op in ('shl', 'lshift'):
             return _wrap(a << b)
         elif op in ('shr', 'rshift'):
+            return _wrap(a >> b)
+        elif op == 'ashr':
+            # Arithmetic shift right: reinterpret `a` as two's complement at the
+            # operand width (sign-extend), then wrap back into [0, 2^w).
+            if op_w and a >= (1 << (op_w - 1)):
+                a = a - (1 << op_w)
             return _wrap(a >> b)
         elif op == 'min':
             return min(a, b)
@@ -460,7 +467,7 @@ def _type_check_internal(expr: Any, context: Dict[str, str]) -> str:
         raise ExprError(f"Operator must be a string, got {type(op)}")
     args = expr[1:]
 
-    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max', 'shl', 'shr', 'lshift', 'rshift'):
+    if op in ('add', 'sub', 'mul', 'div', 'mod', 'min', 'max', 'shl', 'shr', 'lshift', 'rshift', 'ashr'):
         for arg in args:
             t = _type_check_internal(arg, context)
             if t not in ('int', 'any', 'bits'):

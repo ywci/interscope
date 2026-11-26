@@ -1,0 +1,29 @@
+isir_version: "0.1"
+module:
+  name: ashr_test
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: x
+      direction: input
+      type: "bits<8>"
+  outputs:
+    - name: y
+      direction: output
+      type: "bits<8>"
+  state:
+    - name: y
+      kind: register
+      type: "bits<8>"
+      initial: 0
+  rules:
+    - name: shift
+      condition: "true"
+      action:
+        - (write y (ashr x 1))

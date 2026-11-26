@@ -340,3 +340,17 @@ def test_mul_full_is_widening_no_wrap():
     assert eval_expr("(mul_full 255 255)", {}, {}, {}) == 65025
     # the wrapping mul truncates at the operand width
     assert eval_expr("(mul 255 255)", {}, {}, {}, width=8, widths={}) == 1
+
+
+def test_ashr_eval_two_complement():
+    """`ashr` sign-extends at the operand width; `shr` stays logical."""
+    from isir.utils.expr import eval_expr
+    widths = {"x": 8}
+    # 0x80 has the sign bit set: arithmetic shift right replicates it (0xC0).
+    assert eval_expr("(ashr x 1)", {"x": 128}, {}, {}, width=8, widths=widths) == 192
+    # 0x40 is positive: ashr == shr.
+    assert eval_expr("(ashr x 1)", {"x": 64}, {}, {}, width=8, widths=widths) == 32
+    # The logical shift of the same value differs from the arithmetic one.
+    assert eval_expr("(shr x 1)", {"x": 128}, {}, {}, width=8, widths=widths) == 64
+    # 0xFF is -1 in two's complement: any arithmetic shift keeps it -1.
+    assert eval_expr("(ashr x 3)", {"x": 255}, {}, {}, width=8, widths=widths) == 255
