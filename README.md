@@ -13,11 +13,12 @@ The project provides:
 - **Evidence registry** for tracking proven theorems, counterexamples, and coverage.
 - A **user‑customisable proof library** (`src/lib/koika/assist.py`) that can be extended with new theorems.
 - **PERF (Proof tree Exploration with Reflective Feedback)** – an advanced test‑time proof search that uses tree exploration, Pareto pruning, and LLM reflection to tackle hard proof obligations, with explicit integration of model‑checking counterexamples. PERF is the utilization of ISIR for proof suspension and advanced proof search.
+- **SAT‑gating** – an optional bounded‑SAT pre‑filter (`--sat-gate`) that short‑circuits inductive obligations with certified UNSAT evidence (standalone DRAT via CaDiCaL + dual‑encoder agreement) and harvests CTI‑generalized lemma hints for the provers — see [SAT-Gating](#sat-gating).
 - **Batch processing** of multiple `.isir` files with structured reporting for integration into evaluation pipelines.
 
 ---
 
-## Documentation
+## 📖 Documentation
 
 | Document | Contents |
 |----------|----------|
@@ -29,7 +30,7 @@ The project provides:
 
 ---
 
-## Quick Installation
+## 🚀 Quick Installation
 
 ```bash
 git clone https://github.com/ywci/interscope.git
@@ -71,7 +72,7 @@ The installer prints this reminder automatically when the switch exists.
 
 ---
 
-## Configuration
+## 📝 Configuration
 
 Edit `conf/config.yaml` to set:
 
@@ -115,7 +116,7 @@ The Kōika compiler is discovered in this order:
 
 1. An explicit `koika_path` in `config.yaml`.
 2. `koika` on `PATH`.
-3. The repo‑local wrapper at `tools/koika/bin/koika` (created by `install.sh`).
+3. The repo‑local wrapper at `third_party/koika/bin/koika` (created by `install.sh`).
 4. `$OPAMROOT/<KOIKA_SWITCH_NAME>/bin/koika` (default: `$HOME/.opam/coq-8.18-ocaml-4.14/bin/koika`).
 5. `$OPAMROOT/default/bin/koika`.
 6. `/usr/local/bin/koika`.
@@ -124,7 +125,7 @@ This ensures InterScope finds the compiler after a standard `./install.sh`, incl
 
 ---
 
-## Usage
+## 🛠️ Usage
 
 The main entry point is the `run.sh` wrapper. All commands are forwarded to the `isir` CLI. Most commands are executed via `uv run`; the test runners instead invoke `.venv/bin/python -m pytest` directly to guarantee they bind to this repo's virtualenv (rather than a parent project's).
 
@@ -157,7 +158,7 @@ These global options apply to all commands (`compile`, `verify`, `sim`, etc.).
 | `./run.sh --refine-check <file> ...` | Lowering-refinement evidence per item. |
 | `./run.sh --validate-config` | Validate `config.yaml` (checks for conflicting settings such as PERF + proof‑library cache). |
 | `./run.sh --clean` | Remove build artifacts (`build/`, `*.pyc`, Coq `.vo`/`.glob`/etc.). |
-| `./run.sh --clean-all [--yes] [--no-tools]` | Remove build artifacts, `.venv/`, and cloned tool repos under `tools/`. Prompts on a TTY unless `--yes` is passed; `--no-tools` keeps the cloned tool repos. System tools (opam switches, ACL2, SymbiYosys, Coq) are never touched. |
+| `./run.sh --clean-all [--yes] [--no-tools]` | Remove build artifacts, `.venv/`, and cloned tool repos under `third_party/`. Prompts on a TTY unless `--yes` is passed; `--no-tools` keeps the cloned tool repos. System tools (opam switches, ACL2, SymbiYosys, Coq) are never touched. |
 | `./run.sh --vcd-to-trace <vcd>` | Convert a VCD file to the trace dialect (debug helper). |
 | `./run.sh --extract-mapping <vfile>` | Extract ISIR mapping from Verilog annotations. |
 | `./run.sh --gen-spec <file.isir>\|--all` | Generate a natural‑language Markdown specification (`.md`) in the design's folder; `--verify` checks round‑trip behavioral equivalence, `--llm-roundtrip` regenerates the `.isir` via the configured LLM and differentially checks it (never overwriting the original). |
@@ -187,6 +188,7 @@ For compatibility, the old `--command` style is still accepted. The newer unifie
 - `--no-trace-alignment` : Disable the trace‑alignment dimension (ablation).
 - `--no-reflection` : Disable reflection feedback (ablation).
 - `--mc-lemmas` / `--no-mc-lemmas` (verify) : Enable/disable model-checking lemma injection (MC gating) for Koika — ablation.
+- `--sat-gate` (verify) : Run the SAT-gate bounded-SAT pre-filter on inductive obligations (see [SAT-Gating](#sat-gating)).
 - `--no-cowork` (verify) : Disable the `koika_acl2` co-work dispatch, downgrading it to single-backend Koika — ablation.
 - `--search linear|perf|mcts` (verify) : Choose the proof search strategy (PERF is the default; `linear` is the greedy repair prover, `mcts` the de‑coupled UCB1 search).
 - `--dry-run` : Parse and validate only; do not execute provers.
@@ -238,7 +240,7 @@ A **proof gate** separates three states:
 
 ---
 
-## PERF: Proof tree Exploration with Reflective Feedback
+## 🎯 PERF: Proof tree Exploration with Reflective Feedback
 
 **PERF** is a **test‑time proof search** engine that extends the linear repair loop with a **tree‑based beam search**. PERF is the utilization of ISIR for proof suspension and advanced proof search. When a proof attempt fails, PERF:
 
@@ -379,7 +381,24 @@ This closes the loop between bounded model checking (fast but incomplete) and th
 
 ---
 
-## Batch Processing and Structured Output
+## 🚦 SAT-Gating
+
+SAT-gating is an optional bounded-SAT pre-filter that runs before the expensive LLM/prover call on inductive `always` obligations. Enable it per run with `--sat-gate` (verify) or globally with `sat_gating_enabled: true` in `conf/config.yaml`. The gate bit-blasts `BASE_ENTAIL` and `IND_STEP` queries from the ISIR model and:
+
+- **short-circuits** obligations whose certified UNSAT pair proves the invariant inductive (`SAT_GATED`); soundness-critical UNSAT verdicts are certified by standalone DRAT proofs (CaDiCaL) plus dual-encoder agreement, and SAT-driven hard actions require a composed replay;
+- **parks** obligations with heuristic evidence instead of deleting them, and resurrects parked nodes when the active tier is exhausted;
+- **harvests lemma hints** from unreachable counterexamples-to-induction (CTIs) via core-driven generalization, screens them with a cheap pre-check, and routes them to the provers with provenance and usage tracking;
+- **caches** certified results, SAT queries, and hints across epochs, and always reports the coverage/firing-rate metrics pair to catch silent no-ops.
+
+On the bundled 76-example corpus the gate short-circuits 95 inductive obligations, cuts verification wall time by about 50% (6669.7 s → 3307.0 s), and recovers 9 examples that previously timed out (see [`docs/ARCH.md`](docs/ARCH.md)). The live gate is opt-in and defaults to off; `tests/sat_gate/` exercises the machinery without an LLM:
+
+```bash
+./run.sh --test sat_gate
+```
+
+---
+
+## 📦 Batch Processing and Structured Output
 
 For running experiments over multiple designs, InterScope supports batch mode and structured JSON output.
 
@@ -400,7 +419,7 @@ The JSON output for each command follows a standardised schema defined in `src/i
 
 ---
 
-## Evidence Registry Enhancements
+## 🗂️ Evidence Registry Enhancements
 
 The evidence registry (`isir query`) now supports additional sub‑commands for exporting and analyzing verification results:
 
@@ -419,7 +438,7 @@ The registry schema has been extended to record `design_name`, `iterations`, and
 
 ---
 
-## RTL Synthesis (Optional)
+## 🏗️ RTL Synthesis (Optional)
 
 For RTL quality experiments, InterScope integrates Yosys synthesis:
 
@@ -433,7 +452,7 @@ The synthesis results (area, cell count, delay) are included in the structured o
 
 ---
 
-## RTL Generation Paths and Differential Verification
+## ⚙️ RTL Generation Paths and Differential Verification
 
 InterScope ships two independent ISIR→RTL lowerings plus a differential harness that replays both against identical stimulus and reports agreement.
 
@@ -465,7 +484,7 @@ The direct path is additionally cross-checked against a Python **reference inter
 
 ---
 
-## Examples
+## 💡 Examples
 
 ### Quick Verification of All Bundled Examples
 
@@ -570,7 +589,7 @@ The integration tests exercise the LLM‑assisted PERF flow and the `rocq‑mcp`
 
 ---
 
-## Customising the Proof Library
+## 🧰 Customising the Proof Library
 
 You can add your own lemma proofs without modifying the core package. Simply edit **`src/lib/koika/assist.py`** and add a new entry to the `PROOF_LIBRARY` dictionary:
 
@@ -589,6 +608,6 @@ The existing entries are **complete Coq proofs** (not skeletons) and are applied
 
 ---
 
-## License
+## 📄 License
 
 This project is licensed under the **MIT License** – see the [LICENSE](LICENSE) file for details.

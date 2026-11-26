@@ -310,7 +310,7 @@ install_rocq_mcp() {
         log_error "git not found. Please install git and rerun this script."
     fi
 
-    local ROCQ_MCP_DIR="$SCRIPT_DIR/tools/rocq-mcp"
+    local ROCQ_MCP_DIR="$SCRIPT_DIR/third_party/rocq-mcp"
     if [[ -d "$ROCQ_MCP_DIR" ]]; then
         log_info "rocq-mcp directory already exists. Pulling latest changes..."
         (cd "$ROCQ_MCP_DIR" && git pull) || {
@@ -394,7 +394,7 @@ install_acl2_mcp() {
         return 0
     fi
 
-    local ACL2_MCP_DIR="$SCRIPT_DIR/tools/acl2-mcp"
+    local ACL2_MCP_DIR="$SCRIPT_DIR/third_party/acl2-mcp"
     if [[ -d "$ACL2_MCP_DIR" ]]; then
         log_info "acl2-mcp directory already exists. Pulling latest changes..."
         (cd "$ACL2_MCP_DIR" && git pull) || {
@@ -536,7 +536,7 @@ install_koika() {
         return 0
     fi
 
-    local KOIKA_DIR="$SCRIPT_DIR/tools/koika"
+    local KOIKA_DIR="$SCRIPT_DIR/third_party/koika"
     if [[ -d "$KOIKA_DIR" ]]; then
         log_info "Kōika directory already exists. Pulling latest changes..."
         (cd "$KOIKA_DIR" && git pull) || log_warning "Failed to update Kōika. Using existing version."

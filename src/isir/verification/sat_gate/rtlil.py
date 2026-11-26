@@ -37,12 +37,24 @@ def run_yosys_pass(rtl_file: Path, top: str, out_dir: Path) -> str:
 
 
 def _wire_match(line: str) -> Optional[tuple]:
-    """Match ``wire [width N] input|output|inout [id] name`` -> (width, name)."""
-    m = re.match(r"\s*wire(?: width (\d+))? (?:input|output|inout)(?: \d+)? (\S+)", line)
+    """Match ``wire [width N] input|output|inout [id] name`` -> (width, name).
+
+    Yosys >= 0.5 renames public wires to ``$pub@N`` and appends the original
+    Verilog name as a trailing comment (``wire width 4 output 4 $pub@1057
+    # \\count_out``).  Prefer that original name so signal names are stable
+    across Yosys versions; older Yosys prints the name directly and has no
+    comment.
+    """
+    m = re.match(
+        r"\s*wire(?: width (\d+))? (?:input|output|inout)(?: \d+)? (\S+)"
+        r"(?:\s+#\s*\\(\S+))?",
+        line,
+    )
     if not m:
         return None
     width = int(m.group(1)) if m.group(1) else 1
-    return width, m.group(2)
+    name = m.group(3) if m.group(3) else m.group(2)
+    return width, name
 
 
 def parse_rtlil(rtlil_text: str) -> Dict[str, List[dict]]:

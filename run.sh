@@ -149,9 +149,9 @@ run_clean_all() {
     local targets=(".venv" ".uv-cache" "build")
     if [[ $include_tools -eq 1 ]]; then
         targets+=(
-            "tools/rocq-mcp"
-            "tools/acl2-mcp"
-            "tools/koika"
+            "third_party/rocq-mcp"
+            "third_party/acl2-mcp"
+            "third_party/koika"
         )
     fi
 
@@ -286,9 +286,9 @@ run_verify_examples() {
 run_verify_semantics() {
     log_info "Verifying ISIR Coq semantics (src/semantics/isir.v + koika/*.v)..."
 
-    local koika_coq="$SCRIPT_DIR/tools/koika/_build/default/coq"
+    local koika_coq="$SCRIPT_DIR/third_party/koika/_build/default/coq"
     if [[ ! -d "$koika_coq" ]]; then
-        log_error "Kōika Coq libraries not found at tools/koika/_build/default/coq. Run './install.sh' first."
+        log_error "Kōika Coq libraries not found at third_party/koika/_build/default/coq. Run './install.sh' first."
     fi
     command -v opam &>/dev/null || log_error "opam not found. Run './install.sh' first."
 
@@ -384,9 +384,9 @@ ${BOLD}Commands:${RESET}
   --search linear|perf|mcts ... Search strategy for --verify (PERF is the default)
   --clean                       Remove generated files (build artifacts + project uv cache)
   --clean-all [--yes] [--no-tools]
-                                Also remove .venv, .uv-cache, and tools/* clones.
+                                Also remove .venv, .uv-cache, and third_party/* clones.
                                   --yes       Skip the confirmation prompt.
-                                  --no-tools  Keep tools/* clones; remove only
+                                  --no-tools  Keep third_party/* clones; remove only
                                               build artifacts, .venv, and .uv-cache.
                                 System-installed tools and the global uv cache
                                 (~/.cache/uv) are NEVER removed.

@@ -75,8 +75,8 @@ _CoqProject
 *.exp
 *.exe
 
-# Tools directory (bundled external tools)
-tools/
+# Third-party directory (bundled external tools)
+third_party/
 
 # Evidence database
 evidence.db

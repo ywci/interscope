@@ -126,8 +126,8 @@ Ltac skel n :=
             | progress (match goal with [ |- context[if Nat.eqb ?x ?c then _ else _] ] => destruct x; simpl end); skel m
             | progress (match goal with [ H : context[if ?b then _ else _] |- _ ] => destruct b eqn:?; simpl in * end); skel m
             | progress (match goal with [ H : _ \/ _ |- _ ] => destruct H end); skel m
-            | progress (match goal with [ H : step _ ?ins _ |- _ ] =>
-                  try (pose proof (assume_inputs ins) as Hin);
+            | progress (match goal with [ H : step ?s ?ins _ |- _ ] =>
+                  try (pose proof (assume_inputs s ins) as Hin);
                   inversion H; subst; clear H; simpl;
                   repeat (match goal with [ H0 : _ /\ _ |- _ ] => destruct H0 end);
                   cbn end); skel m

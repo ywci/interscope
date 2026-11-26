@@ -1,0 +1,67 @@
+isir_version: "0.1"
+module:
+  name: fsm_done
+  clocks:
+    - name: clk
+      edge: posedge
+  resets:
+    - name: rst
+      polarity: active_high
+      async: false
+      affects: all
+  inputs:
+    - name: start
+      direction: input
+      type: "bool"
+    - name: a
+      direction: input
+      type: "bits<8>"
+    - name: b
+      direction: input
+      type: "bits<8>"
+  outputs:
+    - name: done_out
+      direction: output
+      type: "bool"
+  state:
+    - name: fsm
+      kind: register
+      type: "bits<2>"
+      initial: 0
+    - name: done
+      kind: register
+      type: "bool"
+      initial: false
+  rules:
+    - name: start_go
+      condition: (and start (not (read done)))
+      action:
+        - (write fsm 1)
+    - name: tick
+      condition: (and (not start) (lt (read fsm) 3))
+      action:
+        - (write fsm (add (read fsm) 1))
+    - name: update_done
+      condition: "true"
+      action:
+        - (write done (eq (read fsm) 3))
+  directives:
+    - type: assume
+      name: started_implies_idle
+      expression: (implies start (eq (read fsm) 0))
+    - type: assume
+      name: bounded_inputs
+      expression: (and (le a 127) (le b 127))
+  properties:
+    - name: done_implies_complete
+      kind: safety
+      expression:
+        kind: always
+        operand: (implies (read done) (eq (read fsm) 3))
+  proof_obligations:
+    - property: done_implies_complete
+      status: unproved
+      engine: theorem_proving
+      backend: koika
+    - property: done_implies_complete
+      engine: model_checking

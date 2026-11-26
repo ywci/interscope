@@ -71,7 +71,7 @@ def convert(
 
     # 2. Locate (or build) the Kōika Coq library
     project_root = get_project_root()
-    default_koika_dir = str(project_root / "tools" / "koika")
+    default_koika_dir = str(project_root / "third_party" / "koika")
     koika_dir = os.environ.get("KOIKA_DIR", default_koika_dir)
 
     coq_path, coq_flag = _find_or_build_koika_coq_path(koika_dir)

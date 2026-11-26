@@ -4,6 +4,7 @@
 # Tests compiler path resolution and compile_ocaml_to_verilog functionality.
 
 import json as real_json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -125,4 +126,9 @@ class TestCompileOCamlToVerilog(unittest.TestCase):
         ]
         mock_run.assert_called_once()
         actual_cmd = mock_run.call_args[0][0]
-        self.assertEqual(actual_cmd, expected_cmd)
+        # macOS: TMPDIR lives under /var, a symlink to /private/var; the
+        # backend resolves paths, so compare canonical forms.
+        self.assertEqual(
+            [os.path.realpath(p) for p in actual_cmd],
+            [os.path.realpath(p) for p in expected_cmd],
+        )

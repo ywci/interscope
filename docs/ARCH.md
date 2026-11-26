@@ -90,7 +90,7 @@ interscope/
 │       │       └── perf_diagnostics.py # Human‑readable PERF failure diagnostics generation
 │       │   ├── sat_gate/              # SAT‑gating: ITP‑driven bounded‑SAT pre‑filter (see §SAT‑gating)
 │       │   │   ├── policy.py          # objective‑free evidence_action + disposition matrix
-│       │   │   ├── certificate.py     # T3 + REPLAY certification (DRAT, composed replay C11)
+│       │   │   ├── certificate.py     # T3 + REPLAY certification (DRAT + composed replay)
 │       │   │   ├── replay.py          # reference‑semantics replay + composed replay
 │       │   │   ├── bitblast.py        # shared bit‑blaster + symbol table
 │       │   │   ├── compile_dyn.py     # dynamic obligation compiler (predicates → CNF)
@@ -102,7 +102,7 @@ interscope/
 │       │   │   ├── mus.py             # deletion‑based group‑MUS
 │       │   │   ├── drat.py            # RUP/DRAT certificate checker
 │       │   │   ├── cache.py           # certification reuse + SAT/subsumption/hint caches
-│       │   │   ├── lemma_hint.py      # CTI‑generalized lemma hints (§6.8)
+│       │   │   ├── lemma_hint.py      # CTI‑generalized lemma hints
 │       │   │   ├── boosters.py        # hint‑generation boosters (probe‑core, s′, …)
 │       │   │   ├── ranker.py          # shadow‑first learned ranker
 │       │   │   ├── array_instantiate.py # bounded array Ackermannization

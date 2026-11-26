@@ -837,6 +837,37 @@ def test_invariants_section_lowering():
     assert "Hint Constructors reachable step : core." in state_text
 
 
+def test_assume_inputs_axiom_quantifies_state():
+    """Top-level `assume` directives that read state must not leave `s` free.
+
+    Regression test: `assume_inputs` used to be quantified only over `inputs`,
+    so any assumption mentioning a state register (e.g. `(read fsm)`) emitted a
+    free `s` and made every downstream coqc run fail before any proof attempt.
+    """
+    spec_mod = isir.SpecModule(name="assumed")
+    spec_mod.state_ops.append(
+        isir.SpecStateOp(state_name="fsm", kind="register", data_type="bits<2>", initial=0)
+    )
+    spec_mod.inputs = [
+        isir.Interface(name="start", direction="input", data_type="bool"),
+        isir.Interface(name="a", direction="input", data_type="bits<8>"),
+    ]
+    spec_mod.directive_ops.append(
+        isir.SpecDirectiveOp(
+            kind="assume",
+            directive_name="started_implies_idle",
+            expression="(and (implies start (eq (read fsm) 0)) (le a 127))",
+        )
+    )
+
+    koika_mod = isir_to_koika.convert(spec_mod)
+    state_text = "\n".join(koika_mod.state_definitions)
+    # The axiom must bind the state so `(fsm s)` is in scope for coqc.
+    assert "Axiom assume_inputs : forall (s : state) (inputs : inputs)," in state_text
+    # The state read inside the assumption must render as an application of `s`.
+    assert "(fsm s)" in state_text
+
+
 def test_malformed_rule_condition_raises():
     """A 3-argument `and` in a rule condition must raise, not silently become True."""
     from isir.utils.expr import ExprError

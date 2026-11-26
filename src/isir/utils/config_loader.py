@@ -432,7 +432,7 @@ def load_config(
         "logs": "build/logs",
         "temp": "build/temp",
         "verify": "build/verify",
-        "tools": "tools"
+        "tools": "third_party"
     }
     for key, default in dir_defaults.items():
         config["directories"].setdefault(key, default)

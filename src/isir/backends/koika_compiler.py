@@ -141,7 +141,7 @@ def _find_compiler(koika_path: Optional[str]) -> Path:
 
     koika_switch = os.environ.get("KOIKA_SWITCH_NAME", "coq-8.18-ocaml-4.14")
     opam_root = Path(os.environ.get("OPAMROOT", Path.home() / ".opam"))
-    repo_wrapper = Path(__file__).resolve().parents[3] / "tools" / "koika" / "bin" / "koika"
+    repo_wrapper = Path(__file__).resolve().parents[3] / "third_party" / "koika" / "bin" / "koika"
 
     for loc in [
         repo_wrapper,

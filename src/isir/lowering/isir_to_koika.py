@@ -937,7 +937,7 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
 
     state_defs.append("(* Global assumptions from ISIR assume directives (default: True) *)")
     combined = " /\\ ".join(global_assumptions) if global_assumptions else "True"
-    state_defs.append(f"Axiom assume_inputs : forall (inputs : inputs), ({combined}).")
+    state_defs.append(f"Axiom assume_inputs : forall (s : state) (inputs : inputs), ({combined}).")
     state_defs.append("")
 
     init_vals = []

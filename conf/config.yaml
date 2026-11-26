@@ -1,6 +1,6 @@
 llm:
   provider: "deepseek" # openai, anthropic, ollama, deepseek
-  model: "deepseek-chat" # DeepSeek model (deepseek-chat | deepseek-reasoner)
+  model: "deepseek-reasoner" # DeepSeek model (deepseek-chat | deepseek-reasoner)
   api_key: "" # empty -> auto-detect from <PROVIDER>_API_KEY env var
   base_url: "" # empty -> auto-detect from <PROVIDER>_API_BASE env var
   temperature: 0.2
@@ -73,7 +73,7 @@ verification:
   rule_split_attribute: "split"
 
 proof:
-  max_repair_attempts: 5 # used when PERF is disabled
+  max_repair_attempts: 10 # used when PERF is disabled
 
   structural_validation:
     enabled: true
