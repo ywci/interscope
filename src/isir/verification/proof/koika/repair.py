@@ -182,7 +182,7 @@ def _build_repair_prompt(
         "- Do NOT use `discriminate` on boolean equalities like `(op_reg s =? 0) = true`.\n"
         "  Use `inversion` or `rewrite Nat.eqb_eq in H` first.\n"
         "- Use explicit braces `{ ... }` for each subgoal, not bullets `+` or `-`.\n"
-        "- Replace any deprecated `Nat.mod_add` with `Div0.mod_add`."
+        "- Replace any deprecated `Nat.mod_add` with `Nat.Div0.mod_add`."
 )
     return "\n".join(parts)
 

@@ -146,7 +146,7 @@ def _generate_recommendations(stats: PERFStats) -> List[str]:
     if "nat.mod_add" in joined or "deprecated" in joined:
         recs.append(
             "- Deprecated notation `Nat.mod_add` (or similar) is being used. "
-            "Replace it with `Div0.mod_add` or avoid it entirely in generated "
+            "Replace it with `Nat.Div0.mod_add` or avoid it entirely in generated "
             "code and templates."
 )
     if "not a discriminable equality" in joined or "discriminate" in joined:

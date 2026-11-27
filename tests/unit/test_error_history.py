@@ -36,7 +36,7 @@ class TestErrorSignature:
         assert ErrorHistory._signature(msg) == "Error: the real problem"
 
     def test_skips_deprecated_substring_line(self):
-        msg = "Nat.mod_add is deprecated, use Div0.mod_add\nError: boom"
+        msg = "Nat.mod_add is deprecated, use Nat.Div0.mod_add\nError: boom"
         assert ErrorHistory._signature(msg) == "Error: boom"
 
     def test_fallback_when_all_lines_are_warnings(self):

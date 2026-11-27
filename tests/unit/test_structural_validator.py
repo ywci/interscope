@@ -74,7 +74,7 @@ class TestValidateStructure:
         assert any("Nat.div_same" in i for i in issues)
 
     def test_modern_div0_not_flagged(self):
-        assert validate_structure("Proof. rewrite Div0.mod_add. Qed.") == []
+        assert validate_structure("Proof. rewrite Nat.Div0.mod_add. Qed.") == []
 
     def test_substring_of_deprecated_not_flagged(self):
         assert validate_structure("Proof. rewrite Nat.mod_add_extra. Qed.") == []
@@ -140,7 +140,7 @@ class TestValidateStructure:
 
 def test_deprecated_notations_map_has_expected_keys():
     assert "Nat.mod_add" in DEPRECATED_NOTATIONS
-    assert DEPRECATED_NOTATIONS["Nat.mod_add"] == "Div0.mod_add"
+    assert DEPRECATED_NOTATIONS["Nat.mod_add"] == "Nat.Div0.mod_add"
     assert "Nat.div_same" in DEPRECATED_NOTATIONS
 
 

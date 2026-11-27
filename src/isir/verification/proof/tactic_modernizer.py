@@ -17,11 +17,11 @@
 #
 # Optional replacement (disabled by default):
 #   - `Nat.mod_add` / `Nat.mod_mul` / `Nat.add_mod` / `Nat.mod_same` etc.
-#     -> `Div0.mod_add` / `Div0.mod_mul` / `Div0.add_mod` / `Div0.mod_same`
+#     -> `Nat.Div0.mod_add` / `Nat.Div0.mod_mul` / `Nat.Div0.add_mod` / `Nat.Div0.mod_same`
 #     This is **only** applied when `replace_nat_mod_add=True` is
 #     passed to `modernize_tactics`.  By default it remains disabled to
-#     avoid introducing a hard dependency on `Arith.Div0`, which is not
-#     available on all Coq installations.
+#     keep the modernisation conservative; the `Nat.Div0.*` names are in
+#     scope via `Arith.PeanoNat` on Coq >= 8.17.
 
 import re
 from typing import Dict, List, Optional

@@ -48,8 +48,8 @@ def sanitize_coq_script(script: str,
             cleaned_lines.append(line)
     script = '\n'.join(cleaned_lines)
 
-    # 3. Replace deprecated Nat.mod_add with Div0.mod_add.
-    script = script.replace('Nat.mod_add', 'Div0.mod_add')
+    # 3. Replace deprecated Nat.mod_add with the canonical Nat.Div0.mod_add.
+    script = script.replace('Nat.mod_add', 'Nat.Div0.mod_add')
 
     # 4. Replace obvious boolean‑equality `discriminate` patterns.
     if re.search(r'discriminate\s+(\w+)\.', script):
