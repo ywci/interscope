@@ -920,3 +920,15 @@ def test_prelude_coherence_tools():
     text = "\n".join(koika_mod.state_definitions)
     assert "Require Import ZifyBool." in text
     assert "Hint Unfold has_line : core." in text
+
+
+def test_negative_literal_in_statement_raises():
+    """Negative literals in axiom/property statements must fail fast with
+    guidance instead of emitting invalid Coq (`Cannot interpret this number`)."""
+    from isir.utils.expr import ExprError
+    import pytest as _pytest
+    with _pytest.raises(ExprError, match="Negative literal -32768"):
+        isir_to_koika._expr_to_coq(
+            ["ge", ["exp", "v"], -32768], {}, {}, [],
+            as_prop=True, function_types={"exp": "nat"},
+        )

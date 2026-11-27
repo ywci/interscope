@@ -183,6 +183,12 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
             return "true" if expr else "false"
 
     if isinstance(expr, int):
+        if expr < 0:
+            raise ExprError(
+                f"Negative literal {expr} cannot be lowered to Coq: the nat proof "
+                "model has no negative numbers. Express the bound over the unsigned "
+                "two's-complement domain (e.g. `2^W - k`) or use `(sub 0 k)`."
+            )
         return str(expr)
     if isinstance(expr, str):
         if local_types and expr in local_types:

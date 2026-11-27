@@ -453,7 +453,12 @@ def verify_spec(args: argparse.Namespace) -> int:
                     filtered.append(po)
             else:
                 po_backend = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", None)
-                if _canonical_backend(po_backend) == target_backend:
+                po_canon = _canonical_backend(po_backend)
+                # A single-backend request covers the corresponding side of
+                # co-work (`koika_acl2`) obligations too: `--backend koika`
+                # proves their Kōika side, `--backend acl2` their ACL2 side.
+                if po_canon == target_backend or (
+                        target_backend in ("koika", "acl2") and po_canon == "koika_acl2"):
                     filtered.append(po)
         if not filtered:
             logger.warning(f"No proof obligations match backend '{args.backend}'.")
@@ -572,7 +577,9 @@ def verify_spec(args: argparse.Namespace) -> int:
         for po in theorem_obligations:
             backend = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend)
-            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False), getattr(args, 'acl2_only', False))
+            downgrade_cowork = getattr(args, 'no_cowork', False) or _canonical_backend(args.backend) == "koika"
+            acl2_only = getattr(args, 'acl2_only', False) or _canonical_backend(args.backend) == "acl2"
+            canonical = _effective_backend(canonical, downgrade_cowork, acl2_only)
             if canonical == "koika":
                 backends_needed.add("koika")
             elif canonical == "acl2":
@@ -653,7 +660,9 @@ def verify_spec(args: argparse.Namespace) -> int:
             prop_name = po.get("property") if isinstance(po, dict) else getattr(po, "property", "unknown")
             backend_raw = po.get("backend") if isinstance(po, dict) else getattr(po, "backend", "koika")
             canonical = _canonical_backend(backend_raw) or "koika"
-            canonical = _effective_backend(canonical, getattr(args, 'no_cowork', False), getattr(args, 'acl2_only', False))
+            downgrade_cowork = getattr(args, 'no_cowork', False) or _canonical_backend(args.backend) == "koika"
+            acl2_only = getattr(args, 'acl2_only', False) or _canonical_backend(args.backend) == "acl2"
+            canonical = _effective_backend(canonical, downgrade_cowork, acl2_only)
             if getattr(args, "sat_gate", False) and prop_name in sat_gate_results:
                 _gr = sat_gate_results[prop_name]
                 if _gr.evidence_action is not None and _gr.evidence_action.value == "prove_step":
