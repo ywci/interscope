@@ -157,19 +157,23 @@ def _extract_width(data_type: str) -> Optional[int]:
 def _rtl_signal_map(spec_module) -> tuple:
     """Derive the ISIR → RTL signal-name mapping used by the SVA ``bind``.
 
-    The Kōika/cuttlec backend renames signals from the ISIR names: registers get
-    the first letter capitalized (`fib_curr` → `Fib_curr`), inputs are
-    internalized as `Inp_<name>`, and the reset becomes `rst_n` (active‑low).
-    Returns ``(signal_map, reset_inverted)``.
+    The Kōika/cuttlec backend renames signals from the ISIR names: registers
+    (including internalized inputs/outputs) become the ``reg_t`` constructors
+    ``Reg_<Capitalized>`` (see ``koika_to_rtl._reg_ctor``), and the reset
+    becomes ``rst_n`` (active‑low).  Returns ``(signal_map, reset_inverted)``.
     """
+    from isir.lowering.koika_to_rtl import _reg_ctor
+
     signal_map: Dict[str, str] = {}
     reset_inverted = False
     for s in getattr(spec_module, "state_ops", []):
         if getattr(s, "kind", "") == "register" and getattr(s, "state_name", ""):
-            nm = s.state_name
-            signal_map[nm] = nm[0].upper() + nm[1:]
+            signal_map[s.state_name] = _reg_ctor(s.state_name)
     for inp in getattr(spec_module, "inputs", []):
         if getattr(inp, "name", ""):
+            # Inputs are exposed as top-level `Inp_<name>` ports (injected by
+            # the long-path post-processing), driven onto the internalized
+            # register wires.
             signal_map[inp.name] = f"Inp_{inp.name}"
     for rst in getattr(spec_module, "resets", []):
         if isinstance(rst, dict) and rst.get("name"):

@@ -132,7 +132,7 @@ def convert(
         # Resolve parameterised type before computing width
         resolved_type = _resolve_type(inp.data_type, params)
         w = _safe_width(resolved_type)
-        cap_name = inp.name[0].upper() + inp.name[1:] if inp.name else inp.name
+        cap_name = _reg_ctor(inp.name)
         port_declarations.append(f"  input [{w-1}:0] Inp_{inp.name},")
 
         # Make the internalized input a combinational wire driven by the port,
@@ -354,6 +354,32 @@ def _capitalize(name: str) -> str:
     return name[0].upper() + name[1:] if name else name
 
 
+def _reg_ctor(name: str) -> str:
+    """Constructor name for a register in the generated `reg_t` inductive.
+
+    Prefixed with ``Reg_`` so no user register name can collide with the
+    generated identifiers (`R`/`RegT`, `reg_t`, `rule_name_t`, …).  A register
+    literally named ``r`` used to produce a constructor ``R`` that collided
+    with the type-function definition (Coq: "R already exists").
+    """
+    return "Reg_" + _capitalize(name)
+
+
+def _first_unsupported_op(expr: Any) -> Optional[str]:
+    """Return the first operator that `_has_unsupported_ops` would reject."""
+    if isinstance(expr, list) and len(expr) > 0:
+        op = expr[0]
+        if op in ("mem_read", "mem_write", "slice", "mul", "mul_full", "div", "mod", "ashr"):
+            return op
+        if op in _MULTIARG_BLACKBOXES:
+            return op
+        for arg in expr[1:]:
+            found = _first_unsupported_op(arg)
+            if found:
+                return found
+    return None
+
+
 def _safe_width(data_type: str) -> int:
     """Return bit width, defaulting to 32 if the type string cannot be parsed."""
     try:
@@ -368,6 +394,9 @@ def _koika_width(data_type: str) -> int:
     if data_type == "bool": return 1
     if data_type.startswith("bits<"):
         return int(data_type[5:-1])
+    m = re.match(r"^signed<bits<(\d+)>>$", data_type)
+    if m:
+        return int(m.group(1))
     raise ValueError(f"Unrecognized type: {data_type}")
 
 
@@ -442,7 +471,11 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
         except ExprError:
             cond_parsed = None
         if cond_parsed is not None and _has_unsupported_ops(cond_parsed):
-            continue  # condition uses an unsupported op (e.g. slice in a function)
+            logger.warning(
+                "MC design: dropping rule '%s' — condition uses unsupported op '%s'. "
+                "The model checker runs on a REDUCED design.",
+                rule.rule_name, _first_unsupported_op(cond_parsed))
+            continue
         for action_str in rule.actions:
             try:
                 parsed = parse_sexpr(action_str)
@@ -456,6 +489,10 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
                     # Skip memory ops and unsupported arithmetic AFTER inlining, so
                     # an unsupported op inside a user-function body is also caught.
                     if _has_unsupported_ops(expr_val):
+                        logger.warning(
+                            "MC design: dropping write to '%s' in rule '%s' — "
+                            "unsupported op '%s'. The model checker runs on a REDUCED design.",
+                            dest, rule.rule_name, _first_unsupported_op(expr_val))
                         continue
                     flattened_rules.append((sub, condition, dest, expr_val))
                     ridx += 1
@@ -518,19 +555,19 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
 
     lines.append("Inductive reg_t :=")
     for r in registers:
-        lines.append(f"  | {_capitalize(r.state_name)}")
+        lines.append(f"  | {_reg_ctor(r.state_name)}")
     if not registers:
         lines.append("  | Dummy")
     lines.append(".\n")
 
-    lines.append("Definition R (r : reg_t) : type := match r with")
+    lines.append("Definition RegT (reg : reg_t) : type := match reg with")
     reg_widths = {}
     for r in registers:
         # Resolve parameters before computing width
         resolved_type = _resolve_type(r.data_type, params)
         w = _safe_width(resolved_type)
-        reg_widths[_capitalize(r.state_name)] = w
-        lines.append(f"  | {_capitalize(r.state_name)} => bits_t {w}")
+        reg_widths[_reg_ctor(r.state_name)] = w
+        lines.append(f"  | {_reg_ctor(r.state_name)} => bits_t {w}")
     if not registers:
         lines.append("  | Dummy => bits_t 32")
     lines.append("  end.\n")
@@ -570,31 +607,36 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
         # a write whenever the register was read by an earlier rule.
         actions = []
         for rname, condition, dest, expr_val in flattened_rules:
-            target_width = reg_widths.get(_capitalize(dest), 32)
+            target_width = reg_widths.get(_reg_ctor(dest), 32)
             coq_expr = _coq_bits_expr(expr_val, reg_widths, target_width)
-            cap_dest = _capitalize(dest)
+            cap_dest = _reg_ctor(dest)
             actions.append(f"write0({cap_dest}, {coq_expr})")
         lines.append(f"  | Step_merged => {{{{ {'; '.join(actions)} }}}}")
     else:
         if registers:
-            first_reg = _capitalize(registers[0].state_name)
+            first_reg = _reg_ctor(registers[0].state_name)
             lines.append(f"  | Dummy_rule => {{{{ write0({first_reg}, read0({first_reg})) }}}}")
         else:
             lines.append("  | Dummy_rule => {{ write0(Dummy, read0(Dummy)) }}")
     lines.append("  end.\n")
 
-    lines.append("Definition rules := tc_rules R Sigma urules.\n")
+    lines.append("Definition rules := tc_rules RegT Sigma urules.\n")
 
-    lines.append("Definition initial_r (r : reg_t) : R r := match r return R r with")
+    lines.append("Definition initial_r (reg : reg_t) : RegT reg := match reg return RegT reg with")
     for r in registers:
         init_val = r.initial if r.initial is not None else (0 if r.data_type != "bool" else False)
-        w = reg_widths[_capitalize(r.state_name)]
+        w = reg_widths[_reg_ctor(r.state_name)]
         if isinstance(init_val, bool):
             val_int = 1 if init_val else 0
-            coq_val = f"(Bits.of_nat {w} {val_int})"
         else:
-            coq_val = f"(Bits.of_nat {w} {init_val})"
-        lines.append(f"  | {_capitalize(r.state_name)} => {coq_val}")
+            val_int = int(init_val)
+        if val_int < 0:
+            # Negative initials are emitted as their two's-complement bit
+            # pattern (identical to the RTL reset value) — `Bits.of_nat` cannot
+            # take a negative literal.
+            val_int &= (1 << w) - 1
+        coq_val = f"(Bits.of_nat {w} {val_int})"
+        lines.append(f"  | {_reg_ctor(r.state_name)} => {coq_val}")
     if not registers:
         lines.append("  | Dummy => (Bits.of_nat 32 0)")
     lines.append("  end.\n")
@@ -609,7 +651,7 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
     lines.append("Definition package :=")
     lines.append("  {|")
     lines.append("    ip_koika := {|")
-    lines.append("      koika_reg_types := R;")
+    lines.append("      koika_reg_types := RegT;")
     lines.append("      koika_reg_init reg := initial_r reg;")
     lines.append("      koika_ext_fn_types := Sigma;")
     lines.append("      koika_rules := rules;")
@@ -636,11 +678,11 @@ def _generate_coq_design(spec_module: isir.SpecModule, params: Dict[str, int]) -
 
 def _infer_expr_width(expr: Any, reg_widths: dict) -> int:
     if isinstance(expr, str):
-        return reg_widths.get(_capitalize(expr), 32)
+        return reg_widths.get(_reg_ctor(expr), 32)
     if isinstance(expr, list) and len(expr) > 0:
         op = expr[0]
         if op == 'read' and len(expr) > 1:
-            return reg_widths.get(_capitalize(expr[1]), 32)
+            return reg_widths.get(_reg_ctor(expr[1]), 32)
         if op in ('add', 'sub', 'and', 'or', 'band', 'bor', 'land', 'lor', 'not', 'ite', 'min', 'max'):
             for arg in expr[1:]:
                 w = _infer_expr_width(arg, reg_widths)
@@ -659,9 +701,13 @@ def _coq_bits_expr(expr, reg_widths: dict, current_width: int) -> str:
         val = 1 if expr else 0
         return f"|{current_width}`d{val}|"
     if isinstance(expr, int):
+        if expr < 0:
+            # Negative literals are two's-complement bit patterns at the
+            # current width (matches the RTL semantics).
+            expr &= (1 << current_width) - 1
         return f"|{current_width}`d{expr}|"
     if isinstance(expr, str):
-        return f"read0({_capitalize(expr)})"
+        return f"read0({_reg_ctor(expr)})"
 
     if not isinstance(expr, list) or len(expr) == 0:
         return str(expr)
@@ -670,7 +716,7 @@ def _coq_bits_expr(expr, reg_widths: dict, current_width: int) -> str:
     args = expr[1:]
 
     if op == 'read':
-        return f"read0({_capitalize(args[0])})"
+        return f"read0({_reg_ctor(args[0])})"
 
     if op in ('add', 'sub'):
         sym = {'add': '+', 'sub': '-'}[op]

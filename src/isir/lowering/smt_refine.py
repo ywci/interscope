@@ -309,6 +309,17 @@ def _decapitalize(name: str) -> str:
     return name[0].lower() + name[1:] if name else name
 
 
+def _decode_reg(name: str) -> str:
+    """Map a generated `reg_t` constructor back to the ISIR signal name.
+
+    ``Reg_<Capitalized>`` (see ``koika_to_rtl._reg_ctor``) decodes to the
+    original (lowercased) register name; other identifiers just decapitalize.
+    """
+    if name.startswith("Reg_"):
+        return _decapitalize(name[len("Reg_"):])
+    return _decapitalize(name)
+
+
 def _koika_literal(tok: str) -> Tuple[int, int]:
     """Parse `|W'dV|` (or `|W'b...|`, `|W'h...|`) into (value, width)."""
     m = _KOIKA_LITERAL.match(tok)
@@ -381,7 +392,7 @@ def _koika_to_smt(tokens: List[str], i: List[int], widths: Dict[str, int],
                     depth -= 1
                     if depth == 0:
                         break
-        reg = _decapitalize(fname)
+        reg = _decode_reg(fname)
         w = widths.get(reg, 1)
         decls.add((reg, w))
         return reg, w
@@ -390,7 +401,7 @@ def _koika_to_smt(tokens: List[str], i: List[int], widths: Dict[str, int],
         advance()  # '('
         name = advance()
         advance()  # ')'
-        reg = _decapitalize(name)
+        reg = _decode_reg(name)
         w = widths.get(reg, widths.get(name, 1))
         decls.add((reg, w))
         return reg, w
@@ -439,7 +450,7 @@ def refine_trace(spec: Any, cycles: int, z3_bin: str = "z3") -> Dict[str, Any]:
     diverges.  `spec` is the ORIGINAL SpecModule (inputs separate from state).
     """
     from isir.lowering.koika_to_rtl import (
-        _coq_bits_expr, _capitalize, _has_unsupported_ops, _internalize_inputs,
+        _coq_bits_expr, _reg_ctor, _has_unsupported_ops, _internalize_inputs,
 )
     from isir.lowering.isir_to_rtl_direct import _width_of
     from isir.utils.expr import parse_sexpr, unfold_user_functions
@@ -457,7 +468,7 @@ def refine_trace(spec: Any, cycles: int, z3_bin: str = "z3") -> Dict[str, Any]:
     # Internalized spec (inputs become registers) drives the Kōika lowering.
     int_spec = _internalize_inputs(spec)
     int_widths = {s.state_name: _width_of(s.data_type) for s in int_spec.state_ops}
-    int_reg_widths = {_capitalize(n): w for n, w in int_widths.items()}
+    int_reg_widths = {_reg_ctor(n): w for n, w in int_widths.items()}
 
     # Collect the write actions, gated by their rule's condition:
     #   dest := (ite cond rhs (read dest))   — the register holds if the rule

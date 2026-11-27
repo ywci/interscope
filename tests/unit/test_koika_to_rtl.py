@@ -71,8 +71,8 @@ class TestCoqGeneration:
         assert "Inductive rule_name_t :=" in coq
         assert "Step_merged" in coq
         assert "bits_t 8" in coq
-        assert "read0(Cnt)" in coq
-        assert "write0(Cnt" in coq
+        assert "read0(Reg_Cnt)" in coq
+        assert "write0(Reg_Cnt" in coq
         assert "|>" in coq
         assert "Extraction" in coq
 
@@ -92,7 +92,7 @@ class TestCoqGeneration:
         assert "if" in coq
         assert "then" in coq
         assert "else" in coq
-        assert "write0(Flag" in coq
+        assert "write0(Reg_Flag" in coq
 
     def test_arithmetic_expression(self):
         mod = _make_spec_module("arith")
@@ -234,3 +234,48 @@ def test_find_or_build_raises_actionable_error_for_missing_dir():
     from isir.lowering.koika_to_rtl import _find_or_build_koika_coq_path
     with pytest.raises(KoikaToRTLError, match="does not exist"):
         _find_or_build_koika_coq_path("/nonexistent/koika/root")
+
+
+def test_register_named_r_does_not_collide():
+    """A register literally named `r` used to produce a constructor `R` that
+    collided with the type-function definition (Coq: "R already exists")."""
+    mod = isir.SpecModule(name="edge")
+    mod.state_ops = [isir.SpecStateOp(state_name="r", kind="register", data_type="bits<5>", initial=0)]
+    mod.rule_ops = [isir.SpecRuleOp(rule_name="tick", condition="true", actions=["(write r 1)"])]
+    coq = _generate_coq_design(mod, {})
+    assert "| Reg_R" in coq
+    assert "Definition RegT (reg : reg_t)" in coq
+    assert "Definition R " not in coq
+    assert "koika_reg_types := RegT" in coq
+
+
+def test_signed_type_width():
+    """`signed<bits<N>>` must parse to N, not silently default to 32."""
+    assert koika_to_rtl._koika_width("signed<bits<16>>") == 16
+    assert koika_to_rtl._koika_width("bits<8>") == 8
+
+
+def test_negative_literal_two_complement():
+    """Negative literals emit their two's-complement pattern, not `32`d-32768`."""
+    assert koika_to_rtl._coq_bits_expr(-32768, {}, 32) == "|32`d4294934528|"
+
+
+def test_negative_initial_two_complement():
+    """Negative register initials emit the wrapped bit pattern (RTL-faithful)."""
+    mod = isir.SpecModule(name="edge")
+    mod.state_ops = [isir.SpecStateOp(state_name="acc", kind="register", data_type="bits<16>", initial=-1)]
+    coq = _generate_coq_design(mod, {})
+    assert "(Bits.of_nat 16 65535)" in coq
+
+
+def test_unsupported_op_warns_reduced_design(caplog):
+    """Dropping a rule/action for unsupported ops must warn loudly."""
+    import logging
+    mod = isir.SpecModule(name="edge")
+    mod.state_ops = [isir.SpecStateOp(state_name="y", kind="register", data_type="bits<8>", initial=0)]
+    mod.state_ops.append(isir.SpecStateOp(
+        state_name="m", kind="memory", data_type={"type": "memory", "elem": "bits<8>", "depth": 16}))
+    mod.rule_ops = [isir.SpecRuleOp(rule_name="ld", condition="true", actions=["(write y (mem_read m 0))"])]
+    with caplog.at_level(logging.WARNING):
+        _generate_coq_design(mod, {})
+    assert any("REDUCED" in r.message for r in caplog.records)

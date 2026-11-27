@@ -88,14 +88,17 @@ def _compare_states(spec: SpecModule) -> List[Tuple[str, str]]:
     """Return [(short_state, long_state)] for the observable projection.
 
     The short path uses the declared (lowercase) state names; the long path
-    (Kōika product) exposes the same registers capitalized and `/* public */`.
+    (Kōika product) exposes the same registers as the ``reg_t`` constructors
+    ``Reg_<Capitalized>`` (see ``koika_to_rtl._reg_ctor``) and ``/* public */``.
     Memories are excluded (not currently sampled by the harness).
     """
+    from isir.lowering.koika_to_rtl import _reg_ctor
+
     pairs = []
     for s in spec.state_ops:
         if s.kind == "memory":
             continue
-        pairs.append((s.state_name, _capitalize(s.state_name)))
+        pairs.append((s.state_name, _reg_ctor(s.state_name)))
     return pairs
 
 

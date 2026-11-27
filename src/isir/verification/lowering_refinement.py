@@ -192,7 +192,7 @@ def run_lowering_refinement(spec: Any, cycles: int = 3, seed: int = 0,
     `run_differential` defaults to False because it invokes the Kōika compiler
     and iverilog; the pipeline cross-check is an explicit opt-in."""
     from isir.lowering.koika_to_rtl import (
-        _coq_bits_expr, _capitalize, _internalize_inputs, _has_unsupported_ops,
+        _coq_bits_expr, _reg_ctor, _internalize_inputs, _has_unsupported_ops,
 )
     from isir.lowering.isir_to_rtl_direct import _width_of
     from isir.lowering.smt_refine import refine_isir_vs_koika
@@ -203,7 +203,7 @@ def run_lowering_refinement(spec: Any, cycles: int = 3, seed: int = 0,
 
     int_spec = _internalize_inputs(spec)
     widths = {s.state_name: _width_of(s.data_type) for s in int_spec.state_ops}
-    reg_widths = {_capitalize(k): v for k, v in widths.items()}
+    reg_widths = {_reg_ctor(k): v for k, v in widths.items()}
     functions = getattr(spec, "functions", None) or []
 
     for rule in spec.rule_ops:
