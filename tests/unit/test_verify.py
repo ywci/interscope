@@ -487,6 +487,87 @@ class TestVerifyModelChecking:
         assert mock_mc.call_count == 1
 
 
+    @patch("isir.cli.verify.LLMProofSkill")
+    @patch("isir.cli.verify.run_model_check")
+    @patch("isir.cli.verify.koika_to_rtl_convert")
+    @patch("isir.cli.verify.isir_to_koika_convert")
+    @patch("isir.cli.verify.convert_ast_to_isir_module")
+    @patch("isir.cli.verify.parse_isir")
+    @patch("isir.cli.verify.validate_isir_file")
+    @patch(
+        "isir.cli.verify.load_config",
+        return_value={
+            "directories": {"build": "build"},
+            "verification": {"bmc_max_depth": 100},
+            "proof": {"perf": {"enabled": False}},
+            "provers": {"koika": {"use_mc_lemmas": True}},
+        },
+)
+    def test_mc_rtl_dir_created_when_prep_provides_rtl(
+        self,
+        mock_cfg,
+        mock_val,
+        mock_parse,
+        mock_conv,
+        mock_koika_conv,
+        mock_rtl,
+        mock_mc,
+        mock_skill,
+        tmp_path
+):
+        """Regression: with the MC-lemma prep path providing `rtl_file`, the
+        per-property flow must still create `model_check/rtl` before writing
+        `{design}_{prop}.v` (a missing mkdir caused ENOENT on clean trees)."""
+        mod = _make_minimal_spec_module()
+        mod.proof_obligations = [
+            {"property": "simple_prop", "engine": "theorem_proving", "backend": "koika"},
+            {"property": "simple_prop", "engine": "model_checking", "backend": None},
+        ]
+        mock_conv.return_value = mod
+        mock_parse.return_value = MagicMock(module=MagicMock())
+        mock_koika_conv.return_value = MagicMock()
+
+        mock_skill_instance = MagicMock()
+        mock_skill.return_value = mock_skill_instance
+        mock_skill_instance.prove.return_value = ProofResult(
+            success=True, proof_script="dummy"
+)
+        mock_mc.return_value = {
+            "success": True,
+            "status": "proved",
+            "counterexample_trace": None,
+            "output": "",
+            "error": None,
+        }
+
+        with patch("pathlib.Path.exists", side_effect=lambda: True), patch(
+            "pathlib.Path.read_text", return_value="module test;\nendmodule\n"
+), patch("shutil.which", return_value="/usr/bin/sby"):
+            args = argparse.Namespace(
+                input=str(tmp_path / "test.isir"),
+                backend=None,
+                out_dir=str(tmp_path),
+                max_attempts=None,
+                report=None,
+                no_llm=False,
+                show_proof=False,
+                debug=False,
+                perf=False,
+                no_perf=False,
+                perf_stats=False,
+                dry_run=False,
+                no_pareto=False,
+                no_trace_alignment=False,
+                no_reflection=False,
+                output_format="text",
+)
+            ret = verify_spec(args)
+
+        assert ret == 0
+        assert (tmp_path / "test" / "model_check" / "rtl").is_dir()
+        assert mock_mc.call_count == 1
+
+
 class TestReport:
     def test_report_file_written(self, tmp_path):
         results = [

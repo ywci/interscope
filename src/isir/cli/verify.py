@@ -901,6 +901,11 @@ def verify_spec(args: argparse.Namespace) -> int:
 ))
             return _finish_summary(results, args)
 
+        # The per-property flow writes each property's RTL into mc_dir/rtl.
+        # Ensure the directory exists even when `rtl_file` was provided by the
+        # MC-lemma prep path above (which skips the generation block).
+        (mc_dir / "rtl").mkdir(parents=True, exist_ok=True)
+
         # Build the base assertion module + signal info once, then run the
         # model checker once per obligation so each property gets its own
         # PASS/FAIL verdict.
