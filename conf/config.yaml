@@ -12,7 +12,7 @@ provers:
   koika:
     enabled: true
     lemma_mining: true # auto‑generate trivial invariants
-    use_mc_lemmas: false # model checking currently disabled for Koika
+    use_mc_lemmas: true # inject MC-proved invariants as `*_mc` lemmas so the skeleton can close with `exact` (recorded in admitted_deps)
     use_proof_library: false # must be false when PERF is enabled
     prove:
       skill: "rocq-mcp"

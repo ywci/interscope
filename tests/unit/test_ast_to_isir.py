@@ -229,3 +229,21 @@ class TestAstToSpecConversion:
         assert spec.schedule_op is None
         assert spec.inputs == []
         assert spec.outputs == []
+
+
+def test_dotted_module_name_is_sanitized():
+    """Module names containing `/` or `.` (e.g. ONNX node paths) are sanitized
+    for paths/identifiers; the original is preserved in `source_name`."""
+    mod = create_minimal_ast_module()
+    mod.name = "softmax_/transformer/h.0/attn/Softmax_output_0"
+    spec = convert_ast_to_isir_module(mod)
+    assert spec.name == "softmax__transformer_h_0_attn_Softmax_output_0"
+    assert spec.source_name == "softmax_/transformer/h.0/attn/Softmax_output_0"
+    assert "/" not in spec.name and "." not in spec.name
+
+
+def test_plain_module_name_unchanged():
+    mod = create_minimal_ast_module()
+    spec = convert_ast_to_isir_module(mod)
+    assert spec.name == mod.name
+    assert spec.source_name is None

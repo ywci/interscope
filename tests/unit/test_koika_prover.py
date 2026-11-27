@@ -566,3 +566,16 @@ def test_closure_metadata_reports_admitted_lemmas(tmp_path):
     f.write_text("Theorem t : True.\nProof. exact I. Qed.\n")
     meta = prover._closure_metadata(f, {"automation": "recursive_skeleton"})
     assert "admitted_deps" not in meta
+
+
+def test_prompt_contains_context_hygiene_rules():
+    """The full-proof prompt must warn against the LLM's recurring Coq
+    context-hygiene failures (auto-named `s0`, vernaculars as terms,
+    invented identifiers)."""
+    prompt = build_coq_proof_prompt(
+        theorem_name="t_proved",
+        theorem_statement="forall s, reachable s -> True",
+    )
+    assert "s0" in prompt
+    assert "never terms" in prompt
+    assert "tactic1" in prompt

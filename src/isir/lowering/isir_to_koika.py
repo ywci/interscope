@@ -53,10 +53,35 @@ def _width_of_type(data_type: str) -> int:
     """Bit width of an ISIR data type (bool -> 1, bits<N> -> N, else 1)."""
     if data_type == "bool":
         return 1
-    m = re.match(r"bits<(\d+)>", (data_type or "").strip())
+    s = (data_type or "").strip()
+    m = re.match(r"bits<(\d+)>", s) or re.match(r"signed<bits<(\d+)>>", s)
     if m:
         return int(m.group(1))
     return 1
+
+
+def _known_width_of_expr(expr: Any, widths: Optional[Dict[str, int]],
+                         local_widths: Optional[Dict[str, int]] = None) -> Optional[int]:
+    """Max bit width among the names of `expr` that appear in the width maps,
+    or None when no name has a known width (literals only, unknown functions).
+    """
+    best: Optional[int] = None
+
+    def walk(x):
+        nonlocal best
+        if isinstance(x, str):
+            v = None
+            if local_widths and x in local_widths:
+                v = local_widths[x]
+            elif widths and x in widths:
+                v = widths[x]
+            if v is not None:
+                best = max(best if best is not None else 0, v)
+        elif isinstance(x, list):
+            for y in x:
+                walk(y)
+    walk(expr)
+    return best
 
 
 def _width_of_expr(expr: Any, widths: Optional[Dict[str, int]],
@@ -247,8 +272,21 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     if op in ('add', 'sub', 'mul', 'div', 'mod', 'shl', 'shr', 'gcd', 'min', 'max'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
-        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
-        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        a0, a1 = args[0], args[1]
+        # Negative literals live in the sibling operand's two's-complement
+        # domain (matching eval_expr's wrap semantics).
+        if isinstance(a0, int) and a0 < 0:
+            w = _known_width_of_expr(a1, widths, local_widths)
+            if w is None:
+                raise ExprError(f"Negative literal {a0} cannot be lowered to Coq: no operand width is available. Express it as `2^W - k` or use `(sub 0 k)`.")
+            a0 = (1 << w) + a0
+        if isinstance(a1, int) and a1 < 0:
+            w = _known_width_of_expr(a0, widths, local_widths)
+            if w is None:
+                raise ExprError(f"Negative literal {a1} cannot be lowered to Coq: no operand width is available. Express it as `2^W - k` or use `(sub 0 k)`.")
+            a1 = (1 << w) + a1
+        a = _expr_to_coq(a0, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        b = _expr_to_coq(a1, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         if op == 'shl':
             if widths is not None:
                 op_w = max(_width_of_expr(args[0], widths, local_widths), _width_of_expr(args[1], widths, local_widths))
@@ -374,8 +412,22 @@ def _expr_to_coq(expr: Any, state_types: Dict[str, str],
     elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'le', 'ge'):
         if len(args) != 2:
             raise ExprError(f"{op} expects 2 arguments")
-        a = _expr_to_coq(args[0], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
-        b = _expr_to_coq(args[1], state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        a0, a1 = args[0], args[1]
+        # Negative literals live in the sibling operand's two's-complement
+        # domain (e.g. `(ge (exp v) -32768)` with exp : bits<16> becomes the
+        # unsigned bound `32768`).
+        if isinstance(a0, int) and a0 < 0:
+            w = _known_width_of_expr(a1, widths, local_widths)
+            if w is None:
+                raise ExprError(f"Negative literal {a0} cannot be lowered to Coq: no operand width is available. Express the bound as `2^W - k` or use `(sub 0 k)`.")
+            a0 = (1 << w) + a0
+        if isinstance(a1, int) and a1 < 0:
+            w = _known_width_of_expr(a0, widths, local_widths)
+            if w is None:
+                raise ExprError(f"Negative literal {a1} cannot be lowered to Coq: no operand width is available. Express the bound as `2^W - k` or use `(sub 0 k)`.")
+            a1 = (1 << w) + a1
+        a = _expr_to_coq(a0, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
+        b = _expr_to_coq(a1, state_types, input_types, memory_names, False, state_var, inputs_var, function_types, local_types, prev_state_var, widths, local_widths)
         left_type = _type_of_expr(args[0], state_types, input_types, memory_names, function_types, local_types, prev_state_var)
         right_type = _type_of_expr(args[1], state_types, input_types, memory_names, function_types, local_types, prev_state_var)
         is_bool_cmp = (left_type == "bool" and right_type == "bool")
@@ -621,6 +673,17 @@ def convert(spec_module: isir.SpecModule) -> koika.KoikaModule:
             widths[s.state_name] = _width_of_type(s.data_type)
     for inp in spec_module.inputs:
         widths[inp.name] = _width_of_type(inp.data_type)
+    # Function return widths join the map so expression widths around function
+    # calls are inferred correctly (e.g. normalising a negative literal in
+    # `(ge (fn v) -32768)` to the function's two's-complement domain).
+    for f in spec_module.functions:
+        ret = f.get("return") if isinstance(f, dict) else getattr(f, "return", None)
+        name = f.get("name") if isinstance(f, dict) else getattr(f, "name", None)
+        if name and isinstance(ret, str) and (ret.startswith("bits<") or ret.startswith("signed<bits<")):
+            try:
+                widths[name] = _width_of_type(ret)
+            except ValueError:
+                pass
 
     # Functions (defined with a body -> Coq Definition; else -> Coq Parameter)
     # and axioms (lowered to Coq Axiom).

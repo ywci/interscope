@@ -135,6 +135,7 @@ class SpecModule:
     """Container for a complete design in the spec dialect."""
     name: str
     version: str = "0.1"
+    source_name: Optional[str] = None   # original (pre-sanitisation) name, if any
     parameters: Dict[str, Any] = field(default_factory=dict)
     clocks: List[Dict[str, Any]] = field(default_factory=list)
     resets: List[Dict[str, Any]] = field(default_factory=list)

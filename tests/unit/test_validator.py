@@ -345,3 +345,9 @@ def test_validate_isir_file_invalid_content(tmp_path):
     p.write_text(yaml.safe_dump(data), encoding="utf-8")
     with pytest.raises(ISIRParseError):
         validator.validate_isir_file(p)
+
+
+def test_dotted_module_name_accepted():
+    data = minimal_isir()
+    data["module"]["name"] = "softmax_/transformer/h.0/attn/Softmax_output_0"
+    validator.validate_isir(data)  # must not raise

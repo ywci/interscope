@@ -932,3 +932,22 @@ def test_negative_literal_in_statement_raises():
             ["ge", ["exp", "v"], -32768], {}, {}, [],
             as_prop=True, function_types={"exp": "nat"},
         )
+
+
+def test_negative_literal_normalized_with_function_width():
+    """With the function's return width known, `(ge (exp v) -32768)` lowers to
+    the two's-complement domain bound (2^16 - 32768 = 32768)."""
+    out = isir_to_koika._expr_to_coq(
+        ["ge", ["exp", "v"], -32768], {}, {}, [],
+        as_prop=True, function_types={"exp": "nat"}, widths={"exp": 16},
+    )
+    assert out == "((exp v) >= 32768)"
+
+
+def test_negative_literal_in_arithmetic_normalized():
+    """`(add x -1)` with x : bits<8> wraps the literal to 255 at the operand width."""
+    out = isir_to_koika._expr_to_coq(
+        ["add", "x", -1], {"x": "nat"}, {}, [],
+        as_prop=False, widths={"x": 8},
+    )
+    assert out == "((((x s) + 255) mod 256))"

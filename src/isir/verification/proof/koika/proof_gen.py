@@ -247,6 +247,9 @@ def build_coq_proof_prompt(
         "In the `step_load_inputs` subgoal, do NOT apply IH; close by contradiction/vacuity.",
         "In the `step_execute` subgoal, destruct the opcode and use `simpl; reflexivity` or `simpl; lia`.",
         "If you have a hypothesis `Hop : (op_reg s =? 0) = true`, use `destruct (op_reg s =? 0) eqn:Hop0` or `inversion Hop` after `simpl`, not `discriminate`.",
+        "NEVER reference Coq's auto-named hypotheses such as `s0`, `s'0`, or `H0`. Coq creates those names only when variables are introduced without explicit names — always bind names yourself: `intros s inputs Hreach`, `destruct x as [| n]`, `inversion Hstep; subst`.",
+        "`Proof.`, `Qed.`, `Admitted.`, and tactic names (`simpl`, `intros`, …) are commands, never terms. Do NOT use them as arguments, operands, or names inside an expression.",
+        "Do NOT invent placeholder identifiers such as `tactic1` or `lemma1`. Every name in the script must already exist in the given context.",
     ]
     if mandatory_avoid:
         avoid_list = mandatory_avoid + avoid_list
@@ -467,6 +470,9 @@ def build_interactive_step_prompt(
         f"- For the step case: `{step_case_hint}`\n"
         "- Use the induction hypothesis (often named `IH`) when it helps.\n"
         "- If the goal contains `if ... then ... else`, use `destruct` on the condition.\n"
+        "- NEVER reference Coq's auto-named hypotheses such as `s0`, `s'0`, or `H0`; bind every variable explicitly (`intros s ins Hreach`, `destruct x as [| n]`).\n"
+        "- `Proof.`, `Qed.`, `Admitted.`, and tactic names are commands, never terms inside an expression.\n"
+        "- Do NOT invent placeholder names like `tactic1`; only use names that exist in the context above.\n"
         "- Return ONLY one complete tactic ending with a dot.\n"
         "- If your previous tactic failed, you MUST try something different."
 )

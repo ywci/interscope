@@ -11,6 +11,7 @@ from isir.dialects.isir import (
     SpecScheduleOp, Interface
 )
 from isir.utils.logger import get_logger
+from isir.utils import sanitize_design_name
 
 logger = get_logger(__name__)
 
@@ -30,7 +31,7 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
         A fully populated SpecModule.
     """
     spec_mod = SpecModule(
-        name=ast_module.name,
+        name=sanitize_design_name(ast_module.name),
         version=getattr(ast_module, 'version', '0.1'),
         parameters=_convert_parameters(getattr(ast_module, 'parameters', [])),
         clocks=_convert_clocks(getattr(ast_module, 'clocks', [])),
@@ -41,6 +42,10 @@ def convert_ast_to_isir_module(ast_module) -> SpecModule:
         components=_convert_components(getattr(ast_module, 'components', [])),
         fairness=_convert_fairness(getattr(ast_module, 'fairness', []))
 )
+    # Preserve the original (possibly non-identifier) name; `spec_mod.name` is
+    # the sanitised form used for paths and module identifiers.
+    if ast_module.name != spec_mod.name:
+        spec_mod.source_name = ast_module.name
 
     # Uninterpreted functions and axioms (lowered to Coq Parameter/Axiom)
     for f in getattr(ast_module, 'functions', []):
